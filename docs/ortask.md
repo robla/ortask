@@ -8,7 +8,7 @@ ortask.py - inspect and update org-mode TODO tasks in README.org
 
 ```
 ortask.py [<subcommand>] [<options>]
-ortask.py list [--state STATE] [--root-only] [--items N] [--format FORMAT] [--file FILE]
+ortask.py list [--todo | --done | --all] [--root-only] [--items N] [--format FORMAT] [--file FILE]
 ortask.py show <id> [--file FILE]
 ortask.py add <title> [--parent ID] [--file FILE]
 ortask.py done <id> [--file FILE]
@@ -31,8 +31,14 @@ When invoked with no subcommand, **list** is assumed.
 
 Print tasks.  With no flags, prints all tasks in indented plain text.
 
-**--state** *STATE*
-:   Filter by state: `todo`, `done`, or `all` (default: `all`).
+**--todo**
+:   Show only open tasks (default).
+
+**--done**
+:   Show only completed tasks.
+
+**--all**
+:   Show all tasks regardless of state.
 
 **--root-only**
 :   Show only top-level tasks (direct children of `* Tasks`), hiding subtasks.

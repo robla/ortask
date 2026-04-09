@@ -481,7 +481,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     # list (default when no subcommand)
     p_list = sub.add_parser("list", help="print tasks")
-    p_list.add_argument("--state", choices=["todo", "done", "all"], default="all")
+    state_group = p_list.add_mutually_exclusive_group()
+    state_group.add_argument("--todo", dest="state", action="store_const", const="todo",
+                             help="show only open tasks (default)")
+    state_group.add_argument("--done", dest="state", action="store_const", const="done",
+                             help="show only completed tasks")
+    state_group.add_argument("--all", dest="state", action="store_const", const="all",
+                             help="show all tasks")
+    p_list.set_defaults(state="todo")
     p_list.add_argument("--root-only", action="store_true")
     p_list.add_argument("--items", type=int, default=None)
     p_list.add_argument("--format", choices=["plain", "json", "org"], default="plain")
@@ -523,7 +530,7 @@ def main() -> int:
     # For list, fill in defaults that argparse only sets when the
     # subcommand is explicitly given
     if cmd == "list" and args.command is None:
-        args.state = "all"
+        args.state = "todo"
         args.root_only = False
         args.items = None
         args.format = "plain"
