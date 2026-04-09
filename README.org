@@ -46,8 +46,8 @@ Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
 ./ortask.py repair
 #+end_src
 
-By default, =ortask.py= operates on =README.org= in its own
-directory.  Use =--file= to point it at any org file.
+By default, =ortask.py= operates on =README.org= in the current
+working directory.  Use =--file= to point it at any org file.
 
 * Shell alias
 

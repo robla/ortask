@@ -19,7 +19,7 @@ ortask.py repair [--dry-run | --fix] [--file FILE]
 ## DESCRIPTION
 
 **ortask.py** reads and edits the `* Tasks` section of an org-mode
-file (by default `README.org` in the same directory as the script).
+file (by default `README.org` in the current working directory).
 Tasks are org headings with TODO/DONE keywords and stable IDs of the
 form `T0001`, `T0001.1`, etc.
 
@@ -104,7 +104,7 @@ subtask IDs that don't match their parent heading, or headings under
 ## GLOBAL OPTIONS
 
 **--file** *FILE*
-:   Org file to operate on.  Default: `README.org` in the script's directory.
+:   Org file to operate on.  Default: `README.org` in the current working directory.
 
 ## TASK ID FORMAT
 

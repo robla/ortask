@@ -20,9 +20,7 @@ The intended shell alias is `ort`.
 
 ## Current state vs. planned state
 
-`ortask.py` currently implements only read-only listing with an older checkbox-based parser (`*+ [X/ ] text` via `TODO_PATTERN`). It has `--items` and `--file` flags but no subcommands yet.
-
-The design docs describe the target format using org TODO keywords and task IDs, with subcommands `list`, `show`, `add`, `done`, `open`, `repair`. See `docs/ortask.md` for the full planned reference. Implementing these subcommands and switching to the TODO/DONE keyword parser is the main pending work.
+`ortask.py` implements the TODO/DONE keyword parser and all subcommands from the spec: `list`, `show`, `add`, `done`, `open`, `repair`. The `repair` subcommand detects problems (duplicate IDs, missing IDs, mismatched subtask prefixes) but auto-fix of renumbering is not yet implemented — it reports and exits. See `docs/ortask.md` for the full subcommand reference.
 
 ## Key files
 

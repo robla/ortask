@@ -140,6 +140,9 @@ When =add= creates a new task:
 
 ** File modification safety
 
+The default file is =README.org= in the current working directory
+(not the directory containing the script).
+
 When =status.py= edits =README.org= (per Codex recommendation):
 
 - Operate only on the task subtree under =* Tasks=
