@@ -382,7 +382,7 @@ def cmd_add(args: argparse.Namespace) -> int:
     heading = "*" * new_level + f" TODO {new_id} {args.title}"
     lines.insert(insert_at, heading)
     _write_lines(args.file, lines)
-    print(new_id)
+    print(f"added {new_id} \"{args.title}\" to {args.file}")
     return 0
 
 
