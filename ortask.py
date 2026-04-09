@@ -16,7 +16,34 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-DEFAULT_ORG_FILE = Path("README.org")
+PROBE_NAMES = ["todo.org", "tasks.org"]
+
+
+def resolve_org_file() -> Path | None:
+    """Find the default org file using the probe order.
+
+    1. ORTASK_FILE env var
+    2. Probe for well-known names: todo.org, tasks.org
+    3. Pick first .org file alphabetically (warn if multiple)
+    """
+    env = os.environ.get("ORTASK_FILE")
+    if env:
+        return Path(env)
+
+    for name in PROBE_NAMES:
+        p = Path(name)
+        if p.exists():
+            return p
+
+    org_files = sorted(Path(".").glob("*.org"))
+    if len(org_files) == 1:
+        return org_files[0]
+    if len(org_files) > 1:
+        print(f"warning: multiple .org files found, using {org_files[0].name}"
+              f" (override with --file or ORTASK_FILE)", file=sys.stderr)
+        return org_files[0]
+
+    return None
 
 HEADING_RE = re.compile(
     r"^(?P<stars>\*+)\s+"
@@ -98,6 +125,16 @@ def parse_org(text: str) -> list[TodoItem]:
 # ---------------------------------------------------------------------------
 # Query helpers
 # ---------------------------------------------------------------------------
+
+def normalize_id(raw: str) -> str:
+    """Expand shorthand IDs: 't2' -> 't0002', 't2.1' -> 't0002.1', etc."""
+    if not raw.startswith("t"):
+        raw = "t" + raw
+    parts = raw[1:].split(".")
+    # Zero-pad the top-level number to 4 digits
+    parts[0] = parts[0].zfill(4)
+    return "t" + ".".join(parts)
+
 
 def filter_items(
     items: list[TodoItem],
@@ -258,6 +295,7 @@ def cmd_list(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_show(args: argparse.Namespace) -> int:
+    args.id = normalize_id(args.id)
     text = args.file.read_text(encoding="utf-8")
     items = parse_org(text)
     item = find_by_id(items, args.id)
@@ -316,6 +354,7 @@ def cmd_add(args: argparse.Namespace) -> int:
     start, end = _find_tasks_range(lines)
 
     if args.parent:
+        args.parent = normalize_id(args.parent)
         parent = find_by_id(items, args.parent)
         if parent is None:
             print(f"parent task not found: {args.parent}", file=sys.stderr)
@@ -352,6 +391,7 @@ def cmd_add(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_done(args: argparse.Namespace) -> int:
+    args.id = normalize_id(args.id)
     text = args.file.read_text(encoding="utf-8")
     lines = text.splitlines()
     items = parse_org(text)
@@ -371,6 +411,7 @@ def cmd_done(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_open(args: argparse.Namespace) -> int:
+    args.id = normalize_id(args.id)
     text = args.file.read_text(encoding="utf-8")
     lines = text.splitlines()
     items = parse_org(text)
@@ -473,8 +514,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Query and edit TODO tasks in org-mode files.",
     )
     parser.add_argument(
-        "--file", type=Path, default=DEFAULT_ORG_FILE,
-        help="org file to operate on (default: README.org in cwd)",
+        "--file", type=Path, default=None,
+        help="org file to operate on (default: todo.org, tasks.org, or first *.org)",
     )
 
     sub = parser.add_subparsers(dest="command")
@@ -525,6 +566,14 @@ def main() -> int:
     if args.command == "help":
         parser.print_help()
         return 0
+
+    if args.file is None:
+        resolved = resolve_org_file()
+        if resolved is None:
+            print("no org file found (create todo.org or use --file)",
+                  file=sys.stderr)
+            return 1
+        args.file = resolved
 
     if not args.file.exists():
         print(f"file not found: {args.file}", file=sys.stderr)

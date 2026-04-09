@@ -140,10 +140,11 @@ When =add= creates a new task:
 
 ** File modification safety
 
-The default file is =README.org= in the current working directory
-(not the directory containing the script).
+The default org file is resolved in order: =ORTASK_FILE= env var,
+then =todo.org=, =tasks.org=, then the first =*.org= alphabetically
+(with a warning if multiple).  =--file= overrides all of these.
 
-When =status.py= edits =README.org= (per Codex recommendation):
+When =status.py= edits the org file (per Codex recommendation):
 
 - Operate only on the task subtree under =* Tasks=
 - Change only the matched heading line (for =done=, =todo=, =rename=)
