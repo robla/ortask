@@ -478,6 +478,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub = parser.add_subparsers(dest="command")
+    sub.add_parser("help", help="show this help message")
 
     # list (default when no subcommand)
     p_list = sub.add_parser("list", help="print tasks")
@@ -520,6 +521,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.command == "help":
+        parser.print_help()
+        return 0
 
     if not args.file.exists():
         print(f"file not found: {args.file}", file=sys.stderr)
