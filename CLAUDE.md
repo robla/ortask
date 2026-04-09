@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-ortask is a Python CLI tool for querying and editing TODO tasks in org-mode files. It operates on a `* Tasks` subtree within an org file, using standard `TODO`/`DONE` keywords and stable task IDs (`T0001`, `T0001.1`, etc.).
+ortask is a Python CLI tool for querying and editing TODO tasks in org-mode files. It operates on a `* Tasks` subtree within an org file, using standard `TODO`/`DONE` keywords and stable task IDs (`t0001`, `t0001.1`, etc.).
 
 The tool is a single-file script (`ortask.py`) with no external dependencies (Python 3.10+, stdlib only).
 
@@ -41,15 +41,15 @@ Write operations use atomic file replacement (write to temp file, then rename).
 ## Task heading format
 
 ```org
-** TODO T0005 Some task title
-** TODO [#A] T0006 Urgent task with priority
-** DONE T0001.2 Completed subtask       :research:
+** TODO t0005 Some task title
+** TODO [#A] t0006 Urgent task with priority
+** DONE t0001.2 Completed subtask       :research:
 ```
 
 The heading regex that the parser should match:
 
 ```
-^\*+\s+(?P<state>TODO|DONE)\s+(?:\[#(?P<priority>[A-C])\]\s+)?(?P<id>T\d{4}(?:\.\d+)*)\s+(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$
+^\*+\s+(?P<state>TODO|DONE)\s+(?:\[#(?P<priority>[A-C])\]\s+)?(?P<id>t\d{4}(?:\.\d+)*)\s+(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$
 ```
 
 ## Testing
@@ -69,4 +69,4 @@ No test suite exists yet. When adding tests, use pytest with fixture org documen
 
 - Subcommands are verbs: `list`, `show`, `add`, `done`, `open`, `repair`. This aligns with Taskwarrior conventions.
 - File edits are conservative: only touch the `* Tasks` subtree, only rewrite matched lines, never reformat the whole file.
-- Task IDs (`T0001`–`T9999`) are permanent and never reused.
+- Task IDs (`t0001`–`t9999`) are permanent and never reused.

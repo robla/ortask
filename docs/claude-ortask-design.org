@@ -12,7 +12,7 @@ Goals:
 
 1. Use standard org-mode conventions so that Emacs users can edit and
    organize tasks naturally (folding, refile, archive, agenda, etc.)
-2. Assign stable task IDs (=T0001= through =T9999=) for reference in
+2. Assign stable task IDs (=t0001= through =t9999=) for reference in
    notes, chatlogs, and tooling
 3. Keep =status.py= useful as a CLI for querying and updating tasks,
    including use by LLMs and shell scripts
@@ -26,12 +26,12 @@ standard org-mode heading with a TODO/DONE keyword and a stable ID:
 
 #+begin_example
 ,* Tasks
-,** DONE T0001 Initialize LLMs in this directory
-,*** DONE T0001.1 ChatGPT/codex
-,*** DONE T0001.2 Gemini
-,*** DONE T0001.3 Claude
-,** TODO T0002 Build tool that updates this TODO list
-,** TODO T0003 Find core links for jobhunt
+,** DONE t0001 Initialize LLMs in this directory
+,*** DONE t0001.1 ChatGPT/codex
+,*** DONE t0001.2 Gemini
+,*** DONE t0001.3 Claude
+,** TODO t0002 Build tool that updates this TODO list
+,** TODO t0003 Find core links for jobhunt
 #+end_example
 
 ** Why org TODO keywords instead of checkboxes
@@ -51,9 +51,9 @@ Using TODO keywords keeps the file idiomatic.
 
 ** Task ID format
 
-- Top-level tasks: =T0001=, =T0002=, ... =T9999=
-- Subtasks: =T0001.1=, =T0001.2=, etc.
-- Deeper nesting: =T0001.1.1= (use sparingly)
+- Top-level tasks: =t0001=, =t0002=, ... =t9999=
+- Subtasks: =t0001.1=, =t0001.2=, etc.
+- Deeper nesting: =t0001.1.1= (use sparingly)
 - IDs are assigned once and never reused, even if a task is deleted
 - IDs appear as the first token after the TODO keyword in the heading
   (after an optional priority cookie)
@@ -62,8 +62,8 @@ Using TODO keywords keeps the file idiomatic.
 
 These are standard org and don't require special support in =status.py=:
 
-- Priorities: =** TODO [#A] T0005 Urgent thing=
-- Tags: =** TODO T0006 Research FooCorp :research:=
+- Priorities: =** TODO [#A] t0005 Urgent thing=
+- Tags: =** TODO t0006 Research FooCorp :research:=
 - Deadlines: =DEADLINE: <2026-04-15 Wed>= on the line after the heading
 - Properties drawers (e.g. =:COMPANY:=, =:URL:=) for structured metadata
 - Body text, links, and sub-checklists beneath any heading
@@ -87,7 +87,7 @@ breaking title extraction.
 ** Heading regex
 
 #+begin_example
-^\*+\s+(?P<state>TODO|DONE)\s+(?:\[#(?P<priority>[A-C])\]\s+)?(?P<id>T\d{4}(?:\.\d+)*)\s+(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$
+^\*+\s+(?P<state>TODO|DONE)\s+(?:\[#(?P<priority>[A-C])\]\s+)?(?P<id>t\d{4}(?:\.\d+)*)\s+(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$
 #+end_example
 
 This captures heading level, state, optional priority, task ID,

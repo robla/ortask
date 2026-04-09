@@ -8,11 +8,11 @@ Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
 
 #+begin_example
 ,* Tasks
-,** DONE T0001 Initialize LLMs in this directory
-,*** DONE T0001.1 ChatGPT/codex
-,*** DONE T0001.2 Gemini
-,*** DONE T0001.3 Claude
-,** TODO T0002 Build tool that updates this TODO list
+,** DONE t0001 Initialize LLMs in this directory
+,*** DONE t0001.1 ChatGPT/codex
+,*** DONE t0001.2 Gemini
+,*** DONE t0001.3 Claude
+,** TODO t0002 Build tool that updates this TODO list
 #+end_example
 
 * Quick start
@@ -25,19 +25,19 @@ Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
 ./ortask.py list --state todo
 
 # show a single task with body and subtasks
-./ortask.py show T0001
+./ortask.py show t0001
 
 # add a task
 ./ortask.py add "Research FooCorp"
 
 # add a subtask
-./ortask.py add "Check Glassdoor reviews" --parent T0003
+./ortask.py add "Check Glassdoor reviews" --parent t0003
 
 # mark a task done
-./ortask.py done T0002
+./ortask.py done t0002
 
 # reopen a task
-./ortask.py open T0002
+./ortask.py open t0002
 
 # check for ID problems (dry run)
 ./ortask.py repair --dry-run
@@ -57,7 +57,7 @@ For daily use, alias =ortask.py= as =ort=:
 alias ort='/path/to/ortask.py'
 #+end_src
 
-Then: =ort list=, =ort add "Do the thing"=, =ort done T0004=.
+Then: =ort list=, =ort add "Do the thing"=, =ort done t0004=.
 
 * Requirements
 

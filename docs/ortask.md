@@ -190,7 +190,7 @@ Write operations (`add`, `done`, `open`, `repair --fix`) follow these rules:
 
 List open tasks:
 ```
-./ortask.py list --state todo
+./ortask.py list --todo
 ```
 
 Add a task and mark it done:
