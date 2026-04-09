@@ -72,8 +72,3 @@ Python 3.10+ (standard library only, no dependencies).
 - [[file:docs/gemini-ortask-design.org][Gemini design notes]]
 - [[file:docs/adjacent-trackers.md][Adjacent trackers]] — survey of related tools
 - [[file:docs/naming.md][Naming analysis]] — how we picked the name
-
-* Tasks
-** TODO t0001 Remove AI slop from docs/taskwarrior.md
-
-** TODO t0002 create .org file if none exist in directory when using 'ort add'
