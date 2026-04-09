@@ -21,7 +21,7 @@ ortask.py repair [--dry-run | --fix] [--file FILE]
 **ortask.py** reads and edits the `* Tasks` section of an org-mode
 file (by default `README.org` in the current working directory).
 Tasks are org headings with TODO/DONE keywords and stable IDs of the
-form `T0001`, `T0001.1`, etc.
+form `t0001`, `t0001.1`, etc.
 
 When invoked with no subcommand, **list** is assumed.
 
@@ -52,7 +52,7 @@ Print tasks.  With no flags, prints all tasks in indented plain text.
 ### show
 
 ```
-ortask.py show T0001
+ortask.py show t0001
 ```
 
 Print a single task by ID, including its body text, properties drawer,
@@ -62,7 +62,7 @@ deadlines, and any subtasks.
 
 ```
 ortask.py add "Research FooCorp"
-ortask.py add "Check Glassdoor reviews" --parent T0003
+ortask.py add "Check Glassdoor reviews" --parent t0003
 ```
 
 Append a new task heading to the `* Tasks` section.  The next
@@ -70,12 +70,12 @@ available ID is assigned automatically (zero-padded to 4 digits).
 
 **--parent** *ID*
 :   Create a subtask under the given parent instead of a top-level task.
-    The subtask ID is derived from the parent (e.g. `T0003.1`, `T0003.2`).
+    The subtask ID is derived from the parent (e.g. `t0003.1`, `t0003.2`).
 
 ### done
 
 ```
-ortask.py done T0002
+ortask.py done t0002
 ```
 
 Change a task's keyword from TODO to DONE.  Only the matched heading
@@ -84,7 +84,7 @@ line is modified; all other file content is preserved.
 ### open
 
 ```
-ortask.py open T0002
+ortask.py open t0002
 ```
 
 Change a task's keyword from DONE back to TODO.
@@ -118,17 +118,17 @@ IDs are assigned sequentially and never reused:
 
 | Level    | Format       | Example  |
 |----------|--------------|----------|
-| Top-level| `T` + 4 digits | `T0001`  |
-| Subtask  | parent + `.N`  | `T0001.3`|
-| Nested   | parent + `.N`  | `T0001.3.1` |
+| Top-level| `t` + 4 digits | `t0001`  |
+| Subtask  | parent + `.N`  | `t0001.3`|
+| Nested   | parent + `.N`  | `t0001.3.1` |
 
 IDs appear immediately after the TODO keyword (and optional priority
 cookie) in the org heading:
 
 ```
-** TODO T0005 Some task title
-** TODO [#A] T0006 Urgent task with priority
-** DONE T0001.2 Completed subtask       :research:
+** TODO t0005 Some task title
+** TODO [#A] t0006 Urgent task with priority
+** DONE t0001.2 Completed subtask       :research:
 ```
 
 ## OUTPUT FORMATS
@@ -136,12 +136,12 @@ cookie) in the org heading:
 ### plain (default)
 
 ```
-[DONE] T0001 Initialize LLMs in this directory
-  [DONE] T0001.1 ChatGPT/codex
-  [DONE] T0001.2 Gemini
-  [DONE] T0001.3 Claude
-[TODO] T0002 Build tool that updates this TODO list
-[TODO] T0003 Find core links for jobhunt
+[DONE] t0001 Initialize LLMs in this directory
+  [DONE] t0001.1 ChatGPT/codex
+  [DONE] t0001.2 Gemini
+  [DONE] t0001.3 Claude
+[TODO] t0002 Build tool that updates this TODO list
+[TODO] t0003 Find core links for jobhunt
 ```
 
 ### json
@@ -149,18 +149,18 @@ cookie) in the org heading:
 ```json
 [
   {
-    "id": "T0001",
+    "id": "t0001",
     "state": "DONE",
     "title": "Initialize LLMs in this directory",
     "level": 2,
     "subtasks": [
-      {"id": "T0001.1", "state": "DONE", "title": "ChatGPT/codex", "level": 3},
-      {"id": "T0001.2", "state": "DONE", "title": "Gemini", "level": 3},
-      {"id": "T0001.3", "state": "DONE", "title": "Claude", "level": 3}
+      {"id": "t0001.1", "state": "DONE", "title": "ChatGPT/codex", "level": 3},
+      {"id": "t0001.2", "state": "DONE", "title": "Gemini", "level": 3},
+      {"id": "t0001.3", "state": "DONE", "title": "Claude", "level": 3}
     ]
   },
-  {"id": "T0002", "state": "TODO", "title": "Build tool that updates this TODO list", "level": 2},
-  {"id": "T0003", "state": "TODO", "title": "Find core links for jobhunt", "level": 2}
+  {"id": "t0002", "state": "TODO", "title": "Build tool that updates this TODO list", "level": 2},
+  {"id": "t0003", "state": "TODO", "title": "Find core links for jobhunt", "level": 2}
 ]
 ```
 
@@ -196,7 +196,7 @@ List open tasks:
 Add a task and mark it done:
 ```
 ./ortask.py add "Apply to FooCorp"
-./ortask.py done T0004
+./ortask.py done t0004
 ```
 
 Get JSON for scripting:

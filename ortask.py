@@ -2,7 +2,7 @@
 """ortask — query and edit TODO tasks in org-mode files.
 
 Operates on the ``* Tasks`` subtree of an org file, using standard
-TODO/DONE keywords and stable task IDs (T0001, T0001.1, etc.).
+TODO/DONE keywords and stable task IDs (t0001, t0001.1, etc.).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ HEADING_RE = re.compile(
     r"^(?P<stars>\*+)\s+"
     r"(?P<state>TODO|DONE)\s+"
     r"(?:\[#(?P<priority>[A-C])\]\s+)?"
-    r"(?P<id>T\d{4}(?:\.\d+)*)\s+"
+    r"(?P<id>t\d{4}(?:\.\d+)*)\s+"
     r"(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$"
 )
 
@@ -291,7 +291,7 @@ def _next_toplevel_id(items: list[TodoItem]) -> str:
         if "." not in item.id:
             num = int(item.id[1:])
             max_num = max(max_num, num)
-    return f"T{max_num + 1:04d}"
+    return f"t{max_num + 1:04d}"
 
 
 def _next_subtask_id(items: list[TodoItem], parent_id: str) -> str:
