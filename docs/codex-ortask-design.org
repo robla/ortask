@@ -1,14 +1,30 @@
-#+TITLE: Codex Notes on Enhancing status.py
+#+TITLE: Codex Notes on Enhancing ortask.py
 #+DATE: 2026-04-08
 #+AUTHOR: Codex
 
 * Summary
 
-The Claude design is directionally correct: =status.py= should move
+The Claude design is directionally correct: =ortask.py= should move
 toward real org-mode TODO headings, stable task IDs, and a small set
-of CLI editing commands.  The main thing I would change is sequencing.
-The next version should focus on safe parsing and narrowly scoped
-edits before it grows into a more ambitious task manager.
+of CLI editing commands.  The main thing I would change is sequencing
+and explicitness about current state.  The next version should focus
+on safe parsing and narrowly scoped edits before it grows into a more
+ambitious task manager.
+
+* Current Repository State
+
+As of 2026-04-08, the repository is specification-first:
+
+- =README.org= and =docs/ortask.md= describe the intended TODO/DONE
+  heading format with stable IDs
+- =ortask.py= still parses the older checkbox format
+- the implemented CLI is still read-only and limited to listing plus
+  =--items=
+- there is no committed test suite yet
+
+That mismatch is the most important fact to keep in mind when working
+here.  The docs are the target contract, not a description of what the
+script already does.
 
 * What I Agree With
 
@@ -16,7 +32,7 @@ edits before it grows into a more ambitious task manager.
   for actual tasks.
 - Put stable task IDs directly in headings so notes and chat logs can
   refer to tasks unambiguously.
-- Keep =status.py= useful both as a human CLI and as a tool that other
+- Keep =ortask.py= useful both as a human CLI and as a tool that other
   scripts can call.
 - Keep Emacs as the primary editor for large-scale reorganization.
 
@@ -42,10 +58,9 @@ This avoids a flag day and lets the file migrate incrementally.
 
 ** Scope edits to one task section
 
-If =status.py= starts editing =README.org=, it should operate only on a
-well-defined task subtree, ideally under a top-level =* TODO= heading.
-That keeps the script from accidentally rewriting unrelated notes or
-prose at the top of the file.
+If =ortask.py= edits =README.org=, it should operate only on the
+well-defined =* Tasks= subtree.  That keeps the script from
+accidentally rewriting unrelated notes or prose elsewhere in the file.
 
 ** Preserve file text as much as possible
 
@@ -61,12 +76,13 @@ This matters more than fancy features.
 
 ** Phase 1: stronger read-only commands
 
-Keep the default =list= behavior, but add filters:
+Keep =list= as the default behavior, but add filters:
 
 - =--items N= to cap output
 - =--state todo|done|all=
 - =--root-only= to show only top-level tasks
 - =--format plain|json=
+- =show TASK_ID= for one detailed task view
 
 JSON output would make the tool immediately more useful for LLMs and
 shell scripts.
@@ -85,13 +101,13 @@ full complexity of org editing.
 
 After the file format has stabilized, add:
 
-- =show TASK_ID=
 - =add --parent TASK_ID= for subtasks
 - =rename TASK_ID "New title"=
 - =todo TASK_ID= to reopen a completed task
 
-I would delay search, tag mutation, and custom TODO workflows until the
-basic editing path is reliable.
+I would delay =repair= or =sync=-style commands until the parser and
+basic write path are tested.  Those commands carry the highest risk of
+damaging the file if the tree model or rewrite logic is wrong.
 
 * Internal Structure I Recommend
 
@@ -113,13 +129,13 @@ The proposed =T0001= style is good.  I would keep these rules:
 - IDs are unique and never reused
 - subtask IDs derive from the parent, for example =T0001.1=
 - IDs remain stable even if the title changes
+- IDs live directly after the TODO keyword and optional priority cookie
 
-I would also require the ID immediately after the TODO keyword.  That
-keeps parsing simple and visually consistent.
+That keeps parsing simple and visually consistent.
 
 * Testing Expectations
 
-=status.py= is now important enough to justify real tests.  Add a
+=ortask.py= is now important enough to justify real tests.  Add a
 small pytest file with fixture org documents covering:
 
 - checkbox parsing
@@ -127,6 +143,7 @@ small pytest file with fixture org documents covering:
 - =--items= limits
 - ID allocation
 - marking a task done without changing unrelated lines
+- preserving blank lines, drawers, and non-task sections on edits
 
 Without tests, edit features will be brittle.
 
@@ -135,4 +152,4 @@ Without tests, edit features will be brittle.
 The tool should become a conservative org TODO editor, not a general
 org parser.  The next milestone is not "support everything org can
 do"; it is "read both task formats, print them cleanly, and make one
-safe edit at a time."
+safe edit at a time" while catching up to the documented CLI.
