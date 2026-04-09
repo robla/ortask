@@ -1,0 +1,138 @@
+#+TITLE: Codex Notes on Enhancing status.py
+#+DATE: 2026-04-08
+#+AUTHOR: Codex
+
+* Summary
+
+The Claude design is directionally correct: =status.py= should move
+toward real org-mode TODO headings, stable task IDs, and a small set
+of CLI editing commands.  The main thing I would change is sequencing.
+The next version should focus on safe parsing and narrowly scoped
+edits before it grows into a more ambitious task manager.
+
+* What I Agree With
+
+- Use org TODO keywords (=TODO= / =DONE=) instead of checkbox syntax
+  for actual tasks.
+- Put stable task IDs directly in headings so notes and chat logs can
+  refer to tasks unambiguously.
+- Keep =status.py= useful both as a human CLI and as a tool that other
+  scripts can call.
+- Keep Emacs as the primary editor for large-scale reorganization.
+
+Those are the right goals for this repository.
+
+* What Should Be Added To The Design
+
+** Backward-compatible parsing first
+
+Today the repo still uses checkbox headings like:
+
+#+begin_example
+* [] initialize LLMs in this directory
+** [X] ChatGPT/codex
+#+end_example
+
+So the first parser change should support both formats:
+
+1. Current checkbox headings
+2. Future org TODO headings with IDs
+
+This avoids a flag day and lets the file migrate incrementally.
+
+** Scope edits to one task section
+
+If =status.py= starts editing =README.org=, it should operate only on a
+well-defined task subtree, ideally under a top-level =* TODO= heading.
+That keeps the script from accidentally rewriting unrelated notes or
+prose at the top of the file.
+
+** Preserve file text as much as possible
+
+The tool should not reformat the whole file.  Safe edits should:
+
+- change only the matched heading line
+- append new headings in one place
+- preserve blank lines, body text, and non-task headings
+
+This matters more than fancy features.
+
+* Recommended Enhancement Plan
+
+** Phase 1: stronger read-only commands
+
+Keep the default =list= behavior, but add filters:
+
+- =--items N= to cap output
+- =--state todo|done|all=
+- =--root-only= to show only top-level tasks
+- =--format plain|json=
+
+JSON output would make the tool immediately more useful for LLMs and
+shell scripts.
+
+** Phase 2: targeted editing
+
+Add only two edit operations first:
+
+- =add= to append a new top-level task
+- =done TASK_ID= to mark one task complete
+
+That is enough to make the tool genuinely useful without taking on the
+full complexity of org editing.
+
+** Phase 3: richer updates
+
+After the file format has stabilized, add:
+
+- =show TASK_ID=
+- =add --parent TASK_ID= for subtasks
+- =rename TASK_ID "New title"=
+- =todo TASK_ID= to reopen a completed task
+
+I would delay search, tag mutation, and custom TODO workflows until the
+basic editing path is reliable.
+
+* Internal Structure I Recommend
+
+The current script already separates parsing from rendering.  That
+should continue with three layers:
+
+1. =parse_org(text) -> Document=
+2. task queries and mutations on that in-memory model
+3. minimal text patching back to disk
+
+Even if the parser remains regex-based, the code should track source
+line numbers for each task.  That makes in-place edits much safer than
+re-serializing the entire file.
+
+* IDs And Format
+
+The proposed =T0001= style is good.  I would keep these rules:
+
+- IDs are unique and never reused
+- subtask IDs derive from the parent, for example =T0001.1=
+- IDs remain stable even if the title changes
+
+I would also require the ID immediately after the TODO keyword.  That
+keeps parsing simple and visually consistent.
+
+* Testing Expectations
+
+=status.py= is now important enough to justify real tests.  Add a
+small pytest file with fixture org documents covering:
+
+- checkbox parsing
+- TODO/DONE heading parsing
+- =--items= limits
+- ID allocation
+- marking a task done without changing unrelated lines
+
+Without tests, edit features will be brittle.
+
+* Bottom Line
+
+The tool should become a conservative org TODO editor, not a general
+org parser.  The next milestone is not "support everything org can
+do"; it is "read both task formats, print them cleanly, and make one
+safe edit at a time."

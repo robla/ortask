@@ -1,0 +1,73 @@
+#+TITLE: ortask — org-mode task CLI
+
+=ortask.py= is a command-line tool for querying and editing TODO tasks
+in org-mode files.  It operates on a =* Tasks= subtree, leaving the
+rest of the file untouched.
+
+Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
+
+#+begin_example
+,* Tasks
+,** DONE T0001 Initialize LLMs in this directory
+,*** DONE T0001.1 ChatGPT/codex
+,*** DONE T0001.2 Gemini
+,*** DONE T0001.3 Claude
+,** TODO T0002 Build tool that updates this TODO list
+#+end_example
+
+* Quick start
+
+#+begin_src sh
+# list all tasks
+./ortask.py list
+
+# list only open tasks
+./ortask.py list --state todo
+
+# show a single task with body and subtasks
+./ortask.py show T0001
+
+# add a task
+./ortask.py add "Research FooCorp"
+
+# add a subtask
+./ortask.py add "Check Glassdoor reviews" --parent T0003
+
+# mark a task done
+./ortask.py done T0002
+
+# reopen a task
+./ortask.py open T0002
+
+# check for ID problems (dry run)
+./ortask.py repair --dry-run
+
+# fix ID problems
+./ortask.py repair
+#+end_src
+
+By default, =ortask.py= operates on =README.org= in its own
+directory.  Use =--file= to point it at any org file.
+
+* Shell alias
+
+For daily use, alias =ortask.py= as =ort=:
+
+#+begin_src sh
+alias ort='/path/to/ortask.py'
+#+end_src
+
+Then: =ort list=, =ort add "Do the thing"=, =ort done T0004=.
+
+* Requirements
+
+Python 3.10+ (standard library only, no dependencies).
+
+* Documentation
+
+- [[file:docs/ortask.md][ortask(1) man page]] — full subcommand reference
+- [[file:docs/claude-ortask-design.org][Claude design notes]]
+- [[file:docs/codex-ortask-design.org][Codex design notes]]
+- [[file:docs/gemini-ortask-design.org][Gemini design notes]]
+- [[file:docs/adjacent-trackers.md][Adjacent trackers]] — survey of related tools
+- [[file:docs/naming.md][Naming analysis]] — how we picked the name

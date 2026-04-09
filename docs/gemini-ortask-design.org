@@ -1,0 +1,68 @@
+#+TITLE: status.py Enhancement Design - Gemini's Perspective
+#+DATE: 2026-04-08
+#+AUTHOR: Gemini (with Rob Lanphier)
+
+* Overview
+
+This document provides additional design considerations and enhancements for =status.py=, building upon the foundations laid in =claude-jobhunt-design.org=. The goal is to make =status.py= a robust, LLM-friendly tool for managing a job hunt workspace.
+
+* Enhancing status.py
+
+** Subcommand Architecture
+
+As proposed, moving to a subcommand-based CLI is essential. I recommend using Python's =argparse= with subparsers.
+
+| Subcommand | Description | Gemini's Take |
+|------------+-------------+---------------|
+| =list=     | Current behavior: list tasks. | Add =--active= to show only TODO tasks. |
+| =show ID=  | Detailed view of a task. | Should include body text and properties. |
+| =add=      | Create a new task. | Should support parent ID for subtasks. |
+| =done ID=  | Mark task as DONE. | Update the file in-place safely. |
+| =context=  | Summarize for LLMs. | *New*: Output a compact summary for prompt context. |
+| =sync=    | Verify IDs and structure. | *New*: Check for duplicate IDs or broken hierarchies. |
+
+** LLM-Specific Features
+
+Since this is an AI-integrated workspace, =status.py= should cater to LLM needs:
+
+- **=context= subcommand**: Generates a "state of the hunt" summary. This can be piped directly into an LLM session or included in a `GEMINI.md` update.
+- **Body Parsing**: =show= should extract the first few lines of the task body, as LLMs often need the *intent* or *latest update* stored there.
+- **Property Awareness**: If a task has a =:COMPANY:= or =:URL:= property, =status.py= should make these easily accessible.
+
+** Robust Parsing
+
+The Org-mode format is flexible. Our parser should handle:
+
+- **Priorities**: =** TODO [#A] T0001=
+- **Tags**: =** TODO T0001 Task :research:admin:=
+- **Metadata**: Handle (or ignore) lines like =SCHEDULED:= and =DEADLINE:= without breaking the title extraction.
+
+Revised Regex Suggestion:
+#+begin_example
+^\*+\s+(?P<state>TODO|DONE)\s+(?:\[#(?P<priority>[A-C])\]\s+)?(?P<id>T\d{4}(?:\.\d+)*)\s+(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$
+#+end_example
+
+** File Modification Strategy
+
+To prevent data loss during =add= or =done= operations:
+1. Use a temporary file for writing.
+2. Atomically rename the temporary file to =README.org=.
+3. Preserve non-task content (headers, footers, other sections) exactly.
+
+* Integration with Workspace
+
+- **=AGENTS.md= Integration**: Update agents to use =status.py add= instead of manually editing the YAML or Org files when possible.
+- **Automated Summary**: A pre-commit hook or a daily cron could run =status.py context > CURRENT_STATE.md= to keep the workspace state fresh for any agent that enters.
+
+* Future Considerations
+
+- **Dependency Tracking**: Use a =:DEPENDS:= property to link tasks (e.g., "T0005 depends on T0001").
+- **Multi-file Support**: Eventually, =status.py= might need to scan all =.org= files in =orgs/= and =roles/= to provide a global agenda.
+- **Interactive Mode**: A simple TUI (Text User Interface) for quick task toggling.
+
+* Implementation Priorities
+
+1. **Refactor**: Move to subparser architecture and implement the new regex.
+2. **Read-only Subcommands**: Implement =show= and =context=.
+3. **Write Support**: Implement =done= and =add=.
+4. **Validation**: Implement =sync= to ensure ID integrity.

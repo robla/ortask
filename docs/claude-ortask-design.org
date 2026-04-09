@@ -1,0 +1,183 @@
+#+TITLE: status.py Design and README.org Format
+#+DATE: 2026-04-08
+#+AUTHOR: Claude (with Rob Lanphier)
+
+* Overview
+
+This document describes the design for =status.py= and the org-mode
+task format used in =README.org=.  It incorporates feedback from the
+Codex and Gemini design docs in this directory.
+
+Goals:
+
+1. Use standard org-mode conventions so that Emacs users can edit and
+   organize tasks naturally (folding, refile, archive, agenda, etc.)
+2. Assign stable task IDs (=T0001= through =T9999=) for reference in
+   notes, chatlogs, and tooling
+3. Keep =status.py= useful as a CLI for querying and updating tasks,
+   including use by LLMs and shell scripts
+
+* README.org TODO section format
+
+** Heading structure
+
+Tasks live under a top-level =* Tasks= heading.  Each task is a
+standard org-mode heading with a TODO/DONE keyword and a stable ID:
+
+#+begin_example
+,* Tasks
+,** DONE T0001 Initialize LLMs in this directory
+,*** DONE T0001.1 ChatGPT/codex
+,*** DONE T0001.2 Gemini
+,*** DONE T0001.3 Claude
+,** TODO T0002 Build tool that updates this TODO list
+,** TODO T0003 Find core links for jobhunt
+#+end_example
+
+** Why org TODO keywords instead of checkboxes
+
+Standard org-mode workflow uses =TODO= / =DONE= keywords on headings,
+not checkbox lists.  This gives us:
+
+- =C-c C-t= to toggle TODO/DONE
+- =S-<right>= / =S-<left>= to cycle TODO state
+- Agenda integration via =org-agenda=
+- =org-refile=, =org-archive=, tags, priorities, deadlines
+- Folding and visibility cycling on each task
+
+Checkboxes (=[ ]=) are org's lightweight mechanism for sub-step
+checklists within a heading's body, not for top-level task tracking.
+Using TODO keywords keeps the file idiomatic.
+
+** Task ID format
+
+- Top-level tasks: =T0001=, =T0002=, ... =T9999=
+- Subtasks: =T0001.1=, =T0001.2=, etc.
+- Deeper nesting: =T0001.1.1= (use sparingly)
+- IDs are assigned once and never reused, even if a task is deleted
+- IDs appear as the first token after the TODO keyword in the heading
+  (after an optional priority cookie)
+
+** Other org-mode features to use freely
+
+These are standard org and don't require special support in =status.py=:
+
+- Priorities: =** TODO [#A] T0005 Urgent thing=
+- Tags: =** TODO T0006 Research FooCorp :research:=
+- Deadlines: =DEADLINE: <2026-04-15 Wed>= on the line after the heading
+- Properties drawers (e.g. =:COMPANY:=, =:URL:=) for structured metadata
+- Body text, links, and sub-checklists beneath any heading
+
+* status.py design
+
+** Architecture
+
+The code should maintain three layers (per Codex recommendation):
+
+1. *Parser*: =parse_org(text) -> list[TodoItem]= -- reads org text,
+   tracks source line numbers for each task
+2. *Query/mutate*: filter, search, and modify the in-memory model
+3. *Writer*: minimal text patching back to disk (change only matched
+   heading lines, preserve everything else)
+
+The parser should be tolerant of headings without IDs (show them
+as-is) and should handle priorities, tags, and metadata lines without
+breaking title extraction.
+
+** Heading regex
+
+#+begin_example
+^\*+\s+(?P<state>TODO|DONE)\s+(?:\[#(?P<priority>[A-C])\]\s+)?(?P<id>T\d{4}(?:\.\d+)*)\s+(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$
+#+end_example
+
+This captures heading level, state, optional priority, task ID,
+title text, and optional tags.
+
+** Subcommands
+
+Use =argparse= with subparsers.  Implementation order:
+
+*** Phase 1: read-only
+
+| Subcommand  | Purpose                                     |
+|-------------+---------------------------------------------|
+| =list=      | Print tasks (default if no subcommand given) |
+| =show ID=   | Show detail for a single task (incl. body)   |
+| =context=   | Compact summary for LLM prompt injection     |
+
+=list= flags:
+- =--items N= to cap output
+- =--state todo|done|all=
+- =--root-only= to show only top-level tasks
+- =--format plain|json|org=
+
+JSON output makes the tool immediately useful for LLMs and scripts.
+
+*** Phase 2: targeted editing
+
+| Subcommand  | Purpose                           |
+|-------------+-----------------------------------|
+| =add=       | Append a new task (auto-assign ID)|
+| =done ID=   | Mark a task DONE by ID            |
+
+=add= supports =--parent ID= for subtasks.
+
+*** Phase 3: richer updates
+
+| Subcommand   | Purpose                               |
+|--------------+---------------------------------------|
+| =todo ID=    | Reopen a completed task               |
+| =rename ID=  | Change a task's title                 |
+| =sync=       | Verify IDs, check for duplicates      |
+| =next=       | Print the next available task ID      |
+
+** ID allocation
+
+When =add= creates a new task:
+1. Scan existing IDs to find the maximum top-level number
+2. Assign max + 1 (zero-padded to 4 digits)
+3. For subtasks, accept a parent ID and append the next sub-number
+
+** File modification safety
+
+When =status.py= edits =README.org= (per Codex recommendation):
+
+- Operate only on the task subtree under =* Tasks=
+- Change only the matched heading line (for =done=, =todo=, =rename=)
+- Append new headings in one place (for =add=)
+- Preserve blank lines, body text, properties, and non-task headings
+- Write to a temporary file then atomically rename (per Gemini)
+
+** What status.py should NOT do
+
+- Replace Emacs for editing.  Bulk reorganization, refiling, and
+  archiving should be done in Emacs.
+- Manage non-task content in README.org.
+- Reformat the whole file on any edit.
+
+* Testing
+
+Add a pytest test file covering (per Codex recommendation):
+
+- TODO/DONE heading parsing with and without priorities/tags
+- =--items= limits and =--state= filtering
+- ID allocation (next available ID)
+- Marking a task done without changing unrelated lines
+- Round-trip: parse then patch, verify unchanged lines are identical
+
+* Future considerations
+
+- Custom TODO keyword sequences (=TODO= -> =WAITING= -> =DONE=):
+  defer until needed
+- =CANCELLED= keyword or archive file: defer until the task list grows
+- Dependency tracking via =:DEPENDS:= property (per Gemini)
+- Multi-file scanning across =orgs/= and =roles/= for a global agenda
+- Property-aware queries (=:COMPANY:=, =:URL:=)
+
+* Related design docs
+
+- [[file:codex-jobhunt-design.org][Codex design notes]] -- emphasizes
+  conservative editing, line-number tracking, phased rollout, and testing
+- [[file:gemini-jobhunt-design.org][Gemini design notes]] -- emphasizes
+  LLM integration (=context= subcommand), robust regex with
+  priority/tag capture, atomic file writes, and property awareness
