@@ -62,8 +62,8 @@ deadlines, and any subtasks.
 ### add
 
 ```
-ortask.py add "Research FooCorp"
-ortask.py add "Check Glassdoor reviews" --parent t0003
+ortask.py add "Research storage formats"
+ortask.py add "Determine CommonMark's suitability for FooProj" --parent t0003
 ```
 
 Append a new task heading to the `* Tasks` section.  The next
@@ -198,9 +198,13 @@ List open tasks:
 ./ortask.py list --todo
 ```
 
-Add a task and mark it done:
+Add a task, automatically assinging it a task number:
 ```
-./ortask.py add "Apply to FooCorp"
+./ortask.py add "Write tests for FooProj"
+```
+
+...and mark it done (assuming it was assigned "t004"):
+```
 ./ortask.py done t0004
 ```
 
@@ -209,17 +213,12 @@ Get JSON for scripting:
 ./ortask.py list --format json | jq '.[] | select(.state == "TODO") | .title'
 ```
 
-Preview repairs without changing the file:
+Preview "repairs" without changing the file ("repairs" are making the file adhere to ortask.py norms):
 ```
 ./ortask.py repair --dry-run
 ```
 
-Fix ID problems:
+Fix ortask.py incompatibilities (e.g. adding ortask.py IDs where missing):
 ```
 ./ortask.py repair
 ```
-
-## SEE ALSO
-
-docs/claude-ortask-design.org, docs/codex-ortask-design.org,
-docs/gemini-ortask-design.org
