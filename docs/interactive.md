@@ -154,9 +154,17 @@ the `proj2026` symlink layout before trying real project task files.
 
 - Should `projtui.py` live beside `ortask.py`, or should it become
   `ortask.py project` later?
+  I don't anticipate add "ortask.py project" later, but one never knows.  I think I want ortask.py to eventually be spilt into the core library (lib/orgmod.py) and the cli (ortask.py or bin/ortask.py)
 - How should the workspace scan choose among multiple `.org` files in one
   project directory?
+  Naming/placement convention.  Priority order:
+  1. TODO.org
+  2. todo.org (case insensitive)
+  3. one level deep of subdirectories, alphanumeric order
 - Should there be a project metadata file, or is the symlink layout enough?
+  Symlink layout is enough for now.  There may be a global file for all projects at some point down the road.
 - Should task bodies support a structured "prompt" block, or should the TUI
   simply display existing body text?
+  Display the existing body text.  I don't want to deviate at all from orgmode norms, though I want the org file to be simple as possible.  This tool is meant as a complementary tool for orgmode users who may not be Emacs power users (e.g. I'm not really an Emacs power user, I don't think).  The idea is that this is training wheels for someone that eventually just wants to switch over to using Emacs to manage their day-to-day.
 - What is the smallest useful flow for the Electorama Weekly promotion work?
+  TBD
