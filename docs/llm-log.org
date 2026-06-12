@@ -34,3 +34,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Claude [2026-04-11 Sat 15:34]: revised =docs/ortask.md= to keep the command reference aligned with the current CLI and default file lookup behavior.
 ** Codex [2026-06-11 Thu 23:51]: created =docs/interactive.md= specifying a future interactive/work mode for stepping through =todo.org= tasks, including actions, authoring conventions, toolkit direction, safety rules, and tests.
 ** Codex [2026-06-11 Thu 23:51]: updated =AGENTS.md= and this log's conventions so future user-requested repository edits include a concise =docs/llm-log.org= entry.
+** Codex [2026-06-12 Fri 12:07]: revised =docs/interactive.md= around a project-selection TUI and task menu workflow for =projtui.py=.

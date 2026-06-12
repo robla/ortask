@@ -1,173 +1,162 @@
-# Interactive ortask.py
+# Project TUI for ortask.py
 
-This document specifies a future interactive mode for `ortask.py`. It is
-both a design note and the seed of user documentation.
+This document specifies a future `projtui.py` helper for using `ortask`
+from a project-management workspace such as `proj2026`. It replaces the
+earlier idea of simply stepping through one `todo.org` task after another.
+The desired flow is: choose a project, show that project's tasks as a menu,
+select one task, and receive a focused prompt for what to do next.
 
 ## Goal
 
-Interactive mode should step through a `todo.org` file and help the user
-decide what to do next. It is not meant to become a full task database or
-replace manual Org editing. The file remains the source of truth, and the
-interactive layer is a guided workflow over the same `* Tasks` subtree used
-by the existing commands.
+`projtui.py` should help the user stay focused on a current project without
+turning Org-mode into a separate task database. Org files remain the source
+of truth. The TUI is only a guided layer over project symlinks and the task
+headings parsed by `ortask.py`.
 
-Primary command:
+Primary usage from a workspace directory:
 
 ```sh
-./ortask.py interactive
-./ortask.py work
+./ortask/ortask/projtui.py
 ```
 
-`work` may become the friendly alias if the command feels more like a daily
-workflow than a generic TUI.
+When run from `proj2026`, the first useful target is promoting recent
+Electorama Weekly episodes through the `elweek/` project parent.
 
-## User Experience
+## Workspace Discovery
 
-The session presents one actionable task at a time:
+The tool should treat each immediate subdirectory as a possible project
+context when it contains or points to an Org task file. In `proj2026`, that
+means examples such as:
+
+- `elweek/` with `TODO-ElWeek.org`
+- `ortask/` with `todo.org`
+
+The initial screen should be a project menu:
 
 ```text
-[TODO] t0004 Test repair on task lists without IDs
-
-Actions: done, skip, show, add-child, note, open-editor, quit
+Project:
+  1. elweek     TODO-ElWeek.org
+  2. ortask     todo.org
+  q. quit
 ```
 
-Core actions:
+Do not follow every nested directory looking for tasks. Keep discovery
+predictable and explain skipped entries only in a debug or verbose mode.
 
-- `done`: mark the current task `DONE` and advance.
-- `skip`: leave the task unchanged and advance for this session only.
-- `show`: display body text, properties, and subtasks.
-- `add-child`: create a subtask under the current task.
-- `note`: append a short note to the current task body.
-- `open-editor`: open the file at or near the current task when possible.
-- `quit`: exit without changing the current task.
+## Task Menu Workflow
 
-Interactive mode must always make file writes through the same conservative
-writer rules as other commands: touch only the current task heading or the
-specific inserted note/subtask, and preserve surrounding Org text.
+After project selection, display the project's open tasks as a menu rather
+than automatically advancing through them:
 
-## Authoring todo.org for Guided Work
-
-The simplest authoring model is ordered TODO headings under `* Tasks`:
-
-```org
-* Tasks
-** TODO [#A] t0001 Fix broken parser edge case
-** TODO t0002 Write docs
-*** TODO t0002.1 Draft interactive mode spec
-** TODO [#C] t0003 Nice-to-have cleanup
+```text
+elweek tasks:
+  1. [#A] publish latest episode promo post
+  2. draft social copy for last week's episode
+  3. update episode links page
+  r. refresh
+  b. back to projects
+  q. quit
 ```
 
-Interactive mode should use this priority order by default:
+The user chooses what to work on. This is important: the TUI should support
+focus without hiding judgment or forcing the next task in file order.
+
+Default ordering should still be useful:
 
 1. open tasks before done tasks
 2. higher Org priority first: `[#A]`, then `[#B]`, then `[#C]`
-3. parent tasks before subtasks unless a subtask is explicitly selected
+3. parent tasks before subtasks
 4. file order as the final tie-breaker
 
-This keeps the file readable and lets the user control workflow mostly by
-reordering headings in an editor.
+## Focus Prompt
 
-## Selection Modes
+Selecting a task should show a compact work prompt, not immediately mutate
+the file:
 
-Initial implementation should support:
+```text
+Task: publish latest episode promo post
 
-- `--all`: include all open tasks.
-- `--root-only`: step only through direct children of `* Tasks`.
-- `--tag TAG`: include tasks with an Org tag.
-- `--id ID`: start at a specific task.
-- `--limit N`: stop after N presented tasks.
+Next action:
+  1. show task details
+  2. mark DONE
+  3. add note
+  4. add child task
+  5. open in editor
+  b. back to task menu
+```
 
-Possible later modes:
+The prompt should help the user decide the next concrete action. For the
+Electorama Weekly case, task text may ask for promotion steps such as
+drafting copy, checking links, publishing a post, or recording where it was
+shared. Those prompts should come from the Org task body when present; the
+TUI should not invent project policy.
 
-- `--priority A|B|C`
-- `--children-of ID`
-- `--resume SESSION`
-- `--random`
+## Operations
 
-## Session State
+Initial operations should be small and map to existing or planned `ortask.py`
+commands:
 
-The first version should avoid persistent session state. `skip` only means
-"not now" inside the current process. If a user wants a task to disappear
-from future sessions, they should mark it `DONE`, lower its priority, move it
-later in the file, or add a future explicit status once the parser supports
-that.
+| TUI action | Command equivalent |
+| --- | --- |
+| list projects | workspace scan |
+| list tasks | `ortask.py list --todo --file FILE` |
+| show task details | `ortask.py show ID --file FILE` |
+| mark done | `ortask.py done ID --file FILE` |
+| add note | planned note writer |
+| add child task | `ortask.py add TITLE --parent ID --file FILE` |
+| open editor | editor at or near task heading |
 
-Persistent state can be considered later, but it should not be stored inside
-the Org file unless the format is documented and manually understandable.
+Every write must use the same surgical persistence rules as `ortask.py`:
+touch only the selected heading, inserted note, or inserted child task.
+Never rewrite the full Org file to save menu state.
 
 ## Toolkit Direction
 
-The current recommendation is to use `prompt_toolkit` for the interactive
-loop if the project accepts a dependency. This mode wants custom keybindings,
-single-key actions, searchable choices, multiline note input, and a
-REPL-like flow. Those are good reasons to use `prompt_toolkit` directly.
+The first version can be a minimal terminal menu using only the Python
+standard library. Plain numbered choices are acceptable and may be better
+than a full-screen TUI while the workflow is still settling.
 
-Alternatives:
+Optional libraries can come later:
 
-- `InquirerPy` or `questionary`: better if the first version is only menus
-  and confirmations.
-- `Rich`: useful for formatted output, but not enough by itself for input.
-- `Textual`: too much for the first version unless the goal becomes a
-  full-screen task application.
-- `curses`: no obvious advantage here over `prompt_toolkit`.
+- `prompt_toolkit`: useful for searchable menus, history, and richer input.
+- `questionary` or `InquirerPy`: useful if the tool becomes mostly menus and
+  confirmations.
+- `Textual`: defer unless the goal becomes a persistent full-screen project
+  dashboard.
 
-Because `ortask.py` is currently stdlib-only, interactive dependencies should
-be optional. A packaging-friendly shape would be:
-
-```sh
-pip install "ortask[interactive]"
-```
-
-If dependencies are missing, `ortask.py interactive` should fail with a clear
-message explaining what to install. Non-interactive commands must continue to
-work without optional packages.
-
-## Non-Interactive Compatibility
-
-Every interactive operation should map to an existing or planned command:
-
-| Interactive action | Command equivalent |
-| --- | --- |
-| list candidate tasks | `ortask.py list --todo` |
-| show details | `ortask.py show ID` |
-| mark done | `ortask.py done ID` |
-| reopen | `ortask.py open ID` |
-| add child | `ortask.py add TITLE --parent ID` |
-| repair before session | `ortask.py repair --dry-run` |
-
-This keeps the interactive layer thin. The parser, query logic, and writer
-should stay shared with the normal CLI.
+If optional dependencies are introduced, keep non-interactive `ortask.py`
+commands stdlib-only.
 
 ## Safety Rules
 
-- Do not run repair automatically before an interactive session.
-- Warn and exit if duplicate IDs are detected.
-- Confirm before editing a file with no `* Tasks` section.
-- Never hide the task ID from the user.
-- Do not rewrite the whole file to save session progress.
-- Keep `--file` and `ORTASK_FILE` behavior identical to the rest of the CLI.
+- Ask before mutating tasks; selection alone is read-only.
+- Keep task IDs visible whenever an ID exists.
+- Warn and stop on duplicate IDs in the selected file.
+- Preserve `--file` and `ORTASK_FILE` behavior when delegating to `ortask.py`.
+- Do not auto-run repair before a session.
+- Do not store persistent session state in the Org file.
 
 ## Testing Expectations
 
-Tests should cover the workflow logic without requiring a real terminal:
+Tests should separate workflow logic from terminal I/O:
 
-- candidate ordering by state, priority, hierarchy, and file order
-- `skip` advancing without changing the file
-- `done` rewriting only the selected heading
-- `add-child` inserting under the selected parent
-- missing optional dependency error text
+- workspace discovery finds `elweek/TODO-ElWeek.org` and `ortask/todo.org`
+- project selection loads the expected Org file
+- task menus preserve priority and file-order rules
+- selecting a task does not write to disk
+- write actions call the same parser/writer paths as CLI commands
+- duplicate IDs produce a clear stop condition
 
-Terminal integration tests can come later. The first implementation should
-keep the session controller separate from the prompt toolkit adapter so most
-behavior can be tested with fake input and temporary Org files.
+Manual verification can start with temporary fixture directories that mimic
+the `proj2026` symlink layout before trying real project task files.
 
 ## Open Decisions
 
-- Should the public command be `interactive`, `work`, or both?
-- Should `skip` ever persist across sessions?
-- Should body notes use plain text, Org list items, or timestamped logbook
-  entries?
-- Should the first version include tag filtering, or wait until tag parsing
-  is stronger?
-- Should optional dependencies be declared through packaging metadata, a
-  requirements file, or documented manual installation?
+- Should `projtui.py` live beside `ortask.py`, or should it become
+  `ortask.py project` later?
+- How should the workspace scan choose among multiple `.org` files in one
+  project directory?
+- Should there be a project metadata file, or is the symlink layout enough?
+- Should task bodies support a structured "prompt" block, or should the TUI
+  simply display existing body text?
+- What is the smallest useful flow for the Electorama Weekly promotion work?
