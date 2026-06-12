@@ -33,5 +33,8 @@ Follow existing Python style: 4-space indentation, type hints, `dataclass` model
 ## Testing Guidelines
 There is no committed test suite yet. New behavior should include `pytest` tests with small fixture Org documents that cover parsing, item limits, ID handling, and round-trip edits. Name tests by behavior, for example `test_limit_items_rejects_negative_values`. Prioritize mixed old/new heading parsing, ID allocation, and edits that preserve surrounding prose, drawers, blank lines, and non-task sections. Until CI exists, include the exact manual commands you ran in the change description.
 
+## LLM Work Log
+When making any user-requested repository change, update `docs/llm-log.org` in the same turn with one concise entry describing the substantive change. Use the model name actually doing the work, the local timestamp, and the existing single-line Org entry format. Do not log pure investigation or no-op commands.
+
 ## Commit & Pull Request Guidelines
 Current history uses short, imperative commit subjects. Keep that pattern: `Add TODO heading parser` is better than `changes`. Pull requests should summarize user-visible behavior, note any README or docs updates, and include before/after CLI examples when output changes. Link related issues when available, and call out any gaps such as untested file-write paths.

@@ -8,7 +8,7 @@ history and the current docs. Each entry is a single line:
 
 Conventions:
 - One entry per substantive repository edit.
-- Speakers are the assisting models: ChatGPT, Gemini, Claude.
+- Speakers are the assisting models: ChatGPT, Codex, Gemini, Claude.
 - This file is a best-effort reconstruction from commits and diff
   messages, not a claim that the models self-authored these notes at the
   time.
@@ -32,3 +32,5 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Claude [2026-04-09 Thu 01:42]: split the task list out of =README.org= into =todo.org=.
 ** Claude [2026-04-09 Thu 01:56]: added the first follow-up tasks to =todo.org=.
 ** Claude [2026-04-11 Sat 15:34]: revised =docs/ortask.md= to keep the command reference aligned with the current CLI and default file lookup behavior.
+** Codex [2026-06-11 Thu 23:51]: created =docs/interactive.md= specifying a future interactive/work mode for stepping through =todo.org= tasks, including actions, authoring conventions, toolkit direction, safety rules, and tests.
+** Codex [2026-06-11 Thu 23:51]: updated =AGENTS.md= and this log's conventions so future user-requested repository edits include a concise =docs/llm-log.org= entry.
