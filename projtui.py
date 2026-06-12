@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import configparser
 import os
 import shlex
 import subprocess
@@ -15,6 +16,9 @@ import ortask
 
 
 SKIP_PROJECT_DIRS = {".git", ".hg", ".svn", "__pycache__", "docs"}
+DEFAULT_PROJDIR = "~/Projects"
+CONFIG_SECTION = "projtui"
+CONFIG_OPTION = "projdir"
 
 
 @dataclass(frozen=True)
@@ -30,6 +34,39 @@ class MenuItem:
     detail: str
     task: ortask.TodoItem | None = None
     line_num: int | None = None
+
+
+def default_config_path() -> Path:
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    if config_home:
+        return Path(config_home).expanduser() / "ortask" / "projtui.ini"
+    return Path.home() / ".config" / "ortask" / "projtui.ini"
+
+
+def read_config_projdir(config_path: Path) -> str | None:
+    if not config_path.exists():
+        return None
+    parser = configparser.ConfigParser()
+    parser.read(config_path, encoding="utf-8")
+    if not parser.has_option(CONFIG_SECTION, CONFIG_OPTION):
+        return None
+    value = parser.get(CONFIG_SECTION, CONFIG_OPTION).strip()
+    return value or None
+
+
+def _friendly_path(path: Path, original: str | None = None) -> str:
+    if original and original.startswith("~"):
+        return original
+    try:
+        return "~/" + str(path.relative_to(Path.home()))
+    except ValueError:
+        return str(path)
+
+
+def resolve_projdir(cli_projdir: str | None, config_path: Path) -> tuple[Path, str]:
+    raw = cli_projdir or read_config_projdir(config_path) or DEFAULT_PROJDIR
+    resolved = Path(raw).expanduser().resolve()
+    return resolved, _friendly_path(resolved, raw)
 
 
 def _org_sort_key(path: Path) -> tuple[int, str]:
@@ -268,10 +305,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="Minimal project menu for org task files.",
     )
     parser.add_argument(
+        "--projdir",
         "--workspace",
-        type=Path,
-        default=Path.cwd(),
-        help="workspace directory containing project subdirectories",
+        dest="projdir",
+        default=None,
+        help="project directory containing project subdirectories",
     )
     parser.add_argument(
         "--include-done",
@@ -283,9 +321,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    workspace = args.workspace.resolve()
+    workspace, display_path = resolve_projdir(args.projdir, default_config_path())
+    print(f"Finding project in {display_path}")
     if not workspace.is_dir():
-        print(f"workspace not found: {workspace}", file=sys.stderr)
+        print(f"project directory not found: {workspace}", file=sys.stderr)
         return 1
     return project_menu(workspace, args.include_done)
 
