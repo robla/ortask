@@ -38,3 +38,5 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-12 Fri 12:52]: added a stdlib-only =projtui.py= project menu helper and documented the minimal Electorama Weekly promotion workflow in =docs/interactive.md=.
 ** Codex [2026-06-12 Fri 13:11]: added global =projtui.py= project-directory configuration, documented =--projdir= and the config file, and installed RobLa's config pointing to =~/tmpsorta/proj2026=.
 ** Codex [2026-06-12 Fri 14:45]: created =docs/format.md= as a minimal Org format stub for ortask task files, using Electorama Weekly chores as the concrete example and documenting TODO file discovery direction.
+** Codex [2026-06-12 Fri 14:57]: reformatted =~/tmpsorta/electorama-weekly/TODO-ElWeek.org= into an ortask-compatible weekly promo checklist with a preserved destination template.
+** Codex [2026-06-12 Fri 15:17]: added support for weekly task IDs like =tw26W24=, updated the Electorama Weekly checklist to use week IDs, and documented the convention in =docs/format.md= and =docs/ortask.md=.

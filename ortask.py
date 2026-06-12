@@ -2,7 +2,7 @@
 """ortask — query and edit TODO tasks in org-mode files.
 
 Operates on the ``* Tasks`` subtree of an org file, using standard
-TODO/DONE keywords and stable task IDs (t0001, t0001.1, etc.).
+TODO/DONE keywords and stable task IDs (t0001, tw26W24, etc.).
 """
 
 from __future__ import annotations
@@ -17,6 +17,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 PROBE_NAMES = ["todo.org", "tasks.org"]
+NUMERIC_ID_RE = re.compile(r"^t\d{4}(?:\.\d+)*$")
+WEEK_ID_RE = re.compile(r"^tw(?:\d{2}|\d{4})[Ww]\d{2}(?:\.\d+)*$")
+BARE_WEEK_ID_RE = re.compile(r"^(?:\d{2}|\d{4})[Ww]\d{2}(?:\.\d+)*$")
+WEEK_ID_PARTS_RE = re.compile(
+    r"^tw(?P<year>\d{2}|\d{4})[Ww](?P<week>\d{2})(?P<suffix>(?:\.\d+)*)$"
+)
+TASK_ID_PATTERN = r"t(?:\d{4}|w(?:\d{2}|\d{4})[Ww]\d{2})(?:\.\d+)*"
 
 
 def resolve_org_file() -> Path | None:
@@ -49,7 +56,7 @@ HEADING_RE = re.compile(
     r"^(?P<stars>\*+)\s+"
     r"(?P<state>TODO|DONE)\s+"
     r"(?:\[#(?P<priority>[A-C])\]\s+)?"
-    r"(?P<id>t\d{4}(?:\.\d+)*)\s+"
+    rf"(?P<id>{TASK_ID_PATTERN})\s+"
     r"(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$"
 )
 
@@ -127,13 +134,32 @@ def parse_org(text: str) -> list[TodoItem]:
 # ---------------------------------------------------------------------------
 
 def normalize_id(raw: str) -> str:
-    """Expand shorthand IDs: 't2' -> 't0002', 't2.1' -> 't0002.1', etc."""
+    """Expand shorthand numeric IDs while preserving explicit weekly IDs."""
+    if BARE_WEEK_ID_RE.match(raw):
+        return "tw" + raw
+    if WEEK_ID_RE.match(raw):
+        return raw
+    if raw.startswith("w") and WEEK_ID_RE.match("t" + raw):
+        return "t" + raw
     if not raw.startswith("t"):
         raw = "t" + raw
+    if WEEK_ID_RE.match(raw):
+        return raw
+    if NUMERIC_ID_RE.match(raw):
+        return raw
     parts = raw[1:].split(".")
     # Zero-pad the top-level number to 4 digits
     parts[0] = parts[0].zfill(4)
     return "t" + ".".join(parts)
+
+
+def canonical_id(task_id: str) -> str:
+    """Return a comparison key for IDs; week IDs normalize year and W/w."""
+    match = WEEK_ID_PARTS_RE.match(task_id)
+    if match:
+        year = match.group("year")[-2:]
+        return f"tw{year}w{match.group('week')}{match.group('suffix')}"
+    return task_id
 
 
 def filter_items(
@@ -156,8 +182,9 @@ def filter_items(
 
 
 def find_by_id(items: list[TodoItem], task_id: str) -> TodoItem | None:
+    target = canonical_id(task_id)
     for item in items:
-        if item.id == task_id:
+        if canonical_id(item.id) == target:
             return item
     return None
 
@@ -326,7 +353,7 @@ def _next_toplevel_id(items: list[TodoItem]) -> str:
     max_num = 0
     for item in items:
         # Only consider top-level IDs (no dots)
-        if "." not in item.id:
+        if "." not in item.id and NUMERIC_ID_RE.match(item.id):
             num = int(item.id[1:])
             max_num = max(max_num, num)
     return f"t{max_num + 1:04d}"
@@ -359,11 +386,12 @@ def cmd_add(args: argparse.Namespace) -> int:
         if parent is None:
             print(f"parent task not found: {args.parent}", file=sys.stderr)
             return 1
-        new_id = _next_subtask_id(items, args.parent)
+        parent_id = parent.id
+        new_id = _next_subtask_id(items, parent_id)
         new_level = parent.level + 1
         # Insert after the last sibling/descendant of the parent
         insert_at = parent.line_num + 1
-        prefix = args.parent + "."
+        prefix = parent_id + "."
         for item in items:
             if item.id.startswith(prefix) or item is parent:
                 # Move past this item's heading and body

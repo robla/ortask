@@ -154,9 +154,10 @@ def load_menu_items(org_file: Path, include_done: bool = False) -> list[MenuItem
         seen: set[str] = set()
         duplicates: set[str] = set()
         for task in tasks:
-            if task.id in seen:
+            key = ortask.canonical_id(task.id)
+            if key in seen:
                 duplicates.add(task.id)
-            seen.add(task.id)
+            seen.add(key)
         if duplicates:
             dupes = ", ".join(sorted(duplicates))
             raise ValueError(f"duplicate task IDs in {org_file}: {dupes}")

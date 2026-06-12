@@ -20,9 +20,9 @@ ortask.py repair [--dry-run | --fix] [--file FILE]
 
 **ortask.py** reads and edits the `* Tasks` section of an org-mode
 file (by default `README.org` in the current working directory).
-Tasks are org headings with TODO/DONE keywords and stable IDs of the
-form `t0001`, `t0001.1`, etc.  See `--file` under GLOBAL OPTIONS for
-the file resolution order.
+Tasks are org headings with TODO/DONE keywords and stable IDs such as
+`t0001`, `t0001.1`, `tw26W24`, and `tw26W24.1`. See `--file` under
+GLOBAL OPTIONS for the file resolution order.
 
 When invoked with no subcommand, **list** is assumed.
 
@@ -124,6 +124,7 @@ IDs are assigned sequentially and never reused:
 | Level    | Format       | Example  |
 |----------|--------------|----------|
 | Top-level| `t` + 4 digits | `t0001`  |
+| Weekly   | `tw` + week    | `tw26W24` |
 | Subtask  | parent + `.N`  | `t0001.3`|
 | Nested   | parent + `.N`  | `t0001.3.1` |
 
@@ -132,9 +133,16 @@ cookie) in the org heading:
 
 ```
 ** TODO t0005 Some task title
+** TODO tw26W24 Promote this week's episode
 ** TODO [#A] t0006 Urgent task with priority
 ** DONE t0001.2 Completed subtask       :research:
 ```
+
+Weekly IDs are for recurring week-scoped work. Accepted week forms are
+`tw26W24`, `tw26w24`, `tw2026W24`, and `tw2026w24`; command input may
+omit the `tw` prefix, so `ortask.py show 26W24` resolves to `tw26W24`.
+Two- and four-digit year forms compare as the same week for lookup, so
+`ortask.py show 2026w24` also resolves to `tw26W24`.
 
 ## OUTPUT FORMATS
 

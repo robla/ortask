@@ -11,13 +11,14 @@ Inside it, put actionable work under a top-level `* Tasks` heading:
 
 ```org
 * Tasks
-** TODO t0001 Promote this week's Electorama Weekly episode
-*** TODO t0001.1 Identify the latest episode title and URL
-*** TODO t0001.2 Draft short promo copy
-*** TODO t0001.3 Post to /r/electorama
-*** TODO t0001.4 Post to X/Twitter
-*** TODO t0001.5 Post to Facebook
-*** TODO t0001.6 Record posted links or notes
+** TODO tw26W24.0 Promote June 10 ElectoramaWeekly episode
+*** TODO tw26W24.0.1 Identify the latest episode title and URL
+*** TODO tw26W24.0.2 Draft short promo copy
+*** TODO tw26W24.0.3 Post to /r/electorama
+*** TODO tw26W24.0.4 Post to X/Twitter
+*** TODO tw26W24.0.5 Post to Facebook
+*** TODO tw26W24.0.6 Record posted links or notes
+** TODO tw26W24.1 Prepare for June 17 ElectoramaWeekly episode
 
 * Template
 ** reddit /r/electorama
@@ -40,14 +41,20 @@ For now, ortask-compatible tasks should use:
 
 ```org
 ** TODO t0001 Task title
+** TODO tw26W24 Weekly task title
 ** TODO [#A] t0002 Priority task
 ** DONE t0003 Completed task
 ```
 
-IDs are stable references. Use lowercase `t` plus four digits for top-level
-tasks, and dotted children such as `t0001.1` for subtasks. Body text under a
-task is free-form Org text and should remain readable even if `ortask.py` is
-never used.
+IDs are stable references. Use lowercase `t` plus four digits for ordinary
+top-level tasks, or `tw` plus an ISO-like week for weekly parent tasks.
+Accepted weekly forms are `tw26W24`, `tw26w24`, `tw2026W24`, and
+`tw2026w24`; the `w` in `tw` is reserved for week-based IDs. Command input may
+also omit the `tw` prefix, so `ortask.py show 26W24` finds `tw26W24`. Two- and
+four-digit year forms compare as the same week for lookup, so `2026w24` also
+finds `tw26W24`. Use dotted children such as `t0001.1` or `tw26W24.1` for
+subtasks. Body text under a task is free-form Org text and should remain
+readable even if `ortask.py` is never used.
 
 ## Discovery Direction
 
