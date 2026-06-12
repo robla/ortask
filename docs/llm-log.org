@@ -35,3 +35,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-11 Thu 23:51]: created =docs/interactive.md= specifying a future interactive/work mode for stepping through =todo.org= tasks, including actions, authoring conventions, toolkit direction, safety rules, and tests.
 ** Codex [2026-06-11 Thu 23:51]: updated =AGENTS.md= and this log's conventions so future user-requested repository edits include a concise =docs/llm-log.org= entry.
 ** Codex [2026-06-12 Fri 12:07]: revised =docs/interactive.md= around a project-selection TUI and task menu workflow for =projtui.py=.
+** Codex [2026-06-12 Fri 12:52]: added a stdlib-only =projtui.py= project menu helper and documented the minimal Electorama Weekly promotion workflow in =docs/interactive.md=.

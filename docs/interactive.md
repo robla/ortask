@@ -22,6 +22,17 @@ Primary usage from a workspace directory:
 When run from `proj2026`, the first useful target is promoting recent
 Electorama Weekly episodes through the `elweek/` project parent.
 
+Current minimal implementation:
+
+```sh
+./projtui.py --workspace /home/robla/tmpsorta/proj2026
+```
+
+The first version is intentionally plain: numbered project menus, numbered
+task/heading menus, detail display, editor launch, and `DONE` marking for
+ortask-compatible tasks with IDs. For non-task Org files such as the current
+`TODO-ElWeek.org` template, it displays headings as read-only reference.
+
 ## Workspace Discovery
 
 The tool should treat each immediate subdirectory as a possible project
@@ -167,4 +178,15 @@ the `proj2026` symlink layout before trying real project task files.
   simply display existing body text?
   Display the existing body text.  I don't want to deviate at all from orgmode norms, though I want the org file to be simple as possible.  This tool is meant as a complementary tool for orgmode users who may not be Emacs power users (e.g. I'm not really an Emacs power user, I don't think).  The idea is that this is training wheels for someone that eventually just wants to switch over to using Emacs to manage their day-to-day.
 - What is the smallest useful flow for the Electorama Weekly promotion work?
-  TBD
+  Use `TODO-ElWeek.org` as the project file. Put the latest episode promotion
+  checklist under `* Tasks` using normal ortask headings, and keep the existing
+  destination template as reference. A minimal checklist should cover:
+  1. identify the latest episode URL/title
+  2. draft short promo copy
+  3. post to `/r/electorama`
+  4. post to X/Twitter
+  5. post to Facebook
+  6. record links or notes under the task body
+  Then run `./projtui.py --workspace /home/robla/tmpsorta/proj2026`, choose
+  `elweek`, select one task, and mark it done only after the external promo
+  step is actually complete.
