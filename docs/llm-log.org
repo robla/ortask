@@ -1,0 +1,34 @@
+#+TITLE: ortask LLM log
+
+* About this log
+A running, retroactive work log for =ortask=, reconstructed from git
+history and the current docs. Each entry is a single line:
+
+: ** Name [YYYY-MM-DD Ddd HH:MM]: short description of the substantive change
+
+Conventions:
+- One entry per substantive repository edit.
+- Speakers are the assisting models: ChatGPT, Gemini, Claude.
+- This file is a best-effort reconstruction from commits and diff
+  messages, not a claim that the models self-authored these notes at the
+  time.
+
+* Bootstrap note
+This log was reconstructed after the fact so the project has a compact
+LLM-oriented history in one place. The entries below follow the visible
+repo evolution rather than trying to capture every prompt or revision.
+
+* LLM log
+** ChatGPT [2026-04-08 Wed 21:36]: drafted the initial repo scaffold around an Org-mode task database, including =README.org=, =ortask.py=, =docs/ortask.md=, and the first design notes.
+** ChatGPT [2026-04-08 Wed 22:11]: added the first round of LLM-oriented repo metadata, including =AGENTS.md= and model-specific guidance files.
+** Claude [2026-04-08 Wed 23:03]: updated =ortask.py= to more closely match the negotiated Org TODO design, and synchronized the supporting docs.
+** ChatGPT [2026-04-08 Wed 23:43]: refined the adjacent-trackers comparison and reordered the list to better reflect the alternatives being considered.
+** Claude [2026-04-08 Wed 23:19]: tightened the default listing behavior so only TODO items show by default and simplified the CLI options.
+** Claude [2026-04-08 Wed 23:58]: switched task IDs to lowercase =t0001=-style identifiers across docs, README, and code.
+** Claude [2026-04-09 Thu 00:03]: made =ortask.py help= a synonym for =ortask.py --help=.
+** Claude [2026-04-09 Thu 01:01]: changed the default file search order to prefer =todo.org= and =tasks.org= before falling back to other =*.org= files.
+** Gemini [2026-04-09 Thu 01:32]: added =docs/taskwarrior.md= to compare Taskwarrior workflows with =ortask=.
+** Claude [2026-04-09 Thu 01:36]: improved the output produced by =ortask.py add= and added a follow-up TODO in =README.org=.
+** Claude [2026-04-09 Thu 01:42]: split the task list out of =README.org= into =todo.org=.
+** Claude [2026-04-09 Thu 01:56]: added the first follow-up tasks to =todo.org=.
+** Claude [2026-04-11 Sat 15:34]: revised =docs/ortask.md= to keep the command reference aligned with the current CLI and default file lookup behavior.
