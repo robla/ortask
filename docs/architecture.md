@@ -1,13 +1,17 @@
-# Architecture Refactoring Plan
+# Architecture
 
-This document describes the intended split between the user-facing scripts and
-the shared ortask library. The goal is to move reusable parsing, discovery, and
-project-management behavior out of the top-level scripts before adding more
-features.
+This document describes the split between the user-facing scripts and the
+shared `ortasklib` package. The goal was to move reusable parsing, discovery,
+and project-management behavior out of the top-level scripts so features can be
+added without growing three coupled scripts.
+
+**Status:** implemented. The scripts no longer import each other; they import
+from `ortasklib`. The `docs/testing.md` suite runs unchanged as the refactor
+gate (see *Test compatibility* below). Project **registry** read/write
+(`orgmgr.py projadd`/`migrate`, see `docs/orgmgr.md`) is still future work; the
+`manager` module currently implements the legacy `projdir` workspace model.
 
 ## Package Layout
-
-Use a dedicated package directory for shared code:
 
 ```text
 ortasklib/
@@ -20,84 +24,129 @@ orgmgr.py
 projtui.py
 ```
 
-`ortasklib/` is the proposed package name because a directory named `ortask/`
-would collide with the existing `ortask.py` executable module. If the scripts
-are later moved under `bin/` or renamed, the package can be renamed to
-`ortask/`.
+`ortasklib/` is the package name because a directory named `ortask/` would
+collide with the existing `ortask.py` executable module. If the scripts are
+later moved under `bin/` or renamed, the package can be renamed to `ortask/`.
+
+## Dependency Graph
+
+```text
+core    (stdlib only)
+  ^ ^
+  | |
+tasks  manager
+  ^      ^
+  |      |
+ortask.py   orgmgr.py        projtui.py
+(core,tasks) (manager)       (core, tasks, manager)
+```
+
+No script imports another script. `core` has no intra-package dependencies;
+`tasks` and `manager` depend only on `core`.
 
 ## Script Responsibilities
 
-The top-level scripts should become thin command/front-end layers:
+The top-level scripts are thin command/front-end layers. They own argument
+parsing, user prompts, process exit codes, and human-readable output. Shared
+modules never call `sys.exit()` or parse CLI arguments.
 
-- `ortask.py` handles local task-list commands such as `list`, `show`, `add`,
-  `done`, `open`, and `repair`.
-- `orgmgr.py` handles global multi-project commands such as `list`, future
-  `projadd`, `projrm`, `migrate`, and database/index maintenance.
-- `projtui.py` remains the interactive terminal UI. Most menu rendering,
-  prompting, and editor-launch logic should stay there, but it should import
-  discovery and task helpers from the shared library.
-
-Scripts should own argument parsing, user prompts, process exit codes, and
-human-readable command output. Shared modules should not call `sys.exit()` or
-parse CLI arguments.
+- `ortask.py` — local task commands (`list`, `show`, `add`, `done`, `open`,
+  `repair`). Each `cmd_*` reads the file, calls a `tasks`/`core` helper,
+  translates the result (and `TaskNotFound`) into output and an exit code, and
+  writes via `core.write_lines`.
+- `orgmgr.py` — global multi-project commands. `cmd_list` calls
+  `manager.summarize_projects()` and formats the records. Future `projadd`,
+  `projrm`, `migrate`, and registry maintenance also belong here.
+- `projtui.py` — the interactive terminal UI. Menu rendering, prompting, and
+  editor launch stay here; it imports project discovery from `manager` and
+  parsing/edit helpers from `core`/`tasks`.
 
 ## `core.py`
 
-`ortasklib/core.py` contains code shared by both local and global tools:
+Pure, shared building blocks that operate on in-memory strings and individual
+files:
 
-- Org task data models such as `TodoItem`
-- Org heading regexes and ID normalization/canonicalization
-- `* Tasks` subtree detection
-- `parse_org()` and low-level task filtering helpers
-- safe file helpers such as atomic writes
-- task-file discovery rules used inside a single directory
+- the `TodoItem` model
+- Org heading regexes, the `TASK_ID_PATTERN`, and `PROBE_NAMES`
+- `find_tasks_range()` — `* Tasks` subtree detection
+- `parse_org()` and the low-level query helpers `filter_items()` / `find_by_id()`
+- `normalize_id()` / `canonical_id()`
+- `build_org_heading()` — render a `TodoItem` back to one heading line
+- `atomic_write()` / `write_lines()`
+- `resolve_org_file()` — single-directory task-file discovery
 
-Keep `core.py` free of command names and UI assumptions. It should expose small
-functions that are easy to test with in-memory strings and temporary files.
+`core.py` has no command names or argument parsing. It may print a discovery
+warning to stderr (e.g. multiple candidate `*.org` files), but nothing else.
 
 ## `tasks.py`
 
-`ortasklib/tasks.py` contains behavior mainly used by `ortask.py`:
+Behavior used by `ortask.py`. These functions take Org text (or parsed items)
+and return data or new line lists — they never read/write files, print, or call
+`sys.exit`:
 
-- local task listing and formatting helpers
-- `show` expansion for a selected task and descendants
-- ID allocation for top-level tasks and subtasks
-- line-level edit helpers for `add`, `done`, `open`, and future repair work
-- validation functions for duplicate IDs and malformed task headings
+- formatters: `format_plain()`, `format_org()`, `format_json()`
+- `show_lines()` — heading, body, and descendants for a selected task
+- ID allocation: `next_toplevel_id()`, `next_subtask_id()`
+- line-level edits: `add_task()`, `change_state()` (powers `done`/`open`)
+- validation: `find_repair_problems()`
+- `TaskNotFound` — raised by `show_lines`/`add_task`/`change_state` when an ID
+  (or parent ID) does not resolve, so the helpers stay free of printing and exit
+  codes while `ortask.py` decides how to report the failure
 
-`ortask.py` should call these helpers and translate results into CLI output.
-Write operations should continue to preserve surrounding prose and avoid
-reserializing whole Org files when a line-level edit is enough.
+Write helpers return a new line list and let `ortask.py` perform the atomic
+write, preserving surrounding prose and avoiding whole-file reserialization.
+`change_state()` returns `None` when the task is already in the target state, so
+the caller can skip the write entirely.
 
 ## `manager.py`
 
-`ortasklib/manager.py` contains behavior mainly used by `orgmgr.py` and shared
-with `projtui.py`:
+Behavior used by `orgmgr.py` and shared with `projtui.py`:
 
-- project config path resolution
-- project registry read/write logic
-- legacy `projdir` compatibility during migration
-- project discovery from a workspace or registry
-- Org file selection for a project
-- top-level task summaries for project listings
-- JSON-ready project/task records
+- the `Project` record
+- config-path resolution (`default_config_path()`, honoring `XDG_CONFIG_HOME`)
+- legacy `projdir` workspace handling (`read_config_projdir()`,
+  `resolve_projdir()`)
+- project discovery (`discover_projects()`) and per-project Org-file selection
+  (`choose_org_file()`)
+- `summarize_projects()` — JSON-ready, top-level task summaries per project,
+  attaching a `warning` (instead of raising) for unreadable files, missing
+  `* Tasks` sections, or duplicate IDs
 
-`orgmgr.py list` should eventually use `manager.py` instead of importing
-`projtui.py`. `projtui.py` should also use `manager.py` for project discovery
-so the interactive and non-interactive tools agree.
+Both `orgmgr.py list` and `projtui.py` use `manager` for project discovery, so
+the interactive and non-interactive tools agree. The shared **registry** read/
+write described in `docs/orgmgr.md` (a `[projects]` section in `ortask.ini`) is
+not yet implemented; until then `manager` resolves projects from a `projdir`
+workspace.
 
-## Refactoring Order
+## Test compatibility
 
-1. Create `ortasklib/core.py` and move pure parser, model, ID, discovery, and
-   atomic-write helpers there.
-2. Move local command helpers from `ortask.py` into `ortasklib/tasks.py`, leaving
-   `ortask.py` as argument parsing plus dispatch.
-3. Move project discovery/config helpers from `projtui.py` and `orgmgr.py` into
+`docs/testing.md`'s suite imports the scripts and calls names like
+`ortask.parse_org`, `ortask.cmd_done`, and `ortask._find_repair_problems`. To
+let that suite run unchanged before and after the move (the "refactor gate"),
+`ortask.py` re-exports the moved names from `ortasklib` — including the
+historical private aliases `_find_tasks_range`, `_build_org_heading`,
+`_write_lines`, and `_find_repair_problems`. New code should import from
+`ortasklib` directly; the re-exports exist for compatibility.
+
+## How the refactor was sequenced
+
+1. Created `ortasklib/core.py` with the parser, model, ID, discovery, and
+   atomic-write helpers.
+2. Moved local formatting, `show`, ID allocation, edit, and validation logic
+   into `ortasklib/tasks.py`, leaving `ortask.py` as argument parsing, dispatch,
+   and thin `cmd_*` adapters.
+3. Moved project discovery/config and the `orgmgr list` summary into
    `ortasklib/manager.py`.
-4. Update `orgmgr.py` and `projtui.py` to import from `manager.py` rather than
-   from each other.
-5. Add tests around `core.py`, then task edits, then manager discovery and
-   registry behavior.
+4. Updated `orgmgr.py` and `projtui.py` to import from `manager` instead of from
+   each other (and from `ortask.py`).
+5. Kept the existing tests green at each step via the `ortask.py` re-exports.
 
-This order keeps behavior stable while removing the current script-to-script
-coupling.
+## Future work
+
+- Implement the shared project registry (`projadd`/`migrate`) in `manager`, per
+  `docs/orgmgr.md`, and add tests for config isolation (a temp `XDG_CONFIG_HOME`)
+  and registry read/write.
+- Once the registry lands, `projtui.py` and `orgmgr.py` should prefer it over the
+  `projdir` workspace model.
+- Consider repointing the test suite to import from `ortasklib` directly and
+  retiring the `ortask.py` compatibility re-exports.

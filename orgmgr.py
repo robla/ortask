@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """orgmgr — global operations command for the ortask suite of tools.
 
-Handles project-level and multi-file Org operations.
+Handles project-level and multi-file Org operations. This script owns argument
+parsing and output formatting; project discovery and summaries live in
+``ortasklib.manager``.
 """
 
 from __future__ import annotations
@@ -11,96 +13,24 @@ import json
 import sys
 from pathlib import Path
 
-# Ensure local imports work regardless of execution directory
-script_dir = Path(__file__).parent.resolve()
-if str(script_dir) not in sys.path:
-    sys.path.insert(0, str(script_dir))
+# Make ``ortasklib`` importable regardless of the working directory.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
-import ortask
-import projtui
+from ortasklib import manager
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    config_path = projtui.default_config_path()
-    workspace, display_path = projtui.resolve_projdir(args.projdir, config_path)
+    config_path = manager.default_config_path()
+    workspace, display_path = manager.resolve_projdir(args.projdir, config_path)
 
     if not workspace.is_dir():
         print(f"project directory not found: {workspace}", file=sys.stderr)
         return 1
 
-    projects = projtui.discover_projects(workspace)
-    projects_data = []
+    projects_data = manager.summarize_projects(workspace, include_all=args.all)
 
-    for project in projects:
-        rel_file = project.org_file.relative_to(workspace)
-        try:
-            text = project.org_file.read_text(encoding="utf-8")
-        except Exception as e:
-            projects_data.append({
-                "project": project.name,
-                "file": str(rel_file),
-                "warning": f"Could not read file: {e}",
-                "tasks": []
-            })
-            continue
-
-        # Check if * Tasks section exists
-        lines = text.splitlines()
-        has_tasks_section = any(ortask.TASKS_HEADING_RE.match(line) for line in lines)
-        if not has_tasks_section:
-            projects_data.append({
-                "project": project.name,
-                "file": str(rel_file),
-                "warning": "no parseable * Tasks section found",
-                "tasks": []
-            })
-            continue
-
-        # Parse tasks
-        tasks = ortask.parse_org(text)
-
-        # Check for duplicate IDs
-        seen = set()
-        duplicates = set()
-        for t in tasks:
-            if t.id:
-                key = ortask.canonical_id(t.id)
-                if key in seen:
-                    duplicates.add(t.id)
-                seen.add(key)
-
-        if duplicates:
-            dupes_str = ", ".join(sorted(duplicates))
-            projects_data.append({
-                "project": project.name,
-                "file": str(rel_file),
-                "warning": f"duplicate task IDs: {dupes_str}",
-                "tasks": []
-            })
-            continue
-
-        # Filter to top-level tasks (level == 2)
-        # By default, only include TODO tasks, unless --all is specified
-        filtered_tasks = []
-        for t in tasks:
-            if t.level == 2:
-                if args.all or t.state == "TODO":
-                    filtered_tasks.append(t)
-
-        projects_data.append({
-            "project": project.name,
-            "file": str(rel_file),
-            "tasks": [
-                {
-                    "id": t.id,
-                    "state": t.state,
-                    "title": t.text
-                }
-                for t in filtered_tasks
-            ]
-        })
-
-    # Format output
     if args.format == "json":
         print(json.dumps(projects_data, indent=2))
     else:

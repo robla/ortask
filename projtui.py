@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Minimal project task menu for org-backed workspaces."""
+"""Minimal project task menu for org-backed workspaces.
+
+This script owns the interactive terminal UI. Project discovery, config
+resolution, and task parsing/editing come from ``ortasklib``.
+"""
 
 from __future__ import annotations
 
 import argparse
-import configparser
 import os
 import shlex
 import subprocess
@@ -12,13 +15,20 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import ortask
+# Make ``ortasklib`` importable regardless of the working directory.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from ortasklib import core, tasks
+from ortasklib.manager import (
+    Project,
+    default_config_path,
+    discover_projects,
+    resolve_projdir,
+)
 
 
-SKIP_PROJECT_DIRS = {".git", ".hg", ".svn", "__pycache__", "docs"}
-DEFAULT_PROJDIR = "~/Projects"
-CONFIG_SECTION = "projtui"
-CONFIG_OPTION = "projdir"
 DETAIL_LINE_LIMIT = 20
 
 # ANSI escape codes for colorful prompts
@@ -28,99 +38,14 @@ ANSI_RESET = "\033[0m"
 
 
 @dataclass(frozen=True)
-class Project:
-    name: str
-    path: Path
-    org_file: Path
-
-
-@dataclass(frozen=True)
 class MenuItem:
     label: str
     detail: str
-    task: ortask.TodoItem | None = None
+    task: core.TodoItem | None = None
     line_num: int | None = None
 
 
-def default_config_path() -> Path:
-    config_home = os.environ.get("XDG_CONFIG_HOME")
-    if config_home:
-        return Path(config_home).expanduser() / "ortask" / "projtui.ini"
-    return Path.home() / ".config" / "ortask" / "projtui.ini"
-
-
-def read_config_projdir(config_path: Path) -> str | None:
-    if not config_path.exists():
-        return None
-    parser = configparser.ConfigParser()
-    parser.read(config_path, encoding="utf-8")
-    if not parser.has_option(CONFIG_SECTION, CONFIG_OPTION):
-        return None
-    value = parser.get(CONFIG_SECTION, CONFIG_OPTION).strip()
-    return value or None
-
-
-def _friendly_path(path: Path, original: str | None = None) -> str:
-    if original and original.startswith("~"):
-        return original
-    try:
-        return "~/" + str(path.relative_to(Path.home()))
-    except ValueError:
-        return str(path)
-
-
-def resolve_projdir(cli_projdir: str | None, config_path: Path) -> tuple[Path, str]:
-    raw = cli_projdir or read_config_projdir(config_path) or DEFAULT_PROJDIR
-    resolved = Path(raw).expanduser().resolve()
-    return resolved, _friendly_path(resolved, raw)
-
-
-def _org_sort_key(path: Path) -> tuple[int, str]:
-    lower = path.name.lower()
-    if path.name == "TODO.org":
-        return (0, lower)
-    if lower == "todo.org":
-        return (1, lower)
-    if path.name.startswith("TODO-") and path.suffix == ".org":
-        return (2, lower)
-    return (3, lower)
-
-
-def choose_org_file(project_dir: Path) -> Path | None:
-    root_files = sorted(
-        (p for p in project_dir.iterdir() if p.is_file() and p.suffix == ".org"),
-        key=_org_sort_key,
-    )
-    if root_files:
-        return root_files[0]
-
-    nested: list[Path] = []
-    for child in sorted(project_dir.iterdir(), key=lambda p: p.name.lower()):
-        if not child.is_dir():
-            continue
-        nested.extend(
-            sorted(
-                (p for p in child.iterdir() if p.is_file() and p.suffix == ".org"),
-                key=_org_sort_key,
-            )
-        )
-    return nested[0] if nested else None
-
-
-def discover_projects(workspace: Path) -> list[Project]:
-    projects: list[Project] = []
-    for child in sorted(workspace.iterdir(), key=lambda p: p.name.lower()):
-        if not child.is_dir():
-            continue
-        if child.name in SKIP_PROJECT_DIRS or child.name.startswith("."):
-            continue
-        org_file = choose_org_file(child)
-        if org_file:
-            projects.append(Project(child.name, child, org_file))
-    return projects
-
-
-def _priority_rank(item: ortask.TodoItem) -> int:
+def _priority_rank(item: core.TodoItem) -> int:
     if item.priority == "A":
         return 0
     if item.priority == "B":
@@ -130,7 +55,7 @@ def _priority_rank(item: ortask.TodoItem) -> int:
     return 3
 
 
-def _task_sort_key(item: ortask.TodoItem) -> tuple[int, int, int, int]:
+def _task_sort_key(item: core.TodoItem) -> tuple[int, int, int, int]:
     return (
         0 if item.state == "TODO" else 1,
         _priority_rank(item),
@@ -155,19 +80,19 @@ def _read_only_headings(text: str) -> list[MenuItem]:
 
 def load_menu_items(org_file: Path, include_done: bool = False) -> list[MenuItem]:
     text = org_file.read_text(encoding="utf-8")
-    tasks = ortask.parse_org(text)
-    if tasks:
+    task_items = core.parse_org(text)
+    if task_items:
         seen: set[str] = set()
         duplicates: set[str] = set()
-        for task in tasks:
-            key = ortask.canonical_id(task.id)
+        for task in task_items:
+            key = core.canonical_id(task.id)
             if key in seen:
                 duplicates.add(task.id)
             seen.add(key)
         if duplicates:
             dupes = ", ".join(sorted(duplicates))
             raise ValueError(f"duplicate task IDs in {org_file}: {dupes}")
-        filtered = [task for task in tasks if include_done or task.state == "TODO"]
+        filtered = [task for task in task_items if include_done or task.state == "TODO"]
         return [
             MenuItem(
                 label=f"[{task.state}] {task.id} {task.text}",
@@ -200,13 +125,13 @@ def _print_items(title: str, items: list[MenuItem]) -> None:
 def _show_context(org_file: Path, item: MenuItem) -> None:
     print()
     if item.task:
-        items = ortask.parse_org(org_file.read_text(encoding="utf-8"))
+        items = core.parse_org(org_file.read_text(encoding="utf-8"))
         lines: list[str] = []
         selected = item.task
         prefix = selected.id + "."
         for task in items:
             if task.id == selected.id or task.id.startswith(prefix):
-                lines.append(ortask._build_org_heading(task))
+                lines.append(core.build_org_heading(task))
                 lines.extend(task.body_lines)
         for line in lines[:DETAIL_LINE_LIMIT]:
             print(line)
@@ -237,7 +162,7 @@ def _direct_subtasks(org_file: Path, item: MenuItem) -> list[MenuItem]:
         return []
     selected = item.task
     prefix = selected.id + "."
-    items = ortask.parse_org(org_file.read_text(encoding="utf-8"))
+    items = core.parse_org(org_file.read_text(encoding="utf-8"))
     children = [
         task for task in items
         if task.id.startswith(prefix) and task.level == selected.level + 1
@@ -328,8 +253,13 @@ def focus_menu(org_file: Path, item: MenuItem) -> bool:
         elif choice == "d" and item.task:
             confirm = input(f"{ANSI_BOLD}{ANSI_CYAN}mark {item.task.id} DONE? [y/N]> {ANSI_RESET}").strip().lower()
             if confirm == "y":
-                args = argparse.Namespace(file=org_file, id=item.task.id)
-                ortask.cmd_done(args)
+                text = org_file.read_text(encoding="utf-8")
+                try:
+                    new_lines = tasks.change_state(text, item.task.id, "DONE")
+                except tasks.TaskNotFound:
+                    new_lines = None
+                if new_lines is not None:
+                    core.write_lines(org_file, new_lines)
                 print(f"marked {item.task.id} DONE")
                 return True
         elif choice == "e":

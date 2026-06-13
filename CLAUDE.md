@@ -67,17 +67,21 @@ section. That broader discovery is **specified but not yet implemented** in
   `--dry-run` reports and exits 0 without modifying the file.
 - **`orgmgr.py`** (~180 lines) implements read-only `list`. Future verbs
   (`projadd`, `projrm`, `scan`, `doctor`) are specified but unimplemented.
-- **`projtui.py`** (~390 lines) implements the minimal numbered-menu workflow.
-- **Planned refactor:** split the core into a library (`lib/orgmod.py`) with the
-  CLI as a thin front-end (`ortask.py` or `bin/ortask.py`). Non-interactive
-  `ortask.py`/`orgmgr.py` must stay stdlib-only even if the TUI later adopts
-  optional dependencies.
+- **`projtui.py`** implements the minimal numbered-menu workflow.
+- **Shared library (done):** reusable logic lives in the `ortasklib/` package
+  (`core`, `tasks`, `manager`); the three scripts are thin front-ends that no
+  longer import each other. See `docs/architecture.md`. Everything stays
+  stdlib-only even if the TUI later adopts optional dependencies.
 
 ## Key files
 
+- `ortasklib/` — shared package: `core.py` (parse/IDs/discovery/atomic writes),
+  `tasks.py` (local formatting/show/edit/validation), `manager.py` (project
+  discovery/config/summaries)
 - `ortask.py` — local task CLI (the core tool)
 - `orgmgr.py` — global read-only project/task overview
 - `projtui.py` — interactive project/task TUI
+- `tests/test_ortask_suite.py` — pytest suite; doubles as the refactor gate
 - `README.org` — project docs (no longer the default task data file)
 - `todo.org` — the actual task data file for this repo
 - `docs/` — specs and design notes (see below); `docs/ortask.md` is the source
@@ -87,13 +91,16 @@ section. That broader discovery is **specified but not yet implemented** in
 
 ## Architecture
 
-Three layers, maintained across the tools:
+Three layers, now housed in `ortasklib/` (see `docs/architecture.md`):
 
-1. **Parser**: `parse_org(text) -> list[TodoItem]` — regex-based, tracks source
-   line numbers for each task and captures its body lines.
-2. **Query/mutate**: filter, search, and modify the in-memory model.
+1. **Parser**: `core.parse_org(text) -> list[TodoItem]` — regex-based, tracks
+   source line numbers for each task and captures its body lines.
+2. **Query/mutate**: `core` filtering/ID helpers plus `tasks` edit helpers
+   (`add_task`, `change_state`, …) that take text and return new line lists.
 3. **Writer**: minimal text patching — change only matched heading lines (and
    surgically insert for `add`); preserve everything else.
+
+Shared modules never parse CLI args or call `sys.exit`; the scripts own that.
 
 Write operations use atomic file replacement (write to a temp file, then
 rename). Edits touch only the `* Tasks` subtree and never reformat the file.
