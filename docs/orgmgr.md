@@ -50,6 +50,8 @@ within each project. It shows each Org file as a resolved path, with `$HOME`
 collapsed to `~` when possible.
 
 ```sh
+orgmgr.py                         # show help
+orgmgr.py help                    # show help
 orgmgr.py list
 orgmgr.py --registry ~/tmpsorta/proj2026 list
 orgmgr.py list --all

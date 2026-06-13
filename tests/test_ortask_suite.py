@@ -335,6 +335,23 @@ def test_cli_smoke_tests(tmp_path: Path) -> None:
     assert "sample" in projtui_result.stdout
 
 
+def test_orgmgr_no_args_and_help_show_help() -> None:
+    # This test ensures orgmgr.py is explicit: bare invocation shows help rather
+    # than listing the configured real registry.
+    for args in ([], ["help"]):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "orgmgr.py"), *args],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert "usage:" in result.stdout
+        assert "list" in result.stdout
+        assert result.stderr == ""
+
+
 def test_add_task_creates_tasks_section_if_missing(tmp_path: Path) -> None:
     # This test verifies that cmd_add creates a "* Tasks" section at the end
     # of the file if one does not already exist.

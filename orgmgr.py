@@ -163,6 +163,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub = parser.add_subparsers(dest="command")
+    sub.add_parser("help", help="show this help message")
 
     # list subcommand
     p_list = sub.add_parser("list", help="list projects and top-level tasks")
@@ -221,13 +222,11 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    # Default command is list
-    cmd = args.command or "list"
+    if args.command is None or args.command == "help":
+        parser.print_help()
+        return 0
 
-    # Fill defaults for the default command when invoked without subcommand
-    if args.command is None:
-        args.all = False
-        args.format = "plain"
+    cmd = args.command
 
     dispatch = {
         "list": cmd_list,
