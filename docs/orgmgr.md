@@ -61,6 +61,8 @@ orgmgr.py list --format json
 Example plain output:
 
 ```text
+Registry: ~/tmpsorta/proj2026
+
 ortask  ~/src/ortask/todo.org
   [TODO] t0001 Remove AI slop from docs/taskwarrior.md
   [TODO] t0002 create .org file if none exist in directory when using 'ort add'

@@ -313,14 +313,25 @@ def test_cli_smoke_tests(tmp_path: Path) -> None:
     assert "*** TODO t0001.1 Smoke child" in show_result.stdout
 
     orgmgr_result = subprocess.run(
-        [sys.executable, str(ROOT / "orgmgr.py"), "--registry", str(workspace), "list", "--format", "json"],
+        [sys.executable, str(ROOT / "orgmgr.py"), "--registry", str(workspace), "list"],
         cwd=ROOT,
         text=True,
         capture_output=True,
         check=False,
     )
     assert orgmgr_result.returncode == 0
-    assert json.loads(orgmgr_result.stdout)[0]["project"] == "sample"
+    assert orgmgr_result.stdout.splitlines()[0] == f"Registry: {workspace}"
+    assert "sample" in orgmgr_result.stdout
+
+    orgmgr_json_result = subprocess.run(
+        [sys.executable, str(ROOT / "orgmgr.py"), "--registry", str(workspace), "list", "--format", "json"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert orgmgr_json_result.returncode == 0
+    assert json.loads(orgmgr_json_result.stdout)[0]["project"] == "sample"
 
     projtui_result = subprocess.run(
         [sys.executable, str(ROOT / "projtui.py"), "--registry", str(workspace)],

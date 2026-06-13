@@ -33,9 +33,9 @@ def cmd_list(args: argparse.Namespace) -> int:
     if args.format == "json":
         print(json.dumps(projects_data, indent=2))
     else:
+        print(f"Registry: {display_path}")
         for idx, p in enumerate(projects_data):
-            if idx > 0:
-                print()
+            print()
             print(f"{p['project']}  {p['file']}")
             if "warning" in p:
                 warning_msg = p["warning"]
