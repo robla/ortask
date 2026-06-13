@@ -21,6 +21,11 @@ CONFIG_SECTION = "projtui"
 CONFIG_OPTION = "projdir"
 DETAIL_LINE_LIMIT = 20
 
+# ANSI escape codes for colorful prompts
+ANSI_BOLD = "\033[1m"
+ANSI_CYAN = "\033[36m"
+ANSI_RESET = "\033[0m"
+
 
 @dataclass(frozen=True)
 class Project:
@@ -180,7 +185,7 @@ def _prompt_choice(count: int, *, allow_back: bool = True) -> str:
     if allow_back:
         suffix += ", b=back"
     suffix += ", q=quit"
-    return input(f"{suffix}> ").strip().lower()
+    return input(f"{ANSI_BOLD}{ANSI_CYAN}{suffix}> {ANSI_RESET}").strip().lower()
 
 
 def _print_items(title: str, items: list[MenuItem]) -> None:
@@ -311,7 +316,7 @@ def focus_menu(org_file: Path, item: MenuItem) -> bool:
         print("  e. open in editor")
         print("  b. back to task menu")
         print("  q. quit")
-        choice = input("number, d/e/b/q> ").strip().lower()
+        choice = input(f"{ANSI_BOLD}{ANSI_CYAN}number, d/e/b/q> {ANSI_RESET}").strip().lower()
         if choice == "q":
             return False
         if choice == "b":
@@ -321,7 +326,7 @@ def focus_menu(org_file: Path, item: MenuItem) -> bool:
                 return False
             _show_context(org_file, item)
         elif choice == "d" and item.task:
-            confirm = input(f"mark {item.task.id} DONE? [y/N]> ").strip().lower()
+            confirm = input(f"{ANSI_BOLD}{ANSI_CYAN}mark {item.task.id} DONE? [y/N]> {ANSI_RESET}").strip().lower()
             if confirm == "y":
                 args = argparse.Namespace(file=org_file, id=item.task.id)
                 ortask.cmd_done(args)
