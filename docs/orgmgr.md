@@ -78,9 +78,11 @@ Use one blank line between projects. Keep task IDs visible.
 
 ## Verb: projadd
 
-`orgmgr.py projadd` registers a project in the shared project registry so it
-appears in `orgmgr.py list` and in `projtui.py` without the user editing config
-by hand. It is the intended way to grow the global project list.
+`orgmgr.py projadd` registers a single project — exactly one directory — in the
+shared project registry so it appears in `orgmgr.py list` and in `projtui.py`
+without the user editing config by hand. It is the intended way to grow the
+global project list. It never scans subdirectories; importing a whole workspace
+of projects is `migrate`'s job (see *Verb: migrate*).
 
 `projadd` refuses to run until the shared registry has been initialized by
 `orgmgr.py migrate` (see *Verb: migrate*). If the shared `ortask.ini` registry
@@ -97,8 +99,8 @@ This makes moving off the deprecated `projdir` config a deliberate, one-time
 step rather than something `projadd` does silently.
 
 ```sh
-orgmgr.py projadd                         # register the current directory
-orgmgr.py projadd ~/src/ortask
+orgmgr.py projadd                         # register the current directory as one project
+orgmgr.py projadd /tmp/foo                 # register /tmp/foo (find its TODO.org, then fallbacks)
 orgmgr.py projadd ~/src/ortask --name ortask
 orgmgr.py projadd ./elweek --file TODO-ElWeek.org
 orgmgr.py projadd ~/src/ortask --dry-run
@@ -106,14 +108,18 @@ orgmgr.py projadd ~/src/ortask --dry-run
 
 ### Behavior
 
-1. **Resolve the project directory.** The optional positional `PATH` defaults to
-   the current working directory. If `PATH` is a directory, it is the project
-   root. If `PATH` points directly at an Org file, its parent directory is the
-   project root and that file is used as the task file (skipping discovery).
-2. **Discover the task file.** Within the project root, run the *same* task-file
-   discovery that `ortask.py` uses — `resolve_org_file()` evaluated with the
-   project root as the working directory. An explicit `--file` wins; otherwise
-   probe the well-known names in order (`TODO*.org` preferred per
+1. **Resolve the one project directory.** `projadd` adds the given directory
+   itself as a single project; it never looks inside subdirectories. The
+   optional positional `PATH` is that directory and defaults to the current
+   working directory — so `orgmgr.py projadd` registers the current directory and
+   `orgmgr.py projadd /tmp/foo` registers `/tmp/foo`. If `PATH` instead points
+   directly at an Org file, its parent directory is the project root and that
+   file is used as the task file (skipping discovery).
+2. **Discover the task file in that directory.** Within the project root (and
+   only that directory, not its children), run the *same* task-file discovery
+   that `ortask.py` uses — `resolve_org_file()` evaluated with the project root
+   as the working directory. An explicit `--file` wins; otherwise probe the
+   well-known names in order (`TODO.org` / `TODO*.org` preferred per
    `docs/format.md`, then `todo.org`, `tasks.org`, then the first `*.org`
    alphabetically, warning if several match). This guarantees `projadd`,
    `ortask.py`, and `projtui.py` all agree on which file holds a project's
