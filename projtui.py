@@ -19,6 +19,7 @@ SKIP_PROJECT_DIRS = {".git", ".hg", ".svn", "__pycache__", "docs"}
 DEFAULT_PROJDIR = "~/Projects"
 CONFIG_SECTION = "projtui"
 CONFIG_OPTION = "projdir"
+DETAIL_LINE_LIMIT = 20
 
 
 @dataclass(frozen=True)
@@ -194,9 +195,18 @@ def _print_items(title: str, items: list[MenuItem]) -> None:
 def _show_context(org_file: Path, item: MenuItem) -> None:
     print()
     if item.task:
-        print(ortask._build_org_heading(item.task))
-        for line in item.task.body_lines:
+        items = ortask.parse_org(org_file.read_text(encoding="utf-8"))
+        lines: list[str] = []
+        selected = item.task
+        prefix = selected.id + "."
+        for task in items:
+            if task.id == selected.id or task.id.startswith(prefix):
+                lines.append(ortask._build_org_heading(task))
+                lines.extend(task.body_lines)
+        for line in lines[:DETAIL_LINE_LIMIT]:
             print(line)
+        if len(lines) > DETAIL_LINE_LIMIT:
+            print(f"... truncated {len(lines) - DETAIL_LINE_LIMIT} more line(s)")
         return
 
     lines = org_file.read_text(encoding="utf-8").splitlines()
@@ -204,13 +214,38 @@ def _show_context(org_file: Path, item: MenuItem) -> None:
         return
     start = item.line_num
     base_level = len(lines[start].split(" ", 1)[0])
-    print(lines[start])
+    display_lines = [lines[start]]
     for line in lines[start + 1:]:
         if line.startswith("*"):
             level = len(line.split(" ", 1)[0])
             if level <= base_level:
                 break
+        display_lines.append(line)
+    for line in display_lines[:DETAIL_LINE_LIMIT]:
         print(line)
+    if len(display_lines) > DETAIL_LINE_LIMIT:
+        print(f"... truncated {len(display_lines) - DETAIL_LINE_LIMIT} more line(s)")
+
+
+def _direct_subtasks(org_file: Path, item: MenuItem) -> list[MenuItem]:
+    if item.task is None:
+        return []
+    selected = item.task
+    prefix = selected.id + "."
+    items = ortask.parse_org(org_file.read_text(encoding="utf-8"))
+    children = [
+        task for task in items
+        if task.id.startswith(prefix) and task.level == selected.level + 1
+    ]
+    return [
+        MenuItem(
+            label=f"[{task.state}] {task.id} {task.text}",
+            detail="ortask task",
+            task=task,
+            line_num=task.line_num,
+        )
+        for task in children
+    ]
 
 
 def _open_editor(org_file: Path, line_num: int | None) -> None:
@@ -223,8 +258,18 @@ def _open_editor(org_file: Path, line_num: int | None) -> None:
         print("VISUAL or EDITOR is empty")
         return
     editor_name = Path(parts[0]).name
-    if line_num is not None and editor_name in {"vi", "vim", "nvim"}:
-        subprocess.run(parts + [f"+{line_num + 1}", str(org_file)], check=False)
+    line = None if line_num is None else line_num + 1
+    if line is not None and editor_name in {"vi", "vim", "nvim", "less"}:
+        subprocess.run(parts + [f"+{line}", str(org_file)], check=False)
+        return
+    if line is not None and editor_name in {"emacs", "emacsclient"}:
+        subprocess.run(parts + [f"+{line}", str(org_file)], check=False)
+        return
+    if line is not None and editor_name in {"nano", "pico"}:
+        subprocess.run(parts + [f"+{line}", str(org_file)], check=False)
+        return
+    if line is not None and editor_name in {"code", "codium"}:
+        subprocess.run(parts + ["--goto", f"{org_file}:{line}"], check=False)
         return
     subprocess.run(parts + [str(org_file)], check=False)
 
@@ -252,30 +297,37 @@ def task_menu(project: Project, include_done: bool) -> bool:
 
 
 def focus_menu(org_file: Path, item: MenuItem) -> bool:
+    _show_context(org_file, item)
     while True:
+        subtasks = _direct_subtasks(org_file, item)
         print()
-        print(f"Task: {item.label}")
-        print("  1. show details")
+        if subtasks:
+            print("Subtasks:")
+            for idx, subtask in enumerate(subtasks, start=1):
+                print(f"  {idx}. {subtask.label}")
+        print("Actions:")
         if item.task:
-            print("  2. mark DONE")
-        print("  3. open in editor")
+            print("  d. mark DONE")
+        print("  e. open in editor")
         print("  b. back to task menu")
         print("  q. quit")
-        choice = _prompt_choice(3)
+        choice = input("number, d/e/b/q> ").strip().lower()
         if choice == "q":
             return False
         if choice == "b":
             return True
-        if choice == "1":
+        if choice.isdigit() and 1 <= int(choice) <= len(subtasks):
+            if not focus_menu(org_file, subtasks[int(choice) - 1]):
+                return False
             _show_context(org_file, item)
-        elif choice == "2" and item.task:
+        elif choice == "d" and item.task:
             confirm = input(f"mark {item.task.id} DONE? [y/N]> ").strip().lower()
             if confirm == "y":
                 args = argparse.Namespace(file=org_file, id=item.task.id)
                 ortask.cmd_done(args)
                 print(f"marked {item.task.id} DONE")
                 return True
-        elif choice == "3":
+        elif choice == "e":
             _open_editor(org_file, item.line_num)
         else:
             print("invalid choice")

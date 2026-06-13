@@ -104,21 +104,23 @@ the file:
 
 ```text
 Task: publish latest episode promo post
+https://www.reddit.com/r/electorama/submit
 
-Next action:
-  1. show task details
-  2. mark DONE
-  3. add note
-  4. add child task
-  5. open in editor
+Actions:
+  d. mark DONE
+  e. open in editor
   b. back to task menu
 ```
 
-The prompt should help the user decide the next concrete action. For the
-Electorama Weekly case, task text may ask for promotion steps such as
-drafting copy, checking links, publishing a post, or recording where it was
-shared. Those prompts should come from the Org task body when present; the
-TUI should not invent project policy.
+The prompt should show task details immediately when a task is selected,
+including descendant subtasks. Detail display is capped at 20 lines with a
+truncation note so selecting a large parent task stays readable. For the
+Electorama Weekly case, links used to complete the task should appear as plain
+body lines under the relevant task, so the TUI displays them before the action
+menu. When the selected task has direct subtasks, list them as numbered menu
+items so the user can drill into one without returning to the full task list.
+Opening the editor for a selected task should jump to that task's line when
+the configured editor supports line arguments.
 
 ## Operations
 

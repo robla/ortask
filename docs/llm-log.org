@@ -41,3 +41,6 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-12 Fri 14:57]: reformatted =~/tmpsorta/electorama-weekly/TODO-ElWeek.org= into an ortask-compatible weekly promo checklist with a preserved destination template.
 ** Codex [2026-06-12 Fri 15:17]: added support for weekly task IDs like =tw26W24=, updated the Electorama Weekly checklist to use week IDs, and documented the convention in =docs/format.md= and =docs/ortask.md=.
 ** Codex [2026-06-12 Fri 15:59]: updated the Electorama Weekly template to mirror the handcrafted weekly checklist and documented bare task links as body lines so they appear in task details.
+** Codex [2026-06-12 Fri 18:38]: changed =projtui.py= task selection to show details immediately and expanded editor launch support for opening selected tasks at their line number.
+** Codex [2026-06-12 Fri 18:46]: updated =projtui.py= task details to include descendant subtasks and cap displayed detail text at 20 lines.
+** Codex [2026-06-12 Fri 18:49]: added subtask drill-down menus to =projtui.py= so selected tasks offer direct subtasks as numbered items to view.
