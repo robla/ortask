@@ -37,6 +37,11 @@ class Project:
     org_file: Path
 
 
+def canonical_org_file(project: Project) -> Path:
+    """Return the real task-file path, resolving any projdir symlinks."""
+    return project.org_file.resolve()
+
+
 # ---------------------------------------------------------------------------
 # Config: where the master projdir lives
 # ---------------------------------------------------------------------------

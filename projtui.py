@@ -23,6 +23,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 from ortasklib import core, tasks
 from ortasklib.manager import (
     Project,
+    canonical_org_file,
     discover_projects,
     resolve_projdir,
 )
@@ -204,13 +205,14 @@ def _open_editor(org_file: Path, line_num: int | None) -> None:
 
 
 def task_menu(project: Project, include_done: bool) -> bool:
+    org_file = canonical_org_file(project)
     while True:
         try:
-            items = load_menu_items(project.org_file, include_done=include_done)
+            items = load_menu_items(org_file, include_done=include_done)
         except ValueError as exc:
             print(exc)
             return True
-        _print_items(f"{project.name} tasks ({project.org_file})", items)
+        _print_items(f"{project.name} tasks ({org_file})", items)
         choice = _prompt_choice(len(items))
         if choice == "q":
             return False
@@ -221,7 +223,7 @@ def task_menu(project: Project, include_done: bool) -> bool:
             continue
 
         item = items[int(choice) - 1]
-        if not focus_menu(project.org_file, item):
+        if not focus_menu(org_file, item):
             return False
 
 
