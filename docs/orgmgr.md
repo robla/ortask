@@ -3,14 +3,17 @@
 `orgmgr.py` is a proposed manager for Org files across the user's filesystem.
 It is distinct from `ortask.py`.
 
-`ortask.py` is local: it reads or edits one selected Org task file. Its verbs
-such as `list`, `show`, `add`, `done`, and `open` operate against a specific
-file resolved by `--file`, `ORTASK_FILE`, or local file lookup.
+The `ortask.py` CLI defaults to local behavior.  It reads or edits one
+selected Org task file in the current working directory. Its verbs
+such as `list`, `show`, `add`, `done`, and `open` operate against a
+specific file resolved by `--file`, `ORTASK_FILE`, or local file
+lookup.
 
-`orgmgr.py` is global: it knows about many Org files, groups them into
-projects, and can build or maintain an index of the Org files the user wants
-managed. It should eventually support project-level verbs such as `projadd`
-and `projrm`.
+`orgmgr.py` is the global operations command for the ortask suite of
+tools.  orgmgr.py knows about many Org files, groups them into
+projects, and can build or maintain an index of the Org files the user
+wants managed. It should eventually support project-level verbs such
+as `projadd` and `projrm`.
 
 ## First Verb: list
 
@@ -31,7 +34,7 @@ That means `--projdir` overrides configuration, the global config can point to
 
 ## Project Discovery
 
-For now, reuse `projtui.py` discovery rules:
+Reuse `projtui.py` discovery rules:
 
 - scan immediate subdirectories of the configured project directory
 - skip hidden directories and infrastructure directories such as `.git`,
@@ -39,9 +42,7 @@ For now, reuse `projtui.py` discovery rules:
 - choose each project's Org file using the same naming order as `projtui.py`
 - do not recurse arbitrarily through project trees
 
-Longer term, `orgmgr.py` should maintain its own project registry or database
-of Org files. That database can grow beyond a single project directory, but
-the first version should not invent a separate discovery model.
+The shared configuration rules may be listed as belonging to projtui.py.  Longer term, `orgmgr.py` and `projtui.py` will refer to the ortask systems global list of projects.
 
 ## Task Selection
 
