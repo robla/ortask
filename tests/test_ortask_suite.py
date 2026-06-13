@@ -323,3 +323,28 @@ def test_cli_smoke_tests(tmp_path: Path) -> None:
     assert projtui_result.returncode == 0
     assert "Projects in" in projtui_result.stdout
     assert "sample" in projtui_result.stdout
+
+
+def test_add_task_creates_tasks_section_if_missing(tmp_path: Path) -> None:
+    # This test verifies that cmd_add creates a "* Tasks" section at the end
+    # of the file if one does not already exist.
+    org_file = write(
+        tmp_path / "todo.org",
+        """
+        * Intro
+        Keep me.
+        """,
+    )
+
+    assert ortask.cmd_add(argparse.Namespace(file=org_file, title="First task", parent=None)) == 0
+
+    lines = org_file.read_text(encoding="utf-8").splitlines()
+    # It should have added the "* Tasks" section and the new task
+    assert "* Tasks" in lines
+    assert "** TODO t0001 First task" in lines
+    # Ensure they are appended at the end
+    tasks_index = lines.index("* Tasks")
+    task_index = lines.index("** TODO t0001 First task")
+    assert tasks_index > lines.index("Keep me.")
+    assert task_index == tasks_index + 1
+

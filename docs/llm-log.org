@@ -58,4 +58,6 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Claude [2026-06-12 Fri 22:02]: added two pytest cases beyond the original nine, covering JSON/org list formatters (nesting + org round-trip) and =show= descendant expansion with shorthand week-ID lookup.
 ** Claude [2026-06-12 Fri 22:20]: implemented the =docs/architecture.md= refactor — created the =ortasklib/= package (=core=, =tasks=, =manager=), rewrote =ortask.py=/=orgmgr.py=/=projtui.py= as thin front-ends that no longer import each other (re-exporting moved names so the test suite stays green), then updated =docs/architecture.md= and =CLAUDE.md= to match.
 ** Gemini [2026-06-12 Fri 21:58]: modified projtui.py to use bold cyan ANSI escape codes for interactive task and project selection prompts.
+** Gemini [2026-06-12 Fri 22:28]: added a 12th test case to tests/test_ortask_suite.py verifying the fallback tasks-section creation behavior of cmd_add.
+
 
