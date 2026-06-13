@@ -30,12 +30,23 @@ def resolve_org_file() -> Path | None:
     """Find the default org file using the probe order.
 
     1. ORTASK_FILE env var
-    2. Probe for well-known names: todo.org, tasks.org
-    3. Pick first .org file alphabetically (warn if multiple)
+    2. Probe for TODO.org and TODO*.org files
+    3. Probe for compatibility names: todo.org, tasks.org
+    4. Pick first .org file alphabetically (warn if multiple)
     """
     env = os.environ.get("ORTASK_FILE")
     if env:
         return Path(env)
+
+    todo_files = sorted(
+        Path(".").glob("TODO*.org"),
+        key=lambda p: (p.name != "TODO.org", p.name.lower()),
+    )
+    if todo_files:
+        if len(todo_files) > 1:
+            print(f"warning: multiple TODO*.org files found, using {todo_files[0].name}"
+                  f" (override with --file or ORTASK_FILE)", file=sys.stderr)
+        return todo_files[0]
 
     for name in PROBE_NAMES:
         p = Path(name)
@@ -543,7 +554,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--file", type=Path, default=None,
-        help="org file to operate on (default: todo.org, tasks.org, or first *.org)",
+        help="org file to operate on (default: TODO*.org, todo.org, tasks.org, or first *.org)",
     )
 
     sub = parser.add_subparsers(dest="command")
@@ -598,7 +609,7 @@ def main() -> int:
     if args.file is None:
         resolved = resolve_org_file()
         if resolved is None:
-            print("no org file found (create todo.org or use --file)",
+            print("no org file found (create TODO.org or use --file)",
                   file=sys.stderr)
             return 1
         args.file = resolved

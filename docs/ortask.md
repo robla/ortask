@@ -2,7 +2,7 @@
 
 ## NAME
 
-ortask.py - inspect and update org-mode TODO tasks in README.org
+ortask.py - inspect and update org-mode TODO tasks in local Org files
 
 ## SYNOPSIS
 
@@ -18,8 +18,10 @@ ortask.py repair [--dry-run | --fix] [--file FILE]
 
 ## DESCRIPTION
 
-**ortask.py** reads and edits the `* Tasks` section of an org-mode
-file (by default `README.org` in the current working directory).
+**ortask.py** reads and edits the `* Tasks` section of a local org-mode
+file. By default it prefers `TODO.org` or another `TODO*.org` file in the
+current working directory, then falls back to compatibility names and other
+Org files.
 Tasks are org headings with TODO/DONE keywords and stable IDs such as
 `t0001`, `t0001.1`, `tw26W24`, and `tw26W24.1`. See `--file` under
 GLOBAL OPTIONS for the file resolution order.
@@ -113,9 +115,11 @@ subtask IDs that don't match their parent heading, or headings under
 **--file** *FILE*
 :   Org file to operate on.  Default resolution order:
     1. `ORTASK_FILE` environment variable
-    2. `todo.org` in the current working directory
-    3. `tasks.org` in the current working directory
-    4. The first `*.org` file alphabetically (warns if multiple)
+    2. `TODO.org` in the current working directory
+    3. Other `TODO*.org` files alphabetically
+    4. `todo.org` in the current working directory
+    5. `tasks.org` in the current working directory
+    6. The first `*.org` file alphabetically (warns if multiple)
 
 ## TASK ID FORMAT
 
