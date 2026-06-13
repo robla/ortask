@@ -50,4 +50,5 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Gemini [2026-06-12 Fri 19:47]: implemented the first version of =orgmgr.py= with the read-only =list= command to scan workspaces, display projects, and list top-level tasks.
 ** Claude [2026-06-12 Fri 20:46]: rewrote =CLAUDE.md= to match the current docs and implementation, covering =orgmgr.py= and =projtui.py=, weekly task IDs, the corrected default-file resolution order, and the =docs/llm-log.org= convention.
 ** Claude [2026-06-12 Fri 21:02]: specified the =orgmgr.py projadd= subcommand in =docs/orgmgr.md=, reusing =ortask.py= task-file discovery to register projects in a new shared =~/.config/ortask/ortask.ini= =[projects]= registry, and documented the deprecation plan for =projtui.py='s =projdir= config.
+** Claude [2026-06-12 Fri 21:18]: added an =orgmgr.py migrate= subcommand to =docs/orgmgr.md= that initializes the shared registry (importing any =projdir= projects) and gated =projadd= behind it with a friendly error until migration is run.
 

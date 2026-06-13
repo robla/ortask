@@ -82,6 +82,20 @@ Use one blank line between projects. Keep task IDs visible.
 appears in `orgmgr.py list` and in `projtui.py` without the user editing config
 by hand. It is the intended way to grow the global project list.
 
+`projadd` refuses to run until the shared registry has been initialized by
+`orgmgr.py migrate` (see *Verb: migrate*). If the shared `ortask.ini` registry
+does not yet exist, `projadd` prints a friendly error and exits non-zero without
+creating any config:
+
+```text
+orgmgr.py projadd: project registry not set up yet.
+Run `orgmgr.py migrate` once to create ~/.config/ortask/ortask.ini
+(migrating any existing projtui.py `projdir` config), then re-run projadd.
+```
+
+This makes moving off the deprecated `projdir` config a deliberate, one-time
+step rather than something `projadd` does silently.
+
 ```sh
 orgmgr.py projadd                         # register the current directory
 orgmgr.py projadd ~/src/ortask
@@ -134,6 +148,59 @@ orgmgr.py projadd ~/src/ortask --dry-run
   proceed (a project may legitimately be reachable by more than one name during
   migration).
 
+## Verb: migrate
+
+`orgmgr.py migrate` performs the one-time transition from the deprecated
+`projtui.py` `projdir` config to the shared `[projects]` registry. It is a
+prerequisite for `projadd`: until `migrate` has created the shared `ortask.ini`,
+`projadd` refuses to run. Running `migrate` is what establishes the registry,
+whether or not there is an old `projdir` to import.
+
+```sh
+orgmgr.py migrate                          # import projdir (if any), else init empty registry
+orgmgr.py migrate --projdir ~/tmpsorta/proj2026
+orgmgr.py migrate --dry-run
+```
+
+### Behavior
+
+1. **Bail out if already migrated.** If `ortask.ini` already contains a
+   `[projects]` section, report that migration has already happened and exit 0
+   without changes (idempotent). `--force` re-runs and merges newly discovered
+   projects into the existing registry.
+2. **Locate the source.** Read `projdir` from `~/.config/ortask/projtui.ini`
+   (honoring `$XDG_CONFIG_HOME`), unless overridden by `--projdir`. If neither a
+   `projtui.ini` `projdir` nor `--projdir` is available there is nothing to
+   import; `migrate` still proceeds to step 4 to establish an empty registry.
+3. **Discover projects.** For each immediate subdirectory of `projdir`, run the
+   same `ortask.py` task-file discovery used by `projadd` and `list`. Record an
+   entry for every subdirectory that resolves to a file with a parseable
+   `* Tasks` section. Skip hidden and infrastructure directories (`.git`,
+   `docs`, `__pycache__`), reporting skipped entries only under a verbose flag.
+4. **Write the shared registry.** Create `~/.config/ortask/ortask.ini` with a
+   `[projects]` section holding the discovered entries (empty if there was
+   nothing to import), using the same atomic temp-file-then-rename strategy as
+   other config writes. Only config is written; no Org file is touched.
+5. **Leave projtui.ini in place.** `migrate` does not delete the old config. It
+   prints a summary of what was imported and a note that `[projtui] projdir` is
+   now deprecated in favor of the registry.
+
+### Options
+
+- `--projdir DIR` — source workspace directory to import, overriding
+  `projtui.ini`.
+- `--force` — re-run even when a `[projects]` registry already exists, merging
+  in any newly discovered projects. Existing entries are preserved; on a name
+  collision the existing entry wins and a warning is printed.
+- `--dry-run` — print the registry that would be written without modifying any
+  config. Exit 0.
+
+### Safety
+
+`migrate` is read-only with respect to Org content (it creates and edits no Org
+file) and never deletes `projtui.ini`. It only creates or extends the shared
+config registry, atomically.
+
 ## Shared Project Registry
 
 `projadd` writes to a shared, suite-wide config rather than a projtui-specific
@@ -180,17 +247,18 @@ Migration plan:
 
 1. **Introduce** the shared `ortask.ini` `[projects]` registry described above
    as the primary source of projects for both `orgmgr.py` and `projtui.py`.
-2. **Read both, registry wins.** During the transition, `projtui.py` reads the
+2. **Gate writes behind `migrate`.** The registry is created only by
+   `orgmgr.py migrate` (see *Verb: migrate*), which imports any existing
+   `projdir` projects. `projadd` refuses to run until the registry exists, so
+   the move off `projdir` is an explicit, one-time choice rather than a silent
+   side effect.
+3. **Read both, registry wins.** During the transition, `projtui.py` reads the
    shared `[projects]` registry *and* still honors `[projtui] projdir` (and
    `--projdir`). Projects discovered under `projdir` are merged in; on a name
    collision an explicit `[projects]` entry wins.
-3. **Provide a one-shot migration.** `orgmgr.py projadd --from-projdir`
-   (alternatively a future `scan` verb) walks the existing `projdir`, runs
-   discovery on each subdirectory, and writes explicit `[projects]` entries —
-   converting the old single-directory model into the registry so the user can
-   delete `projdir`.
-4. **Warn.** When `projdir` is the only configured source, `projtui.py` prints a
-   one-line deprecation note pointing at `orgmgr.py projadd`.
+4. **Warn.** When `projdir` is the only configured source (no registry yet),
+   `projtui.py` prints a one-line deprecation note pointing at
+   `orgmgr.py migrate`.
 5. **Remove later.** A future major version drops `[projtui] projdir` support
    once the registry is the norm. `--projdir` may remain as an ad-hoc override
    for scanning an unregistered directory.
@@ -200,8 +268,7 @@ Migration plan:
 `projadd` is specified above. Other potential verbs:
 
 - `projrm`: remove a project from the registry
-- `scan`: refresh the registry from configured roots (and from a deprecated
-  `projdir`)
+- `scan`: refresh the registry from configured roots
 - `doctor`: report missing files, duplicate IDs, parser failures, or stale
   registry entries
 
@@ -218,4 +285,8 @@ listing other projects.
 `orgmgr.py projadd` may write the shared config registry, but it is held to the
 same Org-content safety rules: it never creates a task file, never edits Org
 content, and refuses to register a project whose task file is missing or
-unparseable. Config writes are atomic.
+unparseable. It also refuses to run until `orgmgr.py migrate` has initialized
+the registry. Config writes are atomic.
+
+`orgmgr.py migrate` likewise only creates or extends the shared config registry,
+atomically. It creates and edits no Org file and never deletes `projtui.ini`.
