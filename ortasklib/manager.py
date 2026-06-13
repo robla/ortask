@@ -1,9 +1,10 @@
 """Project management helpers shared by ``orgmgr.py`` and ``projtui.py``.
 
-Covers config-path resolution, the legacy ``projdir`` workspace model, project
-discovery, per-project Org-file selection, and JSON-ready multi-project task
-summaries. Like the rest of ``ortasklib``, it does no argument parsing and never
-calls ``sys.exit``.
+Covers projdir resolution (``ortask.ini`` records where the master projdir is;
+``projtui.ini`` is a legacy fallback), project discovery over the projdir's
+per-project subdirectories, per-project Org-file selection, and JSON-ready
+multi-project task summaries. Like the rest of ``ortasklib``, it does no argument
+parsing and never calls ``sys.exit``.
 """
 
 from __future__ import annotations
@@ -18,12 +19,15 @@ from . import core
 
 SKIP_PROJECT_DIRS = {".git", ".hg", ".svn", "__pycache__", "docs"}
 DEFAULT_PROJDIR = "~/Projects"
+
+# Legacy projtui.ini config (still read as a fallback; retired by ``migrate``).
 CONFIG_SECTION = "projtui"
 CONFIG_OPTION = "projdir"
 
-# Shared suite registry written by ``orgmgr.py migrate``/``projadd``.
+# Canonical suite config: ortask.ini records where the master projdir lives.
 ORTASK_INI_NAME = "ortask.ini"
-REGISTRY_SECTION = "projects"
+PROJECTS_SECTION = "projects"
+PROJDIR_OPTION = "projdir"
 
 
 @dataclass(frozen=True)
@@ -34,25 +38,54 @@ class Project:
 
 
 # ---------------------------------------------------------------------------
-# Config / workspace resolution
+# Config: where the master projdir lives
 # ---------------------------------------------------------------------------
 
-def default_config_path() -> Path:
+def _config_dir() -> Path:
     config_home = os.environ.get("XDG_CONFIG_HOME")
-    if config_home:
-        return Path(config_home).expanduser() / "ortask" / "projtui.ini"
-    return Path.home() / ".config" / "ortask" / "projtui.ini"
+    base = Path(config_home).expanduser() if config_home else Path.home() / ".config"
+    return base / "ortask"
+
+
+def ortask_config_path() -> Path:
+    """Canonical suite config (``ortask.ini``), honoring ``XDG_CONFIG_HOME``."""
+    return _config_dir() / ORTASK_INI_NAME
+
+
+def default_config_path() -> Path:
+    """Legacy ``projtui.ini`` config, honoring ``XDG_CONFIG_HOME``."""
+    return _config_dir() / "projtui.ini"
+
+
+def _read_ini_option(path: Path, section: str, option: str) -> str | None:
+    if not path.exists():
+        return None
+    parser = configparser.ConfigParser()
+    parser.read(path, encoding="utf-8")
+    if not parser.has_option(section, option):
+        return None
+    value = parser.get(section, option).strip()
+    return value or None
+
+
+def read_ortask_projdir(path: Path | None = None) -> str | None:
+    """Return the projdir recorded in ``ortask.ini`` (``[projects] projdir``)."""
+    return _read_ini_option(path or ortask_config_path(), PROJECTS_SECTION, PROJDIR_OPTION)
 
 
 def read_config_projdir(config_path: Path) -> str | None:
-    if not config_path.exists():
-        return None
+    """Return the projdir from a legacy ``projtui.ini`` (``[projtui] projdir``)."""
+    return _read_ini_option(config_path, CONFIG_SECTION, CONFIG_OPTION)
+
+
+def write_ortask_projdir(path: Path, projdir_value: str) -> None:
+    """Atomically write ``[projects] projdir = <value>`` to ``ortask.ini``."""
     parser = configparser.ConfigParser()
-    parser.read(config_path, encoding="utf-8")
-    if not parser.has_option(CONFIG_SECTION, CONFIG_OPTION):
-        return None
-    value = parser.get(CONFIG_SECTION, CONFIG_OPTION).strip()
-    return value or None
+    parser[PROJECTS_SECTION] = {PROJDIR_OPTION: projdir_value}
+    buffer = io.StringIO()
+    parser.write(buffer)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    core.atomic_write(path, buffer.getvalue())
 
 
 def _friendly_path(path: Path, original: str | None = None) -> str:
@@ -64,87 +97,31 @@ def _friendly_path(path: Path, original: str | None = None) -> str:
         return str(path)
 
 
-def resolve_projdir(cli_projdir: str | None, config_path: Path) -> tuple[Path, str]:
-    raw = cli_projdir or read_config_projdir(config_path) or DEFAULT_PROJDIR
-    resolved = Path(raw).expanduser().resolve()
-    return resolved, _friendly_path(resolved, raw)
-
-
 def friendly_path(path: Path, original: str | None = None) -> str:
     """Render a path for storage/display: keep a user-supplied ``~`` prefix,
     otherwise collapse ``$HOME`` to ``~`` when possible."""
     return _friendly_path(path, original)
 
 
-# ---------------------------------------------------------------------------
-# Shared project registry (orgmgr migrate / projadd)
-# ---------------------------------------------------------------------------
+def resolve_projdir(cli_projdir: str | None = None) -> tuple[Path, str]:
+    """Resolve the master projdir and a display string.
 
-def registry_config_path() -> Path:
-    """Path to the shared suite registry, honoring ``XDG_CONFIG_HOME``."""
-    config_home = os.environ.get("XDG_CONFIG_HOME")
-    base = Path(config_home).expanduser() if config_home else Path.home() / ".config"
-    return base / "ortask" / ORTASK_INI_NAME
-
-
-def _registry_parser() -> configparser.ConfigParser:
-    parser = configparser.ConfigParser()
-    parser.optionxform = str  # preserve project-name case
-    return parser
-
-
-def read_registry(path: Path) -> dict[str, str] | None:
-    """Return the ``[projects]`` name->path mapping.
-
-    Returns ``None`` when the registry has not been initialized (file missing or
-    no ``[projects]`` section), which is distinct from an empty registry (``{}``)
-    created by ``migrate`` with nothing to import.
+    Precedence: ``--projdir`` (``cli_projdir``) > ``ortask.ini`` >
+    legacy ``projtui.ini`` > the ``~/Projects`` default.
     """
-    if not path.exists():
-        return None
-    parser = _registry_parser()
-    parser.read(path, encoding="utf-8")
-    if not parser.has_section(REGISTRY_SECTION):
-        return None
-    return dict(parser.items(REGISTRY_SECTION))
-
-
-def registry_exists(path: Path) -> bool:
-    """True once ``migrate`` has created the registry (the gate for ``projadd``)."""
-    return read_registry(path) is not None
-
-
-def write_registry(path: Path, projects: dict[str, str]) -> None:
-    """Atomically write the ``[projects]`` registry (config only, never Org)."""
-    parser = _registry_parser()
-    parser[REGISTRY_SECTION] = dict(projects)
-    buffer = io.StringIO()
-    parser.write(buffer)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    core.atomic_write(path, buffer.getvalue())
+    raw = (
+        cli_projdir
+        or read_ortask_projdir()
+        or read_config_projdir(default_config_path())
+        or DEFAULT_PROJDIR
+    )
+    resolved = Path(raw).expanduser().resolve()
+    return resolved, _friendly_path(resolved, raw)
 
 
 def has_task_section(text: str) -> bool:
     """True if ``text`` contains a top-level ``* Tasks`` heading."""
     return any(core.TASKS_HEADING_RE.match(line) for line in text.splitlines())
-
-
-def collect_projdir_projects(workspace: Path) -> dict[str, str]:
-    """name -> stored path for ``projdir`` subprojects that have a ``* Tasks``
-    section.
-
-    Reuses the same discovery as ``orgmgr.py list`` so that ``migrate`` freezes
-    the current ``projdir`` view into the registry.
-    """
-    found: dict[str, str] = {}
-    for project in discover_projects(workspace):
-        try:
-            text = project.org_file.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        if has_task_section(text):
-            found[project.name] = friendly_path(project.path)
-    return found
 
 
 # ---------------------------------------------------------------------------

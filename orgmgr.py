@@ -22,8 +22,7 @@ from ortasklib import core, manager
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    config_path = manager.default_config_path()
-    workspace, display_path = manager.resolve_projdir(args.projdir, config_path)
+    workspace, display_path = manager.resolve_projdir(args.projdir)
 
     if not workspace.is_dir():
         print(f"project directory not found: {workspace}", file=sys.stderr)
@@ -51,132 +50,110 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
-def _registry_not_set_up(registry_path: Path) -> None:
-    friendly = manager.friendly_path(registry_path)
-    print("orgmgr.py projadd: project registry not set up yet.", file=sys.stderr)
-    print(f"Run `orgmgr.py migrate` once to create {friendly}", file=sys.stderr)
-    print("(migrating any existing projtui.py `projdir` config), then re-run projadd.",
-          file=sys.stderr)
+def _replace_symlink(link_path: Path, target: Path) -> None:
+    """Create (or repoint) ``link_path`` as a symlink to absolute ``target``."""
+    if link_path.is_symlink() or link_path.exists():
+        link_path.unlink()
+    link_path.symlink_to(target)
 
 
 def cmd_projadd(args: argparse.Namespace) -> int:
-    registry_path = manager.registry_config_path()
-    if not manager.registry_exists(registry_path):
-        _registry_not_set_up(registry_path)
+    projdir, projdir_display = manager.resolve_projdir(args.projdir)
+
+    project_dir = Path(args.path).expanduser().resolve()
+    if not project_dir.is_dir():
+        print(f"projadd: not a directory: {args.path}", file=sys.stderr)
         return 1
 
-    raw = args.path
-    resolved = Path(raw).expanduser().resolve()
-
-    # Resolve the one project directory and its task file (no recursion).
+    # Resolve the task file: explicit --file, else single-directory discovery.
+    org_file: Path | None = None
     if args.file is not None:
-        if not resolved.is_dir():
-            print(f"projadd: not a directory: {raw}", file=sys.stderr)
-            return 1
-        project_dir = resolved
         file_arg = Path(args.file).expanduser()
-        org_file = file_arg if file_arg.is_absolute() else project_dir / file_arg
-        store_file = True
-    elif resolved.is_file():
-        project_dir = resolved.parent
-        org_file = resolved
-        store_file = True
-    elif resolved.is_dir():
-        project_dir = resolved
-        org_file = core.discover_org_file(project_dir)
-        store_file = False
+        candidate = file_arg if file_arg.is_absolute() else project_dir / file_arg
+        if not candidate.exists():
+            print(f"projadd: task file not found: {candidate}", file=sys.stderr)
+            return 1
+        if not manager.has_task_section(candidate.read_text(encoding="utf-8")):
+            print(f"projadd: {candidate} has no '* Tasks' section", file=sys.stderr)
+            return 1
+        org_file = candidate.resolve()
     else:
-        print(f"projadd: path not found: {raw}", file=sys.stderr)
-        return 1
-
-    if org_file is None or not org_file.exists():
-        print(f"projadd: no Org task file found in {project_dir}", file=sys.stderr)
-        return 1
-
-    text = org_file.read_text(encoding="utf-8")
-    if not manager.has_task_section(text):
-        print(f"projadd: {org_file} has no '* Tasks' section", file=sys.stderr)
-        return 1
+        found = core.discover_org_file(project_dir)
+        if found is not None:
+            if manager.has_task_section(found.read_text(encoding="utf-8")):
+                org_file = found.resolve()
+            else:
+                print(f"warning: {found} has no '* Tasks' section; "
+                      f"adding project link only", file=sys.stderr)
 
     name = args.name or project_dir.name
-    if store_file:
-        stored = manager.friendly_path(org_file.resolve())
-    else:
-        stored = manager.friendly_path(project_dir, raw)
+    subdir = projdir / name
 
-    registry = manager.read_registry(registry_path) or {}
-    if name in registry and not args.force:
-        print(f"projadd: project '{name}' already registered as {registry[name]} "
-              f"(use --force to overwrite)", file=sys.stderr)
+    if subdir.exists() and not args.force:
+        print(f"projadd: project '{name}' already exists at {subdir} "
+              f"(use --force to repoint its links)", file=sys.stderr)
         return 1
-    for other_name, other_path in registry.items():
-        if other_name != name and other_path == stored:
-            print(f"warning: {stored} is already registered as '{other_name}'",
-                  file=sys.stderr)
-            break
+
+    # Warn if another project subdir already links to this project directory.
+    if projdir.is_dir():
+        for other in sorted(projdir.iterdir(), key=lambda p: p.name.lower()):
+            if not other.is_dir() or other.name == name:
+                continue
+            if any(e.is_symlink() and e.resolve() == project_dir for e in other.iterdir()):
+                print(f"warning: {project_dir} is already linked from '{other.name}'",
+                      file=sys.stderr)
+                break
+
+    project_link = subdir / project_dir.name
+    org_link = (subdir / org_file.name) if org_file is not None else None
 
     if args.dry_run:
-        print(f"[dry-run] would register: {name} = {stored}")
-        print(f"[dry-run] task file: {org_file}")
+        print(f"[dry-run] would create {subdir}/")
+        print(f"[dry-run]   {project_dir.name} -> {project_dir}")
+        if org_link is not None:
+            print(f"[dry-run]   {org_file.name} -> {org_file}")
         return 0
 
-    registry[name] = stored
-    manager.write_registry(registry_path, registry)
-    print(f"registered {name} = {stored}")
-    print(f"task file: {org_file}")
+    subdir.mkdir(parents=True, exist_ok=True)
+    _replace_symlink(project_link, project_dir)
+    if org_link is not None:
+        _replace_symlink(org_link, org_file)
+
+    print(f"added project '{name}' under {projdir_display}")
+    print(f"  {project_dir.name} -> {project_dir}")
+    if org_link is not None:
+        print(f"  {org_file.name} -> {org_file}")
+    else:
+        print("  (no task-file link — none discovered)")
     return 0
 
 
 def cmd_migrate(args: argparse.Namespace) -> int:
-    registry_path = manager.registry_config_path()
-    existing = manager.read_registry(registry_path)
+    ortask_path = manager.ortask_config_path()
+    projtui_path = manager.default_config_path()
+    existing = manager.read_ortask_projdir(ortask_path)
 
-    if existing is not None and not args.force:
-        print(f"already migrated: {manager.friendly_path(registry_path)} has a "
-              f"[projects] registry ({len(existing)} project(s)).")
-        print("Re-run with --force to merge in newly discovered projects.")
-        return 0
-
-    # Locate the source projdir: explicit --projdir, else the legacy projtui.ini.
     if args.projdir:
-        source: Path | None = Path(args.projdir).expanduser()
+        source_raw = args.projdir
+    elif existing is not None and not args.force:
+        source_raw = existing            # keep the value already recorded
     else:
-        projdir_raw = manager.read_config_projdir(manager.default_config_path())
-        source = Path(projdir_raw).expanduser() if projdir_raw else None
+        source_raw = manager.read_config_projdir(projtui_path) or manager.DEFAULT_PROJDIR
 
-    discovered: dict[str, str] = {}
-    if source is not None:
-        if not source.is_dir():
-            print(f"migrate: projdir not found: {source}", file=sys.stderr)
-            return 1
-        discovered = manager.collect_projdir_projects(source.resolve())
-
-    # Merge: existing entries win on a name collision (per --force semantics).
-    merged = dict(existing or {})
-    for name, path in discovered.items():
-        if name in merged:
-            if merged[name] != path:
-                print(f"warning: keeping existing '{name}' = {merged[name]} "
-                      f"(discovered {path})", file=sys.stderr)
-            continue
-        merged[name] = path
+    stored = manager.friendly_path(Path(source_raw).expanduser().resolve(), source_raw)
 
     if args.dry_run:
-        print(f"[dry-run] would write {manager.friendly_path(registry_path)} with "
-              f"{len(merged)} project(s):")
-        for name, path in merged.items():
-            print(f"  {name} = {path}")
+        print(f"[dry-run] would set [projects] projdir = {stored} in "
+              f"{manager.friendly_path(ortask_path)}")
+        if projtui_path.exists():
+            print(f"[dry-run] would delete {manager.friendly_path(projtui_path)}")
         return 0
 
-    manager.write_registry(registry_path, merged)
-    if discovered:
-        src = manager.friendly_path(source.resolve()) if source else "(none)"
-        print(f"migrated {len(discovered)} project(s) from {src} into "
-              f"{manager.friendly_path(registry_path)}.")
-    else:
-        print(f"initialized empty registry at {manager.friendly_path(registry_path)} "
-              f"(no projdir projects to import).")
-    print("Note: `[projtui] projdir` is now deprecated in favor of the registry.")
+    manager.write_ortask_projdir(ortask_path, stored)
+    print(f"recorded projdir = {stored} in {manager.friendly_path(ortask_path)}")
+    if projtui_path.exists():
+        projtui_path.unlink()
+        print(f"removed obsolete {manager.friendly_path(projtui_path)}")
     return 0
 
 
@@ -211,35 +188,38 @@ def build_parser() -> argparse.ArgumentParser:
     # projadd subcommand
     p_add = sub.add_parser(
         "projadd",
-        help="register one project directory in the shared registry",
+        help="add one project to the master projdir (creates a symlink subdir)",
     )
     p_add.add_argument(
         "path",
         nargs="?",
         default=".",
-        help="project directory (or Org file); default: current directory",
+        help="project directory to add; default: current directory",
     )
     p_add.add_argument("--name", default=None,
-                       help="registry name (default: directory basename)")
+                       help="project subdirectory name (default: directory basename)")
     p_add.add_argument("--file", default=None,
-                       help="use this Org file directly instead of discovery")
+                       help="task file to link instead of running discovery")
+    # SUPPRESS default so this subparser does not clobber a global --projdir.
+    p_add.add_argument("--projdir", default=argparse.SUPPRESS,
+                       help="master projdir to add into (overrides config/default)")
     p_add.add_argument("--force", action="store_true",
-                       help="overwrite an existing entry with the same name")
+                       help="repoint links in an existing project subdirectory")
     p_add.add_argument("--dry-run", action="store_true",
-                       help="show what would be written without changing config")
+                       help="show what would be created without changing anything")
 
     # migrate subcommand
     p_mig = sub.add_parser(
         "migrate",
-        help="initialize the shared registry (importing any projdir projects)",
+        help="record the master projdir in ortask.ini and retire projtui.ini",
     )
     # SUPPRESS default so this subparser does not clobber a global --projdir.
     p_mig.add_argument("--projdir", default=argparse.SUPPRESS,
-                       help="workspace to import, overriding projtui.ini")
+                       help="projdir to record, overriding projtui.ini")
     p_mig.add_argument("--force", action="store_true",
-                       help="merge into an existing registry")
+                       help="re-derive the projdir even if ortask.ini already has one")
     p_mig.add_argument("--dry-run", action="store_true",
-                       help="show the registry that would be written")
+                       help="show what would be written and removed")
 
     return parser
 

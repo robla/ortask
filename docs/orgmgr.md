@@ -15,13 +15,11 @@ directory** (the "projdir"): one subdirectory per project, each holding
 symlinks to the project and, optionally, its task file. It should
 eventually support project-level verbs such as `projadd` and `projrm`.
 
-**Status:** This document describes the projdir-of-symlinks model.
-`orgmgr.py list` is implemented against a projdir workspace. `migrate` and
-`projadd` are currently implemented against an *earlier* `[projects]`
-name→path registry design and need to be reworked to match this document —
-`migrate` should record the projdir in `ortask.ini`, and `projadd` should
-create a projdir subdirectory of symlinks rather than write ini entries.
-`projrm` and the other future verbs are not yet implemented.
+**Status:** `list`, `migrate`, and `projadd` are implemented per this document.
+`ortask.ini` records the master projdir; `migrate` adopts that path from the
+legacy `projtui.ini` and then deletes it; `projadd` creates a projdir
+subdirectory of symlinks. `projrm` and the other future verbs are not yet
+implemented.
 
 ## The master project directory
 
@@ -69,9 +67,11 @@ its target's basename**:
 
 - The **project link** points at the project's real directory; its name mirrors
   that directory's basename.
-- The optional **task-file link** points at the `.org` file that holds the
-  project's `* Tasks` subtree; its name mirrors the file's basename, so it keeps
-  a `.org` extension and stays greppable.
+- The **task-file link** points at the `.org` file that holds the project's
+  `* Tasks` subtree; its name mirrors the file's basename, so it keeps a `.org`
+  extension and stays greppable. `projadd` creates it automatically from
+  discovery; it is optional only in the sense that a project added to the projdir
+  *by hand* may omit it.
 - When the task-file link is absent, tools follow the project link and discover
   the `.org` inside the real project directory (`TODO.org`-first; see
   `docs/format.md`).
@@ -162,13 +162,14 @@ orgmgr.py projadd ~/src/elweek --dry-run
 2. **Resolve the project directory.** The optional positional `PATH` (default:
    the current directory) is the project's real directory. `projadd` never looks
    inside its subdirectories.
-3. **Resolve the task file (optional).** `--file FILE` names the task file
-   (relative to the project directory unless absolute). Otherwise run `ortask.py`
-   single-directory discovery in the project directory — `TODO.org` / `TODO*.org`
-   first (per `docs/format.md`), then `todo.org`/`tasks.org`, then the first
-   `*.org`. A file should contain a `* Tasks` section: an explicit `--file`
-   without one is an error, while an auto-discovered file without one is skipped.
-   If no task file is found, the project is added with only the project link.
+3. **Resolve the task file.** Unless `--file FILE` names one (relative to the
+   project directory unless absolute), `projadd` runs `ortask.py` single-directory
+   discovery in the project directory — `TODO.org` / `TODO*.org` first (per
+   `docs/format.md`), then `todo.org`/`tasks.org`, then the first `*.org`. A file
+   should contain a `* Tasks` section: an explicit `--file` without one is an
+   error, while an auto-discovered file without one is skipped with a warning. If
+   no task file is found at all, the project is still added with just the project
+   link (the same state reached by adding a project to the projdir by hand).
 4. **Derive the project name.** Use `--name` if given; otherwise the basename of
    the project directory.
 5. **Create the project subdirectory and symlinks** under `<projdir>/<name>/`:
@@ -211,26 +212,28 @@ orgmgr.py migrate --dry-run
 
 ### Behavior
 
-1. **Determine the projdir.** `--projdir` if given; otherwise the legacy
-   `projtui.ini` `[projtui] projdir`; otherwise the `~/Projects` default.
-2. **Already set?** If `ortask.ini` already has a `[projects] projdir` and
-   neither `--projdir` nor `--force` is given, report the current value and exit
-   0 without changes.
-3. **Write `ortask.ini`.** Create `~/.config/ortask/ortask.ini` with
-   `[projects] projdir = <path>` (tilde-preserved), using an atomic
-   temp-file-then-rename. Only config is written; no Org file or projdir content
-   is touched.
-4. **Leave `projtui.ini` in place.** Print the projdir that was recorded.
+1. **Determine the projdir to record.** Use `--projdir` if given. Otherwise, if
+   `ortask.ini` already records a projdir and `--force` is not given, keep that
+   value. Otherwise read the legacy `projtui.ini` `[projtui] projdir`, falling
+   back to the `~/Projects` default.
+2. **Write `ortask.ini`.** Set `[projects] projdir = <path>` (tilde-preserved)
+   via an atomic temp-file-then-rename. Only config is written; no Org file or
+   projdir content is touched.
+3. **Remove `projtui.ini`.** Delete the now-obsolete
+   `~/.config/ortask/projtui.ini` if it exists, then print the recorded projdir.
+   Once the projdir lives in `ortask.ini`, `projtui.ini` is no longer needed.
 
 ### Options
 
-- `--projdir DIR` — projdir to record, overriding `projtui.ini`.
-- `--force` — overwrite an existing `ortask.ini` projdir.
-- `--dry-run` — print what would be written; change nothing. Exit 0.
+- `--projdir DIR` — projdir to record, overriding `projtui.ini` and any existing
+  value.
+- `--force` — re-derive the projdir from `projtui.ini`/default even when
+  `ortask.ini` already records one.
+- `--dry-run` — print what would be written and removed; change nothing. Exit 0.
 
 `migrate` is optional: `list` and `projadd` already fall back to `projtui.ini`
-and the `~/Projects` default, so `migrate` exists only to make the projdir
-explicit in `ortask.ini`.
+and the `~/Projects` default. Its purpose is to make the projdir explicit in
+`ortask.ini` and retire the legacy `projtui.ini`.
 
 ## Relationship to projtui's projdir config
 
@@ -251,8 +254,8 @@ everywhere is:
 --projdir  >  ortask.ini [projects] projdir  >  projtui.ini [projtui] projdir  >  ~/Projects
 ```
 
-`projtui.ini` keeps working as a fallback; `migrate` copies its value into
-`ortask.ini`.
+`projtui.ini` keeps working as a fallback until you migrate; `migrate` copies
+its value into `ortask.ini` and then deletes `projtui.ini`.
 
 ## Future Verbs
 
@@ -277,5 +280,6 @@ never creates or edits an Org file, never writes through a symlink, and refuses
 (without `--force`) to overwrite an existing project subdirectory. The projdir
 directory itself is created if missing.
 
-`orgmgr.py migrate` writes only `ortask.ini`, atomically. It creates and edits
-no Org file, touches no projdir content, and never deletes `projtui.ini`.
+`orgmgr.py migrate` writes only `ortask.ini` (atomically) and deletes the
+obsolete `projtui.ini`. It creates and edits no Org file and touches no projdir
+content.

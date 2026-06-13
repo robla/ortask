@@ -23,7 +23,6 @@ if str(_SCRIPT_DIR) not in sys.path:
 from ortasklib import core, tasks
 from ortasklib.manager import (
     Project,
-    default_config_path,
     discover_projects,
     resolve_projdir,
 )
@@ -309,7 +308,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    workspace, display_path = resolve_projdir(args.projdir, default_config_path())
+    workspace, display_path = resolve_projdir(args.projdir)
     print(f"Finding project in {display_path}")
     if not workspace.is_dir():
         print(f"project directory not found: {workspace}", file=sys.stderr)

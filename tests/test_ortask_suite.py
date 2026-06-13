@@ -350,79 +350,94 @@ def test_add_task_creates_tasks_section_if_missing(tmp_path: Path) -> None:
     assert task_index == tasks_index + 1
 
 
-# --- orgmgr registry: migrate + projadd ---------------------------------------
+# --- orgmgr projdir model: migrate + projadd ----------------------------------
 # These isolate config by pointing XDG_CONFIG_HOME at a temp directory, so they
-# never read or write the real ~/.config/ortask.
+# never read or write (or delete) the real ~/.config/ortask.
 
 
-def test_projadd_gated_until_migrate(tmp_path: Path, monkeypatch, capsys) -> None:
-    # projadd refuses to run until migrate has created the registry; migrate
-    # then imports the projdir workspace (skipping projects with no * Tasks).
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-
-    workspace = tmp_path / "ws"
-    write(workspace / "alpha" / "TODO.org", "* Tasks\n** TODO t0001 Alpha\n")
-    write(workspace / "beta" / "README.org", "* Notes\nno task section\n")
-
-    standalone = tmp_path / "standalone"
-    write(standalone / "todo.org", "* Tasks\n** TODO t0001 Standalone\n")
-
-    registry_path = manager.registry_config_path()
-    add_args = argparse.Namespace(
-        path=str(standalone), name=None, file=None, force=False, dry_run=False
-    )
-
-    # Gated before migrate: exit 1, friendly error, no config written.
-    assert orgmgr.cmd_projadd(add_args) == 1
-    assert "registry not set up" in capsys.readouterr().err
-    assert not registry_path.exists()
-
-    # migrate imports alpha (beta has no * Tasks and is skipped).
-    assert orgmgr.cmd_migrate(
-        argparse.Namespace(projdir=str(workspace), force=False, dry_run=False)
-    ) == 0
-    capsys.readouterr()
-    assert set(manager.read_registry(registry_path)) == {"alpha"}
-
-    # projadd now succeeds and adds the standalone project.
-    assert orgmgr.cmd_projadd(add_args) == 0
-    capsys.readouterr()
-    assert set(manager.read_registry(registry_path)) == {"alpha", "standalone"}
-
-    # A duplicate name without --force is a clean error.
-    assert orgmgr.cmd_projadd(add_args) == 1
-    assert "already registered" in capsys.readouterr().err
-
-    # migrate again without --force is an idempotent no-op.
-    assert orgmgr.cmd_migrate(
-        argparse.Namespace(projdir=str(workspace), force=False, dry_run=False)
-    ) == 0
-    assert "already migrated" in capsys.readouterr().out
+def _projadd_args(path: Path, **kw) -> argparse.Namespace:
+    base = dict(path=str(path), name=None, file=None, projdir=None,
+                force=False, dry_run=False)
+    base.update(kw)
+    return argparse.Namespace(**base)
 
 
-def test_migrate_without_projdir_initializes_empty_registry(
+def test_migrate_records_projdir_and_removes_projtui_ini(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    # A fresh machine with no projtui.ini still gets a usable (empty) registry,
-    # so projadd works without any legacy config.
+    # migrate adopts the legacy projtui.ini projdir into ortask.ini, then deletes
+    # projtui.ini.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    registry_path = manager.registry_config_path()
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
 
-    assert not manager.registry_exists(registry_path)
+    projtui_ini = manager.default_config_path()
+    write(projtui_ini, f"[projtui]\nprojdir = {workspace}\n")
+
     assert orgmgr.cmd_migrate(
         argparse.Namespace(projdir=None, force=False, dry_run=False)
     ) == 0
     capsys.readouterr()
 
-    # Registry now exists and is empty (distinct from "not initialized").
-    assert manager.registry_exists(registry_path)
-    assert manager.read_registry(registry_path) == {}
+    assert manager.read_ortask_projdir() == str(workspace.resolve())
+    assert not projtui_ini.exists()                       # retired
+    resolved, _ = manager.resolve_projdir()               # now follows ortask.ini
+    assert resolved == workspace.resolve()
 
-    project = tmp_path / "proj"
-    write(project / "TODO.org", "* Tasks\n** TODO t0001 Solo\n")
-    assert orgmgr.cmd_projadd(
-        argparse.Namespace(path=str(project), name="solo", file=None,
-                           force=False, dry_run=False)
+
+def test_projadd_creates_symlink_subdir(tmp_path: Path, monkeypatch, capsys) -> None:
+    # projadd creates a per-project subdir of symlinks under the projdir, and
+    # discovery follows those symlinks.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    projdir = tmp_path / "proj2026"
+    manager.write_ortask_projdir(manager.ortask_config_path(), str(projdir))
+
+    project = tmp_path / "src" / "elweek"
+    write(project / "TODO.org", "* Tasks\n** TODO t0001 Promote episode\n")
+
+    assert orgmgr.cmd_projadd(_projadd_args(project)) == 0
+    capsys.readouterr()
+
+    subdir = projdir / "elweek"
+    project_link = subdir / "elweek"
+    task_link = subdir / "TODO.org"
+    assert subdir.is_dir()
+    assert project_link.is_symlink() and project_link.resolve() == project.resolve()
+    assert task_link.is_symlink()
+    assert task_link.resolve() == (project / "TODO.org").resolve()
+
+    # Discovery follows the symlinks: list shows the project and its task.
+    assert orgmgr.cmd_list(
+        argparse.Namespace(projdir=str(projdir), all=False, format="json")
     ) == 0
-    assert manager.read_registry(registry_path) == {"solo": str(project.resolve())}
+    projects = json.loads(capsys.readouterr().out)
+    assert projects[0]["project"] == "elweek"
+    assert projects[0]["tasks"] == [
+        {"id": "t0001", "state": "TODO", "title": "Promote episode"},
+    ]
+
+    # An existing project subdir is a conflict without --force; --force repoints.
+    assert orgmgr.cmd_projadd(_projadd_args(project)) == 1
+    assert "already exists" in capsys.readouterr().err
+    assert orgmgr.cmd_projadd(_projadd_args(project, force=True)) == 0
+
+
+def test_projadd_links_project_only_when_no_task_file(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # A project with no discoverable .org is still added, with just a project link
+    # (the same state as a hand-created projdir entry).
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    projdir = tmp_path / "projects"
+    manager.write_ortask_projdir(manager.ortask_config_path(), str(projdir))
+
+    project = tmp_path / "bare"
+    project.mkdir()  # no .org inside
+
+    assert orgmgr.cmd_projadd(_projadd_args(project, name="bare")) == 0
+    capsys.readouterr()
+
+    subdir = projdir / "bare"
+    assert (subdir / "bare").is_symlink()                          # project link
+    assert not any(p.suffix == ".org" for p in subdir.iterdir())   # no task link
 
