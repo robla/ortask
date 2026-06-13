@@ -15,6 +15,12 @@ projects, and can build or maintain an index of the Org files the user
 wants managed. It should eventually support project-level verbs such
 as `projadd` and `projrm`.
 
+**Status:** `list`, `migrate`, and `projadd` are implemented (registry
+read/write lives in `ortasklib.manager`). The registry is written by
+`migrate`/`projadd` but not yet *consumed* by `list`/`projtui.py`, which still
+use the `projdir` workspace; `projrm` and the future verbs below are not yet
+implemented.
+
 ## First Verb: list
 
 `orgmgr.py list` should list all known projects and the top-level tasks within

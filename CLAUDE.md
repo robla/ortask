@@ -22,10 +22,12 @@ All scripts are stdlib-only (Python 3.10+, no external dependencies).
 - **`ortask.py`** — local CLI scoped to a single Org task file. Verbs: `list`,
   `show`, `add`, `done`, `open`, `repair`. This is the core tool. The intended
   shell alias is `ort`. Spec: `docs/ortask.md`.
-- **`orgmgr.py`** — global, read-only manager that scans many project
-  directories and reports each project's top-level tasks. First (and only
-  implemented) verb: `list`. It is deliberately *not* an editor — `ortask.py`
-  owns local editing. Spec: `docs/orgmgr.md`.
+- **`orgmgr.py`** — global manager across many projects. Verbs: `list`
+  (read-only task overview), `migrate` (initialize the shared
+  `~/.config/ortask/ortask.ini` `[projects]` registry, importing any legacy
+  `projdir`), and `projadd` (register one directory in that registry; gated
+  until `migrate` runs). It edits only its own config, never Org content —
+  `ortask.py` owns local task editing. Spec: `docs/orgmgr.md`.
 - **`projtui.py`** — interactive terminal menu: pick a project, pick a task, see
   a focused work prompt, optionally mark DONE or open in an editor. Delegates
   writes to the same parser/writer paths as `ortask.py`. Spec:
@@ -65,8 +67,11 @@ section. That broader discovery is **specified but not yet implemented** in
   prefix) and reports them, but auto-fix — renumbering and ID assignment — is
   deferred. `repair --dry-run` exits 2 if problems are found; `repair` without
   `--dry-run` reports and exits 0 without modifying the file.
-- **`orgmgr.py`** (~180 lines) implements read-only `list`. Future verbs
-  (`projadd`, `projrm`, `scan`, `doctor`) are specified but unimplemented.
+- **`orgmgr.py`** implements `list` (read-only), plus `migrate` and `projadd`
+  for the shared `[projects]` registry (config-only writes; `projadd` is gated
+  behind `migrate`). The registry is written but not yet *consumed* by
+  `list`/`projtui` — those still use the `projdir` workspace. Future verbs
+  (`projrm`, `scan`, `doctor`) remain specified but unimplemented.
 - **`projtui.py`** implements the minimal numbered-menu workflow.
 - **Shared library (done):** reusable logic lives in the `ortasklib/` package
   (`core`, `tasks`, `manager`); the three scripts are thin front-ends that no

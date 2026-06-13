@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 import orgmgr
 import ortask
 import projtui
+from ortasklib import manager
 
 
 def write(path: Path, content: str) -> Path:
@@ -347,4 +348,81 @@ def test_add_task_creates_tasks_section_if_missing(tmp_path: Path) -> None:
     task_index = lines.index("** TODO t0001 First task")
     assert tasks_index > lines.index("Keep me.")
     assert task_index == tasks_index + 1
+
+
+# --- orgmgr registry: migrate + projadd ---------------------------------------
+# These isolate config by pointing XDG_CONFIG_HOME at a temp directory, so they
+# never read or write the real ~/.config/ortask.
+
+
+def test_projadd_gated_until_migrate(tmp_path: Path, monkeypatch, capsys) -> None:
+    # projadd refuses to run until migrate has created the registry; migrate
+    # then imports the projdir workspace (skipping projects with no * Tasks).
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+    workspace = tmp_path / "ws"
+    write(workspace / "alpha" / "TODO.org", "* Tasks\n** TODO t0001 Alpha\n")
+    write(workspace / "beta" / "README.org", "* Notes\nno task section\n")
+
+    standalone = tmp_path / "standalone"
+    write(standalone / "todo.org", "* Tasks\n** TODO t0001 Standalone\n")
+
+    registry_path = manager.registry_config_path()
+    add_args = argparse.Namespace(
+        path=str(standalone), name=None, file=None, force=False, dry_run=False
+    )
+
+    # Gated before migrate: exit 1, friendly error, no config written.
+    assert orgmgr.cmd_projadd(add_args) == 1
+    assert "registry not set up" in capsys.readouterr().err
+    assert not registry_path.exists()
+
+    # migrate imports alpha (beta has no * Tasks and is skipped).
+    assert orgmgr.cmd_migrate(
+        argparse.Namespace(projdir=str(workspace), force=False, dry_run=False)
+    ) == 0
+    capsys.readouterr()
+    assert set(manager.read_registry(registry_path)) == {"alpha"}
+
+    # projadd now succeeds and adds the standalone project.
+    assert orgmgr.cmd_projadd(add_args) == 0
+    capsys.readouterr()
+    assert set(manager.read_registry(registry_path)) == {"alpha", "standalone"}
+
+    # A duplicate name without --force is a clean error.
+    assert orgmgr.cmd_projadd(add_args) == 1
+    assert "already registered" in capsys.readouterr().err
+
+    # migrate again without --force is an idempotent no-op.
+    assert orgmgr.cmd_migrate(
+        argparse.Namespace(projdir=str(workspace), force=False, dry_run=False)
+    ) == 0
+    assert "already migrated" in capsys.readouterr().out
+
+
+def test_migrate_without_projdir_initializes_empty_registry(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # A fresh machine with no projtui.ini still gets a usable (empty) registry,
+    # so projadd works without any legacy config.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry_path = manager.registry_config_path()
+
+    assert not manager.registry_exists(registry_path)
+    assert orgmgr.cmd_migrate(
+        argparse.Namespace(projdir=None, force=False, dry_run=False)
+    ) == 0
+    capsys.readouterr()
+
+    # Registry now exists and is empty (distinct from "not initialized").
+    assert manager.registry_exists(registry_path)
+    assert manager.read_registry(registry_path) == {}
+
+    project = tmp_path / "proj"
+    write(project / "TODO.org", "* Tasks\n** TODO t0001 Solo\n")
+    assert orgmgr.cmd_projadd(
+        argparse.Namespace(path=str(project), name="solo", file=None,
+                           force=False, dry_run=False)
+    ) == 0
+    assert manager.read_registry(registry_path) == {"solo": str(project.resolve())}
 

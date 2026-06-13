@@ -59,5 +59,6 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Claude [2026-06-12 Fri 22:20]: implemented the =docs/architecture.md= refactor — created the =ortasklib/= package (=core=, =tasks=, =manager=), rewrote =ortask.py=/=orgmgr.py=/=projtui.py= as thin front-ends that no longer import each other (re-exporting moved names so the test suite stays green), then updated =docs/architecture.md= and =CLAUDE.md= to match.
 ** Gemini [2026-06-12 Fri 21:58]: modified projtui.py to use bold cyan ANSI escape codes for interactive task and project selection prompts.
 ** Gemini [2026-06-12 Fri 22:28]: added a 12th test case to tests/test_ortask_suite.py verifying the fallback tasks-section creation behavior of cmd_add.
+** Claude [2026-06-12 Fri 22:54]: implemented =orgmgr.py migrate= and =projadd= per =docs/orgmgr.md= — added shared =[projects]= registry read/write and single-directory discovery to =ortasklib= (=manager=/=core=), gated =projadd= behind =migrate=, added two XDG-isolated registry tests, and updated =docs/orgmgr.md=/=architecture.md=/=CLAUDE.md= status notes.
 
 

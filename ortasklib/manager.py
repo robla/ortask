@@ -9,6 +9,7 @@ calls ``sys.exit``.
 from __future__ import annotations
 
 import configparser
+import io
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +20,10 @@ SKIP_PROJECT_DIRS = {".git", ".hg", ".svn", "__pycache__", "docs"}
 DEFAULT_PROJDIR = "~/Projects"
 CONFIG_SECTION = "projtui"
 CONFIG_OPTION = "projdir"
+
+# Shared suite registry written by ``orgmgr.py migrate``/``projadd``.
+ORTASK_INI_NAME = "ortask.ini"
+REGISTRY_SECTION = "projects"
 
 
 @dataclass(frozen=True)
@@ -63,6 +68,83 @@ def resolve_projdir(cli_projdir: str | None, config_path: Path) -> tuple[Path, s
     raw = cli_projdir or read_config_projdir(config_path) or DEFAULT_PROJDIR
     resolved = Path(raw).expanduser().resolve()
     return resolved, _friendly_path(resolved, raw)
+
+
+def friendly_path(path: Path, original: str | None = None) -> str:
+    """Render a path for storage/display: keep a user-supplied ``~`` prefix,
+    otherwise collapse ``$HOME`` to ``~`` when possible."""
+    return _friendly_path(path, original)
+
+
+# ---------------------------------------------------------------------------
+# Shared project registry (orgmgr migrate / projadd)
+# ---------------------------------------------------------------------------
+
+def registry_config_path() -> Path:
+    """Path to the shared suite registry, honoring ``XDG_CONFIG_HOME``."""
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(config_home).expanduser() if config_home else Path.home() / ".config"
+    return base / "ortask" / ORTASK_INI_NAME
+
+
+def _registry_parser() -> configparser.ConfigParser:
+    parser = configparser.ConfigParser()
+    parser.optionxform = str  # preserve project-name case
+    return parser
+
+
+def read_registry(path: Path) -> dict[str, str] | None:
+    """Return the ``[projects]`` name->path mapping.
+
+    Returns ``None`` when the registry has not been initialized (file missing or
+    no ``[projects]`` section), which is distinct from an empty registry (``{}``)
+    created by ``migrate`` with nothing to import.
+    """
+    if not path.exists():
+        return None
+    parser = _registry_parser()
+    parser.read(path, encoding="utf-8")
+    if not parser.has_section(REGISTRY_SECTION):
+        return None
+    return dict(parser.items(REGISTRY_SECTION))
+
+
+def registry_exists(path: Path) -> bool:
+    """True once ``migrate`` has created the registry (the gate for ``projadd``)."""
+    return read_registry(path) is not None
+
+
+def write_registry(path: Path, projects: dict[str, str]) -> None:
+    """Atomically write the ``[projects]`` registry (config only, never Org)."""
+    parser = _registry_parser()
+    parser[REGISTRY_SECTION] = dict(projects)
+    buffer = io.StringIO()
+    parser.write(buffer)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    core.atomic_write(path, buffer.getvalue())
+
+
+def has_task_section(text: str) -> bool:
+    """True if ``text`` contains a top-level ``* Tasks`` heading."""
+    return any(core.TASKS_HEADING_RE.match(line) for line in text.splitlines())
+
+
+def collect_projdir_projects(workspace: Path) -> dict[str, str]:
+    """name -> stored path for ``projdir`` subprojects that have a ``* Tasks``
+    section.
+
+    Reuses the same discovery as ``orgmgr.py list`` so that ``migrate`` freezes
+    the current ``projdir`` view into the registry.
+    """
+    found: dict[str, str] = {}
+    for project in discover_projects(workspace):
+        try:
+            text = project.org_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if has_task_section(text):
+            found[project.name] = friendly_path(project.path)
+    return found
 
 
 # ---------------------------------------------------------------------------
@@ -141,8 +223,7 @@ def summarize_projects(workspace: Path, include_all: bool = False) -> list[dict]
             records.append(record)
             continue
 
-        lines = text.splitlines()
-        if not any(core.TASKS_HEADING_RE.match(line) for line in lines):
+        if not has_task_section(text):
             record["warning"] = "no parseable * Tasks section found"
             record["tasks"] = []
             records.append(record)

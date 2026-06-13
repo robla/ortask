@@ -7,9 +7,11 @@ added without growing three coupled scripts.
 
 **Status:** implemented. The scripts no longer import each other; they import
 from `ortasklib`. The `docs/testing.md` suite runs unchanged as the refactor
-gate (see *Test compatibility* below). Project **registry** read/write
-(`orgmgr.py projadd`/`migrate`, see `docs/orgmgr.md`) is still future work; the
-`manager` module currently implements the legacy `projdir` workspace model.
+gate (see *Test compatibility* below). The shared **registry** read/write and
+the `orgmgr.py migrate`/`projadd` verbs (see `docs/orgmgr.md`) are now
+implemented in `manager`; what remains is having `orgmgr.py list` and
+`projtui.py` *consume* that registry instead of the legacy `projdir` workspace
+model.
 
 ## Package Layout
 
@@ -111,12 +113,18 @@ Behavior used by `orgmgr.py` and shared with `projtui.py`:
 - `summarize_projects()` — JSON-ready, top-level task summaries per project,
   attaching a `warning` (instead of raising) for unreadable files, missing
   `* Tasks` sections, or duplicate IDs
+- shared **registry** read/write — `registry_config_path()` (the
+  `ortask.ini` `[projects]` section, honoring `XDG_CONFIG_HOME`),
+  `read_registry()` / `registry_exists()` / `write_registry()` (atomic, via
+  `core.atomic_write`), and `collect_projdir_projects()` for the `migrate`
+  import. `orgmgr.py`'s `migrate`/`projadd` adapters drive these;
+  single-directory file discovery for `projadd` is `core.discover_org_file()`.
 
 Both `orgmgr.py list` and `projtui.py` use `manager` for project discovery, so
-the interactive and non-interactive tools agree. The shared **registry** read/
-write described in `docs/orgmgr.md` (a `[projects]` section in `ortask.ini`) is
-not yet implemented; until then `manager` resolves projects from a `projdir`
-workspace.
+the interactive and non-interactive tools agree. The registry is written by
+`migrate`/`projadd` but is **not yet consumed** by `list`/`projtui` — those
+still resolve projects from a `projdir` workspace. Switching them to prefer the
+registry is the remaining step (see *Future work*).
 
 ## Test compatibility
 
@@ -143,10 +151,12 @@ historical private aliases `_find_tasks_range`, `_build_org_heading`,
 
 ## Future work
 
-- Implement the shared project registry (`projadd`/`migrate`) in `manager`, per
-  `docs/orgmgr.md`, and add tests for config isolation (a temp `XDG_CONFIG_HOME`)
-  and registry read/write.
-- Once the registry lands, `projtui.py` and `orgmgr.py` should prefer it over the
-  `projdir` workspace model.
+- Have `orgmgr.py list` and `projtui.py` *consume* the `[projects]` registry
+  (preferring it over the `projdir` workspace), with the transition behavior in
+  `docs/orgmgr.md` (read both, registry wins; deprecation warning on `projdir`).
+- Add `projrm` (and possibly `scan`/`doctor`) per `docs/orgmgr.md`.
 - Consider repointing the test suite to import from `ortasklib` directly and
   retiring the `ortask.py` compatibility re-exports.
+
+The shared registry read/write and the `migrate`/`projadd` verbs are done, with
+config-isolation tests (a temp `XDG_CONFIG_HOME`) in `tests/test_ortask_suite.py`.

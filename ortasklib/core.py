@@ -93,6 +93,30 @@ def resolve_org_file() -> Path | None:
     return None
 
 
+def discover_org_file(directory: Path) -> Path | None:
+    """Probe a single directory for its task file (no env var, no recursion).
+
+    Same ordering as :func:`resolve_org_file`'s on-disk probe — ``TODO.org``
+    first, then other ``TODO*.org``, then ``todo.org``/``tasks.org``, then the
+    first ``*.org`` alphabetically — but rooted at ``directory`` and silent.
+    Used by ``orgmgr.py projadd`` to register an arbitrary project directory.
+    """
+    todo_files = sorted(
+        directory.glob("TODO*.org"),
+        key=lambda p: (p.name != "TODO.org", p.name.lower()),
+    )
+    if todo_files:
+        return todo_files[0]
+    for name in PROBE_NAMES:
+        p = directory / name
+        if p.exists():
+            return p
+    org_files = sorted(directory.glob("*.org"))
+    if org_files:
+        return org_files[0]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
