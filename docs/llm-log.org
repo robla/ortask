@@ -44,3 +44,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-12 Fri 18:38]: changed =projtui.py= task selection to show details immediately and expanded editor launch support for opening selected tasks at their line number.
 ** Codex [2026-06-12 Fri 18:46]: updated =projtui.py= task details to include descendant subtasks and cap displayed detail text at 20 lines.
 ** Codex [2026-06-12 Fri 18:49]: added subtask drill-down menus to =projtui.py= so selected tasks offer direct subtasks as numbered items to view.
+** Codex [2026-06-12 Fri 19:20]: created =docs/scan.md= specifying a read-only =ortask.py scan= command that reuses =projtui.py= project discovery and reports top-level tasks per project.
