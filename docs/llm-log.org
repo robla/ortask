@@ -48,4 +48,5 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-12 Fri 19:30]: rewrote the scan spec as =docs/orgmgr.md=, defining =orgmgr.py list= as the global project/task overview while keeping =ortask.py= scoped to local Org task files.
 ** Gemini [2026-06-12 Fri 19:43]: updated =GEMINI.md= to align with the current implementation and documentation in =docs/= (including lowercase IDs, weekly tasks, projtui.py, and orgmgr.py specs).
 ** Gemini [2026-06-12 Fri 19:47]: implemented the first version of =orgmgr.py= with the read-only =list= command to scan workspaces, display projects, and list top-level tasks.
+** Claude [2026-06-12 Fri 20:46]: rewrote =CLAUDE.md= to match the current docs and implementation, covering =orgmgr.py= and =projtui.py=, weekly task IDs, the corrected default-file resolution order, and the =docs/llm-log.org= convention.
 
