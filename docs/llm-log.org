@@ -52,4 +52,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Claude [2026-06-12 Fri 21:02]: specified the =orgmgr.py projadd= subcommand in =docs/orgmgr.md=, reusing =ortask.py= task-file discovery to register projects in a new shared =~/.config/ortask/ortask.ini= =[projects]= registry, and documented the deprecation plan for =projtui.py='s =projdir= config.
 ** Claude [2026-06-12 Fri 21:18]: added an =orgmgr.py migrate= subcommand to =docs/orgmgr.md= that initializes the shared registry (importing any =projdir= projects) and gated =projadd= behind it with a friendly error until migration is run.
 ** Claude [2026-06-12 Fri 21:30]: clarified in =docs/orgmgr.md= that =orgmgr.py projadd= registers exactly one directory (cwd or the given path) and never scans subdirectories, resolving its task file there with =TODO.org=-first discovery like =ortask.py=.
-
+** Codex [2026-06-12 Fri 21:43]: added =docs/architecture.md= describing the planned shared =ortasklib/= package split into =core.py=, =tasks.py=, and =manager.py= while keeping the scripts as thin UI/CLI layers.
