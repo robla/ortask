@@ -4,21 +4,21 @@ This file provides instructional context for Gemini when working in the `ortask`
 
 ## Project Overview
 
-**ortask** is a lightweight Python CLI tool designed to query and edit TODO tasks within a `* Tasks` subtree of an [org-mode](https://orgmode.org/) file (defaulting to `README.org`). It prioritizes stable task IDs (e.g., `T0001`) to ensure permalinks and references remain valid even as tasks are moved or renamed.
+**ortask** is a lightweight Python CLI tool designed to query and edit TODO tasks within a `* Tasks` subtree of an [org-mode](https://orgmode.org/) file. It prioritizes stable task IDs (e.g., `t0001` or week-based `tw26W24`) to ensure permalinks and references remain valid even as tasks are moved or renamed.
 
 - **Origins:** The project evolved from `status.py`, a simple Org-mode checkbox viewer, into a robust task manager that treats Org-mode as its primary database.
 - **Naming:** The name combines **OR**g-mode and **TASK**. It was chosen for its unique namespace and clarity of purpose.
 - **Primary Language:** Python 3.10+ (Standard library only; no external dependencies).
-- **Core Architecture:** A single-file script (`ortask.py`) containing the parser, data model, and CLI logic.
-- **Current State:** The tool is transitioning from a legacy checkbox-based parser (`[ ]` / `[X]`) to a formal org-mode `TODO`/`DONE` keyword parser with support for priorities, IDs, and tags.
+- **Core Architecture:** A core CLI script (`ortask.py`) and a terminal project task menu manager (`projtui.py`).
+- **Current State:** The parser supports a formal org-mode `TODO`/`DONE` keyword parser with support for priorities, stable IDs (both numeric `t0001` and week-based `tw26W24`), and tags.
 
 ## The "Ortask Way" (Core Design Principles)
 
 1.  **Org-mode as Source of Truth:** The `.org` file is the database. No external stores (SQLite, JSON, etc.) are used.
 2.  **Stable, Hierarchical IDs:** IDs are human-readable, stable, and placed directly in the heading.
-    - **Top-level:** `T0001`
-    - **Subtasks:** `T0001.1`, `T0001.2`
-    - **Nested:** `T0001.1.1`
+    - **Top-level:** `t0001` (numeric) or week-based `tw26W24` (for weekly recurring work)
+    - **Subtasks:** `t0001.1`, `t0001.2`, `tw26W24.1`
+    - **Nested:** `t0001.1.1`
 3.  **LLM-First Design:** The tool is optimized for AI agent consumption. The planned `context` subcommand provides a compact state summary for prompt context.
 4.  **Surgical Persistence:** Modifications must preserve all surrounding prose, property drawers, and non-task content. Never reformat the entire file.
 5.  **Human-Readable & Greppable:** IDs make the file easy for humans to read and for simple tools like `grep` to parse.
@@ -26,8 +26,13 @@ This file provides instructional context for Gemini when working in the `ortask`
 ## Key Files
 
 - `ortask.py`: The main executable script.
-- `README.org`: The default data file and project quick-start guide.
-- `docs/ortask.md`: The man-page style reference; consider this the **source of truth** for planned subcommand behavior.
+- `projtui.py`: A stdlib-only terminal project menu helper for selecting and focusing on tasks.
+- `todo.org` / `tasks.org`: Default files searched for task headings before falling back to other `.org` files.
+- `README.org`: Fallback data file and project quick-start guide.
+- `docs/ortask.md`: The man-page style reference; the **source of truth** for planned subcommand behavior.
+- `docs/orgmgr.md`: Design reference for the planned `orgmgr.py` global manager.
+- `docs/format.md`: Reference for task formatting and file discovery conventions.
+- `docs/interactive.md`: Spec for the terminal menu interface.
 - `AGENTS.md`: General repository guidelines for AI agents.
 - `CLAUDE.md`: Implementation-specific guidance (useful for cross-referencing).
 - `docs/*.org`: Design notes and architectural decisions.
@@ -36,36 +41,38 @@ This file provides instructional context for Gemini when working in the `ortask`
 
 Since this project uses only the Python standard library, there is no build or install step.
 
-- **List Tasks:** `./ortask.py` (Current implementation uses a legacy parser).
+- **List Tasks:** `./ortask.py` or `./ortask.py list`.
 - **Limit Output:** `./ortask.py --items 5`.
 - **Custom File:** `./ortask.py --file path/to/file.org`.
-- **Syntax Check:** `python3 -m py_compile ortask.py`.
+- **Run TUI:** `./projtui.py` or `./projtui.py --projdir ~/Projects` to launch the interactive workspace task viewer.
+- **Syntax Check:** `python3 -m py_compile ortask.py projtui.py`.
 - **Testing:** `python3 -m pytest` (Expected command once a test suite is implemented).
 
-### Planned Subcommands
+### Subcommands (`ortask.py`)
 
-| Subcommand | Description |
-| :--- | :--- |
-| `list` | Print tasks (filter by state, limit N, multiple formats). |
-| `show <id>` | Detailed view of a task including body and properties. |
-| `add <title>` | Append a new task with the next available ID. |
-| `done <id>` | Mark a task as DONE. |
-| `todo <id>` | Reopen a DONE task (also `open`). |
-| `rename <id>`| Change a task's title while preserving ID and state. |
-| `context` | **LLM Special**: Output a compact summary for prompt context. |
-| `repair` | Validate ID integrity and tree structure. |
-| `next` | Print the next ID that `add` would assign. |
+| Subcommand | Status | Description |
+| :--- | :--- | :--- |
+| `list` | Implemented | Print tasks (filter by state, limit N, multiple formats). Default when no subcommand is specified. |
+| `show <id>` | Implemented | Detailed view of a task including body, properties, and subtasks. |
+| `add <title>` | Implemented | Append a new task with the next available ID; supports `--parent <id>`. |
+| `done <id>` | Implemented | Mark a task as DONE. |
+| `open <id>` | Implemented | Reopen a DONE task (sets state back to TODO). |
+| `repair` | Implemented | Validate and fix ID integrity and tree structure (supports `--dry-run`). |
+| `rename <id>`| Planned | Change a task's title while preserving ID and state. |
+| `context` | Planned | **LLM Special**: Output a compact summary for prompt context. |
+| `next` | Planned | Print the next ID that `add` would assign. |
 
 ## Development Conventions
 
 ### Task Heading Format (Target)
-The parser should aim to match the following structure:
-`** TODO [#A] T0005 Task title :tag1:tag2:`
+The parser matches the following structure:
+`** TODO [#A] t0005 Task title :tag1:tag2:`
+`** TODO tw26W24 Weekly task title :tag1:`
 
 - **Stars:** One or more (level).
 - **State:** `TODO` or `DONE`.
 - **Priority:** Optional `[#A]`, `[#B]`, or `[#C]`.
-- **ID:** Stable identifier matching `T\d{4}(\.\d+)*`.
+- **ID:** Stable identifier matching `t\d{4}(\.\d+)*` or week-based `tw\d{2,4}[wW]\d{2}(\.\d+)*`.
 - **Tags:** Optional colon-separated list at the end of the line.
 
 ### Modification Principles
@@ -75,7 +82,6 @@ The parser should aim to match the following structure:
 - **Atomic Writes:** Write to a temporary file, then rename to prevent data loss.
 
 ## Roadmap & Next Steps
-1.  Refactor the current regex-based parser to support the new `T0001` ID format and `TODO`/`DONE` keywords.
-2.  Implement the subcommand architecture using `argparse` subparsers.
-3.  Implement safe in-place file modification for `add` and `done` commands.
-4.  Create the `context` subcommand to aid future AI-driven development.
+1. Implement the planned subcommands: `context`, `rename`, and `next`.
+2. Implement `orgmgr.py` to support global Org project operations (first verb: `list`).
+3. Add a test suite (`tests/`) using `pytest` to cover file parsing, filters, ID allocation, and editing safety.
