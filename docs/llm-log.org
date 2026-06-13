@@ -47,4 +47,5 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-12 Fri 19:20]: created =docs/scan.md= specifying a read-only =ortask.py scan= command that reuses =projtui.py= project discovery and reports top-level tasks per project.
 ** Codex [2026-06-12 Fri 19:30]: rewrote the scan spec as =docs/orgmgr.md=, defining =orgmgr.py list= as the global project/task overview while keeping =ortask.py= scoped to local Org task files.
 ** Gemini [2026-06-12 Fri 19:43]: updated =GEMINI.md= to align with the current implementation and documentation in =docs/= (including lowercase IDs, weekly tasks, projtui.py, and orgmgr.py specs).
+** Gemini [2026-06-12 Fri 19:47]: implemented the first version of =orgmgr.py= with the read-only =list= command to scan workspaces, display projects, and list top-level tasks.
 
