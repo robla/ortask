@@ -185,8 +185,9 @@ def test_detect_repair_problems() -> None:
 def test_summarize_projects_for_orgmgr(tmp_path: Path, capsys) -> None:
     # This test covers global project summaries without touching real config.
     workspace = tmp_path / "workspace"
-    write(
-        workspace / "alpha" / "TODO.org",
+    real_project = tmp_path / "real-alpha"
+    real_alpha_org = write(
+        real_project / "TODO.org",
         """
         * Tasks
         ** TODO t0001 Alpha parent
@@ -194,7 +195,15 @@ def test_summarize_projects_for_orgmgr(tmp_path: Path, capsys) -> None:
         ** DONE t0002 Alpha done
         """,
     )
-    write(workspace / "beta" / "README.org", "* Notes\nNo task section.\n")
+    (workspace / "alpha").mkdir(parents=True)
+    (workspace / "alpha" / "TODO.org").symlink_to(real_alpha_org)
+    write(
+        workspace / "beta" / "README.org",
+        """
+        * Notes
+        No task section.
+        """,
+    )
     write(workspace / ".hidden" / "TODO.org", "* Tasks\n** TODO t0003 Hidden\n")
     write(workspace / "docs" / "TODO.org", "* Tasks\n** TODO t0004 Docs\n")
 
@@ -204,7 +213,7 @@ def test_summarize_projects_for_orgmgr(tmp_path: Path, capsys) -> None:
 
     by_name = {project["project"]: project for project in projects}
     assert set(by_name) == {"alpha", "beta"}
-    assert by_name["alpha"]["file"] == "alpha/TODO.org"
+    assert by_name["alpha"]["file"] == str(real_alpha_org.resolve())
     assert by_name["alpha"]["tasks"] == [
         {"id": "t0001", "state": "TODO", "title": "Alpha parent"},
     ]
@@ -406,6 +415,7 @@ def test_projadd_creates_symlink_subdir(tmp_path: Path, monkeypatch, capsys) -> 
     ) == 0
     projects = json.loads(capsys.readouterr().out)
     assert projects[0]["project"] == "elweek"
+    assert projects[0]["file"] == str((project / "TODO.org").resolve())
     assert projects[0]["tasks"] == [
         {"id": "t0001", "state": "TODO", "title": "Promote episode"},
     ]

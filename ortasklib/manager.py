@@ -174,20 +174,21 @@ def discover_projects(workspace: Path) -> list[Project]:
 def summarize_projects(workspace: Path, include_all: bool = False) -> list[dict]:
     """Return JSON-ready records for each project in a workspace.
 
-    Each record has ``project`` and ``file`` (relative to the workspace). Valid
-    projects also carry ``tasks`` — top-level (``level == 2``) tasks, TODO-only
-    unless ``include_all``. Projects whose Org file is unreadable, lacks a
-    ``* Tasks`` section, or has duplicate IDs carry a ``warning`` and empty
-    ``tasks`` instead of raising.
+    Each record has ``project`` and ``file`` (the resolved Org file path with
+    ``$HOME`` collapsed to ``~`` where possible). Valid projects also carry
+    ``tasks`` — top-level (``level == 2``) tasks, TODO-only unless
+    ``include_all``. Projects whose Org file is unreadable, lacks a ``* Tasks``
+    section, or has duplicate IDs carry a ``warning`` and empty ``tasks``
+    instead of raising.
     """
     records: list[dict] = []
 
     for project in discover_projects(workspace):
-        rel_file = project.org_file.relative_to(workspace)
-        record: dict = {"project": project.name, "file": str(rel_file)}
+        real_org_file = canonical_org_file(project)
+        record: dict = {"project": project.name, "file": friendly_path(real_org_file)}
 
         try:
-            text = project.org_file.read_text(encoding="utf-8")
+            text = real_org_file.read_text(encoding="utf-8")
         except Exception as e:  # noqa: BLE001 — surface any read failure as a warning
             record["warning"] = f"Could not read file: {e}"
             record["tasks"] = []

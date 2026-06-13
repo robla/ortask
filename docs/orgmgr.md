@@ -46,13 +46,22 @@ convenience layer over that directory, not a database owner.
 ## `list`
 
 `orgmgr.py list` lists all projects in the registry and the top-level tasks
-within each project.
+within each project. It shows each Org file as a resolved path, with `$HOME`
+collapsed to `~` when possible.
 
 ```sh
 orgmgr.py list
 orgmgr.py --registry ~/tmpsorta/proj2026 list
 orgmgr.py list --all
 orgmgr.py list --format json
+```
+
+Example plain output:
+
+```text
+ortask  ~/src/ortask/todo.org
+  [TODO] t0001 Remove AI slop from docs/taskwarrior.md
+  [TODO] t0002 create .org file if none exist in directory when using 'ort add'
 ```
 
 Discovery rules:

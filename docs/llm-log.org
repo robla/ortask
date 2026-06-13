@@ -65,3 +65,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-13 Sat 00:03]: changed =projtui.py= to resolve selected project task-file symlinks before displaying, reading, editing, or opening them, and added a regression test for canonical task-menu paths.
 ** Codex [2026-06-13 Sat 00:19]: renamed the global project directory setting to =[projects] registry=, removed live =projtui.ini= and =projdir= fallback handling, switched the CLIs to =--registry=, and updated the tests and docs.
 ** Codex [2026-06-13 Sat 00:36]: added an =e= editor action to =projtui.py='s file-scoped task-list menu so users can open the current Org file before selecting a specific task.
+** Codex [2026-06-13 Sat 00:49]: changed =orgmgr.py list= project summaries to display resolved Org file paths with the home directory collapsed to =~=.
