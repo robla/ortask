@@ -1,34 +1,37 @@
-# ortask.py scan
+# orgmgr.py
 
-`scan` is a proposed read-only subcommand for listing projects and their
-top-level open tasks.
+`orgmgr.py` is a proposed manager for Org files across the user's filesystem.
+It is distinct from `ortask.py`.
 
-## Goal
+`ortask.py` is local: it reads or edits one selected Org task file. Its verbs
+such as `list`, `show`, `add`, `done`, and `open` operate against a specific
+file resolved by `--file`, `ORTASK_FILE`, or local file lookup.
 
-`ortask.py scan` should answer: "What projects does ortask know about, and
-what is the top-level work in each one?"
+`orgmgr.py` is global: it knows about many Org files, groups them into
+projects, and can build or maintain an index of the Org files the user wants
+managed. It should eventually support project-level verbs such as `projadd`
+and `projrm`.
 
-It should not replace `list`, `show`, or `projtui.py`. `list` remains the
-single-file task listing command. `projtui.py` remains the interactive
-project menu. `scan` is the non-interactive, scriptable overview.
+## First Verb: list
 
-## Command Shape
+`orgmgr.py list` should list all known projects and the top-level tasks within
+each project.
 
 ```sh
-ortask.py scan
-ortask.py scan --projdir ~/tmpsorta/proj2026
-ortask.py scan --all
-ortask.py scan --format plain
-ortask.py scan --format json
+orgmgr.py list
+orgmgr.py list --projdir ~/tmpsorta/proj2026
+orgmgr.py list --all
+orgmgr.py list --format plain
+orgmgr.py list --format json
 ```
 
-`--projdir` overrides configured/default project discovery. The default
-project directory should match `projtui.py`: command-line `--projdir`, then
-`~/.config/ortask/projtui.ini`, then `~/Projects`.
+The first implementation should use the same project list as `projtui.py`.
+That means `--projdir` overrides configuration, the global config can point to
+`~/tmpsorta/proj2026`, and the default is `~/Projects`.
 
 ## Project Discovery
 
-`scan` should use the same project list as `projtui.py`:
+For now, reuse `projtui.py` discovery rules:
 
 - scan immediate subdirectories of the configured project directory
 - skip hidden directories and infrastructure directories such as `.git`,
@@ -36,21 +39,22 @@ project directory should match `projtui.py`: command-line `--projdir`, then
 - choose each project's Org file using the same naming order as `projtui.py`
 - do not recurse arbitrarily through project trees
 
-For now, keeping discovery shared with `projtui.py` matters more than making
-`scan` independently clever.
+Longer term, `orgmgr.py` should maintain its own project registry or database
+of Org files. That database can grow beyond a single project directory, but
+the first version should not invent a separate discovery model.
 
 ## Task Selection
 
-For each discovered project, show only top-level open tasks:
+For each discovered project, show only top-level tasks:
 
-- parse the selected Org file with the same parser as `ortask.py list`
+- parse the selected Org file with the same parser as `ortask.py`
 - include only `TODO` tasks by default
 - include only direct children of `* Tasks` (`level == 2`)
-- omit subtasks from the main scan output
+- omit subtasks from the main list output
 - with `--all`, include top-level `DONE` tasks too
 
 If a project has an Org file but no parseable `* Tasks` section, show the
-project with a short note in plain output, and include a warning field in JSON.
+project with a short note in plain output and include a warning field in JSON.
 
 ## Plain Output
 
@@ -67,33 +71,22 @@ ortask  ortask/todo.org
 
 Use one blank line between projects. Keep task IDs visible.
 
-## JSON Output
+## Future Verbs
 
-`--format json` should return structured data suitable for scripts:
+Potential future verbs:
 
-```json
-[
-  {
-    "project": "elweek",
-    "file": "elweek/TODO-ElWeek.org",
-    "tasks": [
-      {"id": "tw26W24", "state": "TODO", "title": "Week of June 8's tasks for ElectoramaWeekly"}
-    ]
-  }
-]
-```
+- `projadd`: add a project or Org file to the global registry
+- `projrm`: remove a project or Org file from the registry
+- `scan`: refresh the registry from configured roots
+- `doctor`: report missing files, duplicate IDs, parser failures, or stale
+  registry entries
+
+These verbs should manage the global Org-file inventory. They should not
+replace local task editing verbs in `ortask.py`.
 
 ## Safety
 
-`scan` must be read-only. It must not run `repair`, create missing files, add
-IDs, or rewrite Org content. If the parser finds duplicate IDs, report that
-project as invalid and continue scanning other projects.
-
-## Implementation Notes
-
-The first implementation should reuse or extract the discovery functions from
-`projtui.py`: `default_config_path`, `read_config_projdir`,
-`resolve_projdir`, `choose_org_file`, and `discover_projects`.
-
-Longer term, those helpers should move into a shared module so `ortask.py scan`
-and `projtui.py` cannot drift apart.
+`orgmgr.py list` must be read-only. It must not run `repair`, create missing
+files, add IDs, or rewrite Org content. If duplicate IDs are found within a
+project file, report that project as invalid and continue listing other
+projects.
