@@ -11,23 +11,29 @@ Inside it, put actionable work under a top-level `* Tasks` heading:
 
 ```org
 * Tasks
-** TODO tw26W24.0 Promote June 10 ElectoramaWeekly episode
-*** TODO tw26W24.0.1 Identify the latest episode title and URL
-*** TODO tw26W24.0.2 Draft short promo copy
-*** TODO tw26W24.0.3 Post to /r/electorama
-*** TODO tw26W24.0.4 Post to X/Twitter
-*** TODO tw26W24.0.5 Post to Facebook
-*** TODO tw26W24.0.6 Record posted links or notes
-** TODO tw26W24.1 Prepare for June 17 ElectoramaWeekly episode
+** TODO tw26W24 Week of June 8's tasks for ElectoramaWeekly
+*** TODO tw26W24.0 Promote June 10 ElectoramaWeekly episode
+**** TODO tw26W24.0.1 Identify the latest episode title and URL
+**** TODO tw26W24.0.2 Draft short promo copy
+**** TODO tw26W24.0.3 Post to reddit (/r/electorama)
+https://www.reddit.com/r/electorama/submit
+**** TODO tw26W24.0.4 Post to X/Twitter
+https://x.com/electorama
+**** TODO tw26W24.0.5 Post to Facebook
+https://facebook.com/electorama
+**** TODO tw26W24.0.6 Record posted links or notes
+*** TODO tw26W24.1 Prepare for June 17 ElectoramaWeekly episode
 
 * Template
-** reddit /r/electorama
-*** https://reddit.com/r/electorama
-*** https://www.reddit.com/r/electorama/submit
-** Twitter/X
-*** https://x.com/electorama
-** Facebook
-*** https://facebook.com/electorama
+** TODO twYYWNN Week of Month Day's tasks for ElectoramaWeekly
+*** TODO twYYWNN.0 Promote Month Day ElectoramaWeekly episode
+**** TODO twYYWNN.0.3 Post to reddit (/r/electorama)
+https://reddit.com/r/electorama
+https://www.reddit.com/r/electorama/submit
+**** TODO twYYWNN.0.4 Post to X/Twitter
+https://x.com/electorama
+**** TODO twYYWNN.0.5 Post to Facebook
+https://facebook.com/electorama
 ```
 
 This keeps weekly recurring chores and one-time work in the same file without
@@ -55,6 +61,10 @@ four-digit year forms compare as the same week for lookup, so `2026w24` also
 finds `tw26W24`. Use dotted children such as `t0001.1` or `tw26W24.1` for
 subtasks. Body text under a task is free-form Org text and should remain
 readable even if `ortask.py` is never used.
+
+Put task-specific URLs as plain body lines under the task they support, not as
+extra `*` headings. That keeps the links visible in `ortask.py show` and in
+interactive task details.
 
 ## Discovery Direction
 

@@ -40,3 +40,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-12 Fri 14:45]: created =docs/format.md= as a minimal Org format stub for ortask task files, using Electorama Weekly chores as the concrete example and documenting TODO file discovery direction.
 ** Codex [2026-06-12 Fri 14:57]: reformatted =~/tmpsorta/electorama-weekly/TODO-ElWeek.org= into an ortask-compatible weekly promo checklist with a preserved destination template.
 ** Codex [2026-06-12 Fri 15:17]: added support for weekly task IDs like =tw26W24=, updated the Electorama Weekly checklist to use week IDs, and documented the convention in =docs/format.md= and =docs/ortask.md=.
+** Codex [2026-06-12 Fri 15:59]: updated the Electorama Weekly template to mirror the handcrafted weekly checklist and documented bare task links as body lines so they appear in task details.
