@@ -55,5 +55,6 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-12 Fri 21:43]: added =docs/architecture.md= describing the planned shared =ortasklib/= package split into =core.py=, =tasks.py=, and =manager.py= while keeping the scripts as thin UI/CLI layers.
 ** Codex [2026-06-12 Fri 21:47]: added =docs/testing.md= with nine refactor-protection tests covering parsing, ID normalization, file discovery, local edits, manager summaries, and CLI smoke checks.
 ** Codex [2026-06-12 Fri 21:50]: implemented the nine pytest cases from =docs/testing.md=, updated default Org file discovery to prefer =TODO*.org= before lowercase compatibility files, and refreshed the matching README/CLI reference text.
+** Claude [2026-06-12 Fri 22:02]: added two pytest cases beyond the original nine, covering JSON/org list formatters (nesting + org round-trip) and =show= descendant expansion with shorthand week-ID lookup.
 ** Gemini [2026-06-12 Fri 21:58]: modified projtui.py to use bold cyan ANSI escape codes for interactive task and project selection prompts.
 
