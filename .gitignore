@@ -1,1 +1,6 @@
 .codex
+__pycache__
+*.zw
+cruft
+foo
+tui2026
