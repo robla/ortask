@@ -105,8 +105,15 @@ def load_menu_items(org_file: Path, include_done: bool = False) -> list[MenuItem
     return _read_only_headings(text)
 
 
-def _prompt_choice(count: int, *, allow_back: bool = True) -> str:
+def _prompt_choice(
+    count: int,
+    *,
+    allow_back: bool = True,
+    allow_editor: bool = False,
+) -> str:
     suffix = "number"
+    if allow_editor:
+        suffix += ", e=open editor"
     if allow_back:
         suffix += ", b=back"
     suffix += ", q=quit"
@@ -213,11 +220,14 @@ def task_menu(project: Project, include_done: bool) -> bool:
             print(exc)
             return True
         _print_items(f"{project.name} tasks ({org_file})", items)
-        choice = _prompt_choice(len(items))
+        choice = _prompt_choice(len(items), allow_editor=True)
         if choice == "q":
             return False
         if choice == "b":
             return True
+        if choice == "e":
+            _open_editor(org_file, None)
+            continue
         if not choice.isdigit() or not 1 <= int(choice) <= len(items):
             print("invalid choice")
             continue

@@ -82,6 +82,7 @@ elweek tasks:
   1. [#A] publish latest episode promo post
   2. draft social copy for last week's episode
   3. update episode links page
+  e. open this Org file in editor
   r. refresh
   b. back to projects
   q. quit

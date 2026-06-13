@@ -465,3 +465,24 @@ def test_projtui_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> 
     assert result.returncode == 0
     assert f"elweek tasks ({task_file.resolve()})" in result.stdout
     assert f"elweek tasks ({symlink_path})" not in result.stdout
+
+
+def test_projtui_task_menu_opens_org_file_from_task_list(tmp_path: Path, monkeypatch) -> None:
+    # This test ensures the file-scoped task-list menu can open the whole Org
+    # file in an editor before a specific task has been selected.
+    org_file = write(
+        tmp_path / "project" / "TODO.org",
+        """
+        * Tasks
+        ** TODO t0001 Open from task menu
+        """,
+    )
+    project = manager.Project("sample", tmp_path / "project", org_file)
+    opened: list[tuple[Path, int | None]] = []
+    choices = iter(["e", "b"])
+
+    monkeypatch.setattr(projtui, "_open_editor", lambda path, line: opened.append((path, line)))
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(choices))
+
+    assert projtui.task_menu(project, include_done=False) is True
+    assert opened == [(org_file.resolve(), None)]
