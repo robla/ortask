@@ -25,7 +25,7 @@ from ortasklib.manager import (
     Project,
     canonical_org_file,
     discover_projects,
-    resolve_projdir,
+    resolve_registry,
 )
 
 
@@ -294,11 +294,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="Minimal project menu for org task files.",
     )
     parser.add_argument(
-        "--projdir",
-        "--workspace",
-        dest="projdir",
+        "--registry",
+        dest="registry",
         default=None,
-        help="project directory containing project subdirectories",
+        help="project registry directory containing project subdirectories",
     )
     parser.add_argument(
         "--include-done",
@@ -310,7 +309,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    workspace, display_path = resolve_projdir(args.projdir)
+    workspace, display_path = resolve_registry(args.registry)
     print(f"Finding project in {display_path}")
     if not workspace.is_dir():
         print(f"project directory not found: {workspace}", file=sys.stderr)

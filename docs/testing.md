@@ -69,8 +69,8 @@ Run the scripts against temporary fixtures with subprocess:
 ```sh
 ./ortask.py --file /tmp/example.org list
 ./ortask.py --file /tmp/example.org show t0001
-./orgmgr.py --projdir /tmp/workspace list --format json
-./projtui.py --projdir /tmp/workspace
+./orgmgr.py --registry /tmp/workspace list --format json
+./projtui.py --registry /tmp/workspace
 ```
 
 For `projtui.py`, provide input such as `q\n` and assert it exits cleanly after

@@ -44,7 +44,7 @@ Since this project uses only the Python standard library, there is no build or i
 - **List Tasks:** `./ortask.py` or `./ortask.py list`.
 - **Limit Output:** `./ortask.py --items 5`.
 - **Custom File:** `./ortask.py --file path/to/file.org`.
-- **Run TUI:** `./projtui.py` or `./projtui.py --projdir ~/Projects` to launch the interactive workspace task viewer.
+- **Run TUI:** `./projtui.py` or `./projtui.py --registry ~/Projects` to launch the interactive workspace task viewer.
 - **Syntax Check:** `python3 -m py_compile ortask.py projtui.py`.
 - **Testing:** `python3 -m pytest` (Expected command once a test suite is implemented).
 

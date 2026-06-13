@@ -9,9 +9,9 @@ added without growing three coupled scripts.
 from `ortasklib`. The `docs/testing.md` suite runs unchanged as the refactor
 gate (see *Test compatibility* below). The `orgmgr.py list`/`migrate`/`projadd`
 verbs (see `docs/orgmgr.md`) are implemented in `manager`: the project registry
-is a master **projdir** of per-project symlink subdirectories, and `ortask.ini`
-records where that projdir lives. All three scripts resolve the projdir through
-`manager.resolve_projdir()` (`--projdir` > `ortask.ini` > legacy `projtui.ini` >
+is a directory of per-project symlink subdirectories, and `ortask.ini` records
+where that registry lives. All three scripts resolve it through
+`manager.resolve_registry()` (`--registry` > `[projects] registry` >
 `~/Projects`).
 
 ## Package Layout
@@ -106,23 +106,22 @@ the caller can skip the write entirely.
 Behavior used by `orgmgr.py` and shared with `projtui.py`:
 
 - the `Project` record
-- projdir resolution — `ortask_config_path()` (`ortask.ini`) and
-  `default_config_path()` (legacy `projtui.ini`), both honoring
-  `XDG_CONFIG_HOME`; `read_ortask_projdir()` / `read_config_projdir()` /
-  `write_ortask_projdir()`; and `resolve_projdir()` with precedence
-  `--projdir` > `ortask.ini` > `projtui.ini` > `~/Projects`
-- project discovery (`discover_projects()`) over the projdir's per-project
+- registry resolution — `ortask_config_path()` (`ortask.ini`) honors
+  `XDG_CONFIG_HOME`; `read_ortask_registry()` / `write_ortask_registry()`; and
+  `resolve_registry()` with precedence `--registry` > `[projects] registry` >
+  `~/Projects`
+- project discovery (`discover_projects()`) over the registry's per-project
   subdirectories and per-project Org-file selection (`choose_org_file()`, which
   transparently follows the project/task symlinks)
 - `summarize_projects()` — JSON-ready, top-level task summaries per project,
   attaching a `warning` (instead of raising) for unreadable files, missing
   `* Tasks` sections, or duplicate IDs
 
-`orgmgr.py`'s `migrate` adapter writes the projdir into `ortask.ini` (and deletes
-the legacy `projtui.ini`); its `projadd` adapter creates the per-project symlink
-subdirectory, using `core.discover_org_file()` for single-directory task-file
-discovery. Both `orgmgr.py list` and `projtui.py` resolve the projdir through
-`manager.resolve_projdir()`, so the interactive and non-interactive tools agree
+`orgmgr.py`'s `migrate` adapter writes the registry into `ortask.ini`; its
+`projadd` adapter creates the per-project symlink subdirectory, using
+`core.discover_org_file()` for single-directory task-file discovery. Both
+`orgmgr.py list` and `projtui.py` resolve the registry through
+`manager.resolve_registry()`, so the interactive and non-interactive tools agree
 on the same project list.
 
 ## Test compatibility
@@ -154,5 +153,5 @@ historical private aliases `_find_tasks_range`, `_build_org_heading`,
 - Consider repointing the test suite to import from `ortasklib` directly and
   retiring the `ortask.py` compatibility re-exports.
 
-`list`, `migrate`, and `projadd` (the projdir-of-symlinks model) are done, with
+`list`, `migrate`, and `projadd` (the registry-of-symlinks model) are done, with
 config-isolation tests (a temp `XDG_CONFIG_HOME`) in `tests/test_ortask_suite.py`.

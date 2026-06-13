@@ -22,7 +22,7 @@ from ortasklib import core, manager
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    workspace, display_path = manager.resolve_projdir(args.projdir)
+    workspace, display_path = manager.resolve_registry(args.registry)
 
     if not workspace.is_dir():
         print(f"project directory not found: {workspace}", file=sys.stderr)
@@ -58,7 +58,7 @@ def _replace_symlink(link_path: Path, target: Path) -> None:
 
 
 def cmd_projadd(args: argparse.Namespace) -> int:
-    projdir, projdir_display = manager.resolve_projdir(args.projdir)
+    registry, registry_display = manager.resolve_registry(args.registry)
 
     project_dir = Path(args.path).expanduser().resolve()
     if not project_dir.is_dir():
@@ -87,7 +87,7 @@ def cmd_projadd(args: argparse.Namespace) -> int:
                       f"adding project link only", file=sys.stderr)
 
     name = args.name or project_dir.name
-    subdir = projdir / name
+    subdir = registry / name
 
     if subdir.exists() and not args.force:
         print(f"projadd: project '{name}' already exists at {subdir} "
@@ -95,8 +95,8 @@ def cmd_projadd(args: argparse.Namespace) -> int:
         return 1
 
     # Warn if another project subdir already links to this project directory.
-    if projdir.is_dir():
-        for other in sorted(projdir.iterdir(), key=lambda p: p.name.lower()):
+    if registry.is_dir():
+        for other in sorted(registry.iterdir(), key=lambda p: p.name.lower()):
             if not other.is_dir() or other.name == name:
                 continue
             if any(e.is_symlink() and e.resolve() == project_dir for e in other.iterdir()):
@@ -119,7 +119,7 @@ def cmd_projadd(args: argparse.Namespace) -> int:
     if org_link is not None:
         _replace_symlink(org_link, org_file)
 
-    print(f"added project '{name}' under {projdir_display}")
+    print(f"added project '{name}' under {registry_display}")
     print(f"  {project_dir.name} -> {project_dir}")
     if org_link is not None:
         print(f"  {org_file.name} -> {org_file}")
@@ -130,30 +130,24 @@ def cmd_projadd(args: argparse.Namespace) -> int:
 
 def cmd_migrate(args: argparse.Namespace) -> int:
     ortask_path = manager.ortask_config_path()
-    projtui_path = manager.default_config_path()
-    existing = manager.read_ortask_projdir(ortask_path)
+    existing = manager.read_ortask_registry(ortask_path)
 
-    if args.projdir:
-        source_raw = args.projdir
+    if args.registry:
+        source_raw = args.registry
     elif existing is not None and not args.force:
         source_raw = existing            # keep the value already recorded
     else:
-        source_raw = manager.read_config_projdir(projtui_path) or manager.DEFAULT_PROJDIR
+        source_raw = manager.DEFAULT_REGISTRY
 
     stored = manager.friendly_path(Path(source_raw).expanduser().resolve(), source_raw)
 
     if args.dry_run:
-        print(f"[dry-run] would set [projects] projdir = {stored} in "
+        print(f"[dry-run] would set [projects] registry = {stored} in "
               f"{manager.friendly_path(ortask_path)}")
-        if projtui_path.exists():
-            print(f"[dry-run] would delete {manager.friendly_path(projtui_path)}")
         return 0
 
-    manager.write_ortask_projdir(ortask_path, stored)
-    print(f"recorded projdir = {stored} in {manager.friendly_path(ortask_path)}")
-    if projtui_path.exists():
-        projtui_path.unlink()
-        print(f"removed obsolete {manager.friendly_path(projtui_path)}")
+    manager.write_ortask_registry(ortask_path, stored)
+    print(f"recorded registry = {stored} in {manager.friendly_path(ortask_path)}")
     return 0
 
 
@@ -162,11 +156,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="orgmgr — global operations command for the ortask suite of tools.",
     )
     parser.add_argument(
-        "--projdir",
-        "--workspace",
-        dest="projdir",
+        "--registry",
+        dest="registry",
         default=None,
-        help="project directory containing project subdirectories (overrides config/default)",
+        help="project registry directory containing project subdirectories",
     )
 
     sub = parser.add_subparsers(dest="command")
@@ -188,7 +181,7 @@ def build_parser() -> argparse.ArgumentParser:
     # projadd subcommand
     p_add = sub.add_parser(
         "projadd",
-        help="add one project to the master projdir (creates a symlink subdir)",
+        help="add one project to the registry (creates a symlink subdir)",
     )
     p_add.add_argument(
         "path",
@@ -200,9 +193,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="project subdirectory name (default: directory basename)")
     p_add.add_argument("--file", default=None,
                        help="task file to link instead of running discovery")
-    # SUPPRESS default so this subparser does not clobber a global --projdir.
-    p_add.add_argument("--projdir", default=argparse.SUPPRESS,
-                       help="master projdir to add into (overrides config/default)")
+    # SUPPRESS default so this subparser does not clobber a global override.
+    p_add.add_argument("--registry", default=argparse.SUPPRESS,
+                       help="registry directory to add into")
     p_add.add_argument("--force", action="store_true",
                        help="repoint links in an existing project subdirectory")
     p_add.add_argument("--dry-run", action="store_true",
@@ -211,13 +204,13 @@ def build_parser() -> argparse.ArgumentParser:
     # migrate subcommand
     p_mig = sub.add_parser(
         "migrate",
-        help="record the master projdir in ortask.ini and retire projtui.ini",
+        help="record the registry directory in ortask.ini",
     )
-    # SUPPRESS default so this subparser does not clobber a global --projdir.
-    p_mig.add_argument("--projdir", default=argparse.SUPPRESS,
-                       help="projdir to record, overriding projtui.ini")
+    # SUPPRESS default so this subparser does not clobber a global override.
+    p_mig.add_argument("--registry", default=argparse.SUPPRESS,
+                       help="registry directory to record")
     p_mig.add_argument("--force", action="store_true",
-                       help="re-derive the projdir even if ortask.ini already has one")
+                       help="use the default even if ortask.ini already has one")
     p_mig.add_argument("--dry-run", action="store_true",
                        help="show what would be written and removed")
 

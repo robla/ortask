@@ -22,14 +22,14 @@ All scripts are stdlib-only (Python 3.10+, no external dependencies).
 - **`ortask.py`** — local CLI scoped to a single Org task file. Verbs: `list`,
   `show`, `add`, `done`, `open`, `repair`. This is the core tool. The intended
   shell alias is `ort`. Spec: `docs/ortask.md`.
-- **`orgmgr.py`** — global manager across many projects, organized by a master
-  **projdir** (one subdirectory per project, each holding symlinks to the
-  project and its `.org` task file). `ortask.ini` records where the projdir is.
-  Verbs: `list` (read-only task overview), `migrate` (record the projdir in
-  `~/.config/ortask/ortask.ini`, adopting it from the legacy `projtui.ini` and
-  deleting that file), and `projadd` (create one project's symlink subdirectory
-  under the projdir). It edits only config and the projdir's symlinks, never Org
-  content — `ortask.py` owns local task editing. Spec: `docs/orgmgr.md`.
+- **`orgmgr.py`** — global manager across many projects, organized by a registry
+  directory (one subdirectory per project, each holding symlinks to the project
+  and its `.org` task file). `ortask.ini` records it as `[projects] registry`.
+  Verbs: `list` (read-only task overview), `migrate` (record the registry in
+  `~/.config/ortask/ortask.ini`), and `projadd` (create one project's symlink
+  subdirectory under the registry). It edits only config and registry symlinks,
+  never Org content — `ortask.py` owns local task editing. Spec:
+  `docs/orgmgr.md`.
 - **`projtui.py`** — interactive terminal menu: pick a project, pick a task, see
   a focused work prompt, optionally mark DONE or open in an editor. Delegates
   writes to the same parser/writer paths as `ortask.py`. Spec:
@@ -51,15 +51,15 @@ Despite older docs that mention `README.org`, the implemented default order is:
 
 1. `--file FILE` (wins over everything)
 2. `ORTASK_FILE` environment variable
-3. `todo.org` in the current directory
-4. `tasks.org` in the current directory
-5. the first `*.org` file alphabetically (warns if multiple)
+3. `TODO.org` / `TODO*.org` in the current directory
+4. `todo.org` in the current directory
+5. `tasks.org` in the current directory
+6. the first `*.org` file alphabetically (warns if multiple)
 
 `docs/format.md` and the TUI/orgmgr specs describe a richer intended discovery
 direction — prefer dedicated `TODO.org` / `TODO-ProjectName.org` files, then
 `todo.org`, then larger files like `README.org` that contain a `* Tasks`
-section. That broader discovery is **specified but not yet implemented** in
-`ortask.py`'s probe order; treat it as planned behavior.
+section.
 
 ## Current state vs. planned state
 
@@ -69,11 +69,11 @@ section. That broader discovery is **specified but not yet implemented** in
   prefix) and reports them, but auto-fix — renumbering and ID assignment — is
   deferred. `repair --dry-run` exits 2 if problems are found; `repair` without
   `--dry-run` reports and exits 0 without modifying the file.
-- **`orgmgr.py`** implements `list` (read-only), `migrate` (record the projdir
-  in `ortask.ini`, then delete the legacy `projtui.ini`), and `projadd` (create
-  a project's symlink subdirectory under the projdir). `list`/`migrate`/`projadd`
-  and `projtui.py` all resolve the projdir via `manager.resolve_projdir()`
-  (`--projdir` > `ortask.ini` > `projtui.ini` > `~/Projects`). Future verbs
+- **`orgmgr.py`** implements `list` (read-only), `migrate` (record the registry
+  in `ortask.ini`), and `projadd` (create a project's symlink subdirectory under
+  the registry). `list`/`migrate`/`projadd` and `projtui.py` all resolve the
+  registry via `manager.resolve_registry()` (`--registry` > `[projects]
+  registry` > `~/Projects`). Future verbs
   (`projrm`, `scan`, `doctor`) remain specified but unimplemented.
 - **`projtui.py`** implements the minimal numbered-menu workflow.
 - **Shared library (done):** reusable logic lives in the `ortasklib/` package

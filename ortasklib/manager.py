@@ -1,10 +1,10 @@
 """Project management helpers shared by ``orgmgr.py`` and ``projtui.py``.
 
-Covers projdir resolution (``ortask.ini`` records where the master projdir is;
-``projtui.ini`` is a legacy fallback), project discovery over the projdir's
-per-project subdirectories, per-project Org-file selection, and JSON-ready
-multi-project task summaries. Like the rest of ``ortasklib``, it does no argument
-parsing and never calls ``sys.exit``.
+Covers registry resolution (``ortask.ini`` records where the project registry
+directory lives), project discovery over that registry's per-project
+subdirectories, per-project Org-file selection, and JSON-ready multi-project
+task summaries. Like the rest of ``ortasklib``, it does no argument parsing and
+never calls ``sys.exit``.
 """
 
 from __future__ import annotations
@@ -18,16 +18,12 @@ from pathlib import Path
 from . import core
 
 SKIP_PROJECT_DIRS = {".git", ".hg", ".svn", "__pycache__", "docs"}
-DEFAULT_PROJDIR = "~/Projects"
+DEFAULT_REGISTRY = "~/Projects"
 
-# Legacy projtui.ini config (still read as a fallback; retired by ``migrate``).
-CONFIG_SECTION = "projtui"
-CONFIG_OPTION = "projdir"
-
-# Canonical suite config: ortask.ini records where the master projdir lives.
+# Canonical suite config: ortask.ini records where the registry directory lives.
 ORTASK_INI_NAME = "ortask.ini"
 PROJECTS_SECTION = "projects"
-PROJDIR_OPTION = "projdir"
+REGISTRY_OPTION = "registry"
 
 
 @dataclass(frozen=True)
@@ -38,12 +34,12 @@ class Project:
 
 
 def canonical_org_file(project: Project) -> Path:
-    """Return the real task-file path, resolving any projdir symlinks."""
+    """Return the real task-file path, resolving any registry symlinks."""
     return project.org_file.resolve()
 
 
 # ---------------------------------------------------------------------------
-# Config: where the master projdir lives
+# Config: where the registry directory lives
 # ---------------------------------------------------------------------------
 
 def _config_dir() -> Path:
@@ -57,11 +53,6 @@ def ortask_config_path() -> Path:
     return _config_dir() / ORTASK_INI_NAME
 
 
-def default_config_path() -> Path:
-    """Legacy ``projtui.ini`` config, honoring ``XDG_CONFIG_HOME``."""
-    return _config_dir() / "projtui.ini"
-
-
 def _read_ini_option(path: Path, section: str, option: str) -> str | None:
     if not path.exists():
         return None
@@ -73,20 +64,19 @@ def _read_ini_option(path: Path, section: str, option: str) -> str | None:
     return value or None
 
 
-def read_ortask_projdir(path: Path | None = None) -> str | None:
-    """Return the projdir recorded in ``ortask.ini`` (``[projects] projdir``)."""
-    return _read_ini_option(path or ortask_config_path(), PROJECTS_SECTION, PROJDIR_OPTION)
+def read_ortask_registry(path: Path | None = None) -> str | None:
+    """Return ``ortask.ini``'s ``[projects] registry`` value."""
+    return _read_ini_option(
+        path or ortask_config_path(),
+        PROJECTS_SECTION,
+        REGISTRY_OPTION,
+    )
 
 
-def read_config_projdir(config_path: Path) -> str | None:
-    """Return the projdir from a legacy ``projtui.ini`` (``[projtui] projdir``)."""
-    return _read_ini_option(config_path, CONFIG_SECTION, CONFIG_OPTION)
-
-
-def write_ortask_projdir(path: Path, projdir_value: str) -> None:
-    """Atomically write ``[projects] projdir = <value>`` to ``ortask.ini``."""
+def write_ortask_registry(path: Path, registry_value: str) -> None:
+    """Atomically write ``[projects] registry = <value>`` to ``ortask.ini``."""
     parser = configparser.ConfigParser()
-    parser[PROJECTS_SECTION] = {PROJDIR_OPTION: projdir_value}
+    parser[PROJECTS_SECTION] = {REGISTRY_OPTION: registry_value}
     buffer = io.StringIO()
     parser.write(buffer)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -108,17 +98,16 @@ def friendly_path(path: Path, original: str | None = None) -> str:
     return _friendly_path(path, original)
 
 
-def resolve_projdir(cli_projdir: str | None = None) -> tuple[Path, str]:
-    """Resolve the master projdir and a display string.
+def resolve_registry(cli_registry: str | None = None) -> tuple[Path, str]:
+    """Resolve the registry directory and a display string.
 
-    Precedence: ``--projdir`` (``cli_projdir``) > ``ortask.ini`` >
-    legacy ``projtui.ini`` > the ``~/Projects`` default.
+    Precedence: CLI override > ``ortask.ini`` ``[projects] registry`` > the
+    ``~/Projects`` default.
     """
     raw = (
-        cli_projdir
-        or read_ortask_projdir()
-        or read_config_projdir(default_config_path())
-        or DEFAULT_PROJDIR
+        cli_registry
+        or read_ortask_registry()
+        or DEFAULT_REGISTRY
     )
     resolved = Path(raw).expanduser().resolve()
     return resolved, _friendly_path(resolved, raw)

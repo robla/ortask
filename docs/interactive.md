@@ -26,7 +26,7 @@ Current minimal implementation:
 
 ```sh
 ./projtui.py
-./projtui.py --projdir /home/robla/tmpsorta/proj2026
+./projtui.py --registry /home/robla/tmpsorta/proj2026
 ```
 
 The first version is intentionally plain: numbered project menus, numbered
@@ -34,17 +34,17 @@ task/heading menus, detail display, editor launch, and `DONE` marking for
 ortask-compatible tasks with IDs. For non-task Org files such as the current
 `TODO-ElWeek.org` template, it displays headings as read-only reference.
 
-By default, `projtui.py` looks in `~/Projects`. A global config file can
+By default, `projtui.py` looks in `~/Projects`. A suite-wide config file can
 override that default:
 
 ```ini
-[projtui]
-projdir = ~/tmpsorta/proj2026
+[projects]
+registry = ~/tmpsorta/proj2026
 ```
 
-The config file lives at `~/.config/ortask/projtui.ini`, or under
-`$XDG_CONFIG_HOME/ortask/projtui.ini` when `XDG_CONFIG_HOME` is set.
-Command-line `--projdir` wins over the config file. On startup, the tool
+The config file lives at `~/.config/ortask/ortask.ini`, or under
+`$XDG_CONFIG_HOME/ortask/ortask.ini` when `XDG_CONFIG_HOME` is set.
+Command-line `--registry` wins over the config file. On startup, the tool
 prints the directory it is scanning, for example:
 
 ```text
@@ -171,7 +171,7 @@ commands stdlib-only.
 
 Tests should separate workflow logic from terminal I/O:
 
-- workspace discovery finds `elweek/TODO-ElWeek.org` and `ortask/todo.org`
+- registry discovery finds `elweek/TODO-ElWeek.org` and `ortask/todo.org`
 - project selection loads the expected Org file
 - task menus preserve priority and file-order rules
 - selecting a task does not write to disk

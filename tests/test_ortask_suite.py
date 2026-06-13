@@ -198,7 +198,7 @@ def test_summarize_projects_for_orgmgr(tmp_path: Path, capsys) -> None:
     write(workspace / ".hidden" / "TODO.org", "* Tasks\n** TODO t0003 Hidden\n")
     write(workspace / "docs" / "TODO.org", "* Tasks\n** TODO t0004 Docs\n")
 
-    args = argparse.Namespace(projdir=str(workspace), all=False, format="json")
+    args = argparse.Namespace(registry=str(workspace), all=False, format="json")
     assert orgmgr.cmd_list(args) == 0
     projects = json.loads(capsys.readouterr().out)
 
@@ -304,7 +304,7 @@ def test_cli_smoke_tests(tmp_path: Path) -> None:
     assert "*** TODO t0001.1 Smoke child" in show_result.stdout
 
     orgmgr_result = subprocess.run(
-        [sys.executable, str(ROOT / "orgmgr.py"), "--projdir", str(workspace), "list", "--format", "json"],
+        [sys.executable, str(ROOT / "orgmgr.py"), "--registry", str(workspace), "list", "--format", "json"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -314,7 +314,7 @@ def test_cli_smoke_tests(tmp_path: Path) -> None:
     assert json.loads(orgmgr_result.stdout)[0]["project"] == "sample"
 
     projtui_result = subprocess.run(
-        [sys.executable, str(ROOT / "projtui.py"), "--projdir", str(workspace)],
+        [sys.executable, str(ROOT / "projtui.py"), "--registry", str(workspace)],
         cwd=ROOT,
         input="q\n",
         text=True,
@@ -350,47 +350,41 @@ def test_add_task_creates_tasks_section_if_missing(tmp_path: Path) -> None:
     assert task_index == tasks_index + 1
 
 
-# --- orgmgr projdir model: migrate + projadd ----------------------------------
+# --- orgmgr registry model: migrate + projadd ---------------------------------
 # These isolate config by pointing XDG_CONFIG_HOME at a temp directory, so they
 # never read or write (or delete) the real ~/.config/ortask.
 
 
 def _projadd_args(path: Path, **kw) -> argparse.Namespace:
-    base = dict(path=str(path), name=None, file=None, projdir=None,
+    base = dict(path=str(path), name=None, file=None, registry=None,
                 force=False, dry_run=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
 
-def test_migrate_records_projdir_and_removes_projtui_ini(
+def test_migrate_records_registry(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    # migrate adopts the legacy projtui.ini projdir into ortask.ini, then deletes
-    # projtui.ini.
+    # migrate records [projects] registry without consulting projtui.ini.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     workspace = tmp_path / "ws"
     workspace.mkdir()
 
-    projtui_ini = manager.default_config_path()
-    write(projtui_ini, f"[projtui]\nprojdir = {workspace}\n")
-
     assert orgmgr.cmd_migrate(
-        argparse.Namespace(projdir=None, force=False, dry_run=False)
+        argparse.Namespace(registry=str(workspace), force=False, dry_run=False)
     ) == 0
     capsys.readouterr()
 
-    assert manager.read_ortask_projdir() == str(workspace.resolve())
-    assert not projtui_ini.exists()                       # retired
-    resolved, _ = manager.resolve_projdir()               # now follows ortask.ini
+    assert manager.read_ortask_registry() == str(workspace.resolve())
+    resolved, _ = manager.resolve_registry()              # now follows ortask.ini
     assert resolved == workspace.resolve()
 
 
 def test_projadd_creates_symlink_subdir(tmp_path: Path, monkeypatch, capsys) -> None:
-    # projadd creates a per-project subdir of symlinks under the projdir, and
-    # discovery follows those symlinks.
+    # projadd creates a per-project symlink subdir under the registry.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    projdir = tmp_path / "proj2026"
-    manager.write_ortask_projdir(manager.ortask_config_path(), str(projdir))
+    registry = tmp_path / "proj2026"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
 
     project = tmp_path / "src" / "elweek"
     write(project / "TODO.org", "* Tasks\n** TODO t0001 Promote episode\n")
@@ -398,7 +392,7 @@ def test_projadd_creates_symlink_subdir(tmp_path: Path, monkeypatch, capsys) -> 
     assert orgmgr.cmd_projadd(_projadd_args(project)) == 0
     capsys.readouterr()
 
-    subdir = projdir / "elweek"
+    subdir = registry / "elweek"
     project_link = subdir / "elweek"
     task_link = subdir / "TODO.org"
     assert subdir.is_dir()
@@ -408,7 +402,7 @@ def test_projadd_creates_symlink_subdir(tmp_path: Path, monkeypatch, capsys) -> 
 
     # Discovery follows the symlinks: list shows the project and its task.
     assert orgmgr.cmd_list(
-        argparse.Namespace(projdir=str(projdir), all=False, format="json")
+        argparse.Namespace(registry=str(registry), all=False, format="json")
     ) == 0
     projects = json.loads(capsys.readouterr().out)
     assert projects[0]["project"] == "elweek"
@@ -426,10 +420,10 @@ def test_projadd_links_project_only_when_no_task_file(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     # A project with no discoverable .org is still added, with just a project link
-    # (the same state as a hand-created projdir entry).
+    # (the same state as a hand-created registry entry).
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    projdir = tmp_path / "projects"
-    manager.write_ortask_projdir(manager.ortask_config_path(), str(projdir))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
 
     project = tmp_path / "bare"
     project.mkdir()  # no .org inside
@@ -437,14 +431,14 @@ def test_projadd_links_project_only_when_no_task_file(
     assert orgmgr.cmd_projadd(_projadd_args(project, name="bare")) == 0
     capsys.readouterr()
 
-    subdir = projdir / "bare"
+    subdir = registry / "bare"
     assert (subdir / "bare").is_symlink()                          # project link
     assert not any(p.suffix == ".org" for p in subdir.iterdir())   # no task link
 
 
 def test_projtui_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> None:
-    # This test reproduces a projdir symlink: project selection should show the
-    # real task-file target path, not the symlink path inside the master projdir.
+    # This test reproduces a registry symlink: project selection should show the
+    # real task-file target path, not the path inside the registry.
     target = tmp_path / "electorama-weekly"
     task_file = write(
         target / "TODO-ElWeek.org",
@@ -459,7 +453,7 @@ def test_projtui_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> 
     (project_dir / "TODO-ElWeek.org").symlink_to(task_file)
 
     result = subprocess.run(
-        [sys.executable, str(ROOT / "projtui.py"), "--projdir", str(workspace)],
+        [sys.executable, str(ROOT / "projtui.py"), "--registry", str(workspace)],
         cwd=ROOT,
         input="1\nb\nq\n",
         text=True,
