@@ -1,9 +1,14 @@
 # Template Application for ortask.py
 
-This document specifies a future `ortask.py` feature for turning reusable Org
+This document specifies the `ortask.py apply` feature for turning reusable Org
 task templates into real tasks. The motivating case is
 `~/tmpsorta/electorama-weekly/TODO-ElWeek.org`, which has active weekly work
 under `* Tasks` and a reusable checklist under `* Template`.
+
+**Status:** implemented. `ortask.py apply` (default `--template weekly`) is live
+in `ortask.py`/`ortasklib.tasks`, with the placeholder, insertion, and safety
+rules below. The duplicate-week guard, `--dry-run`, and `--week`/`--date`
+resolution all match this spec.
 
 ## Goal
 
@@ -22,11 +27,15 @@ ortask.py apply \
   --dry-run
 ```
 
-`weekly` is the default template profile. `ortask.py apply` and
-`ortask.py apply weekly` are equivalent. The first implementation only supports
-one template per file: a top-level `* Template` subtree. That template is
-treated as weekly unless the file later gains an explicit convention saying
-otherwise.
+The `--template` option selects the template profile and defaults to `weekly`,
+so `ortask.py apply` and `ortask.py apply --template weekly` are equivalent.
+(`--template` is a named option rather than a bare positional, so the command
+line reads clearly and leaves room for other options without an
+order-dependent argument.) The first implementation only supports one template
+per file — a single top-level `* Template` subtree — and only the `weekly`
+profile; any other `--template` value is rejected with a clear "unknown
+template profile" error. That template is treated as weekly unless the file
+later gains an explicit convention saying otherwise.
 
 To keep the interface clean and avoid redundant input, all date and week parameters are optional and automatically fall back:
 - **Default (no options)**: Derives the current ISO week from the system date
@@ -49,6 +58,31 @@ the same week). Reuse the week-ID parsing that `ortask.py show` already relies
 on rather than writing a second parser.
 
 `--dry-run` prints the Org content that would be inserted without modifying the file. A non-dry run writes atomically using the existing line-preserving write path.
+
+## Command Name (open question)
+
+`apply` is the working verb, but it may not be the clearest choice and is worth
+revisiting before the interface is considered stable. Candidates, with their
+trade-offs:
+
+- **`apply`** *(current; recommended for now)* — reads naturally as "apply a
+  template" and echoes familiar tools (`git apply`, `kubectl apply`). The mild
+  downside is that those tools apply *patches/diffs*, so `apply` could suggest
+  diff semantics rather than instantiation.
+- **`expand`** — "expand a template," a macro-expansion metaphor; concise and
+  accurate, and unlikely to collide with other verbs.
+- **`new`** — "make a new week of tasks"; short and friendly, but vague about
+  templates and conceptually close to the existing `add`.
+- **`generate`** / **`gen`** — common in scaffolding tools ("generate tasks from
+  a template"); clear but a little heavyweight.
+- **`rollover`** / **`roll`** — evokes the recurring weekly cadence ("roll over
+  to next week"); apt for the weekly profile but obscure as a general verb.
+- **`instantiate`** — the most precise term, but long; it was dropped earlier in
+  favor of a shorter verb.
+
+The verb is cheap to change later: it is a single subparser name, one dispatch
+key, and the doc references. Recommendation: keep `apply` until a clearly
+better verb emerges from real use.
 
 ## Template Format
 
@@ -173,9 +207,10 @@ an unreadable/missing file). `apply` does not use exit code `2`.
   the atomic, line-preserving write. This keeps `apply` consistent with how
   `tasks.add_task` already inserts.
 - Reuse `core.canonical_id` for the duplicate-ID check and the existing week-ID
-  parsing for interpreting `--week`. Add `apply` to the `docs/ortask.md`
-  SYNOPSIS/SUBCOMMANDS reference when the command is implemented, since that
-  file is the source of truth for `ortask.py` behavior.
+  parsing for interpreting `--week`. (As implemented: `core.find_template_range`
+  / `core.count_template_sections` locate and validate the template;
+  `tasks.resolve_week_target` and `tasks.apply_template` do the date math and
+  instantiation; `apply` is documented in `docs/ortask.md`.)
 
 ## Tests
 

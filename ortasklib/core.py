@@ -37,6 +37,7 @@ HEADING_RE = re.compile(
 BARE_HEADING_RE = re.compile(r"^(?P<stars>\*{2,})\s+(?P<rest>.+)$")
 
 TASKS_HEADING_RE = re.compile(r"^\*\s+Tasks\s*$")
+TEMPLATE_HEADING_RE = re.compile(r"^\*\s+Template\s*$")
 
 
 @dataclass
@@ -138,6 +139,33 @@ def find_tasks_range(lines: list[str]) -> tuple[int, int]:
         if re.match(r"^\*\s+", lines[i]) and not TASKS_HEADING_RE.match(lines[i]):
             return start, i
     return start, len(lines)
+
+
+def find_template_range(lines: list[str]) -> tuple[int, int]:
+    """Return (start, end) line indices for the first ``* Template`` subtree.
+
+    ``start`` is the index of the ``* Template`` heading itself; ``end`` is the
+    index of the next top-level heading, or ``len(lines)``. Returns ``(-1, -1)``
+    when there is no ``* Template`` heading. Mirrors :func:`find_tasks_range`,
+    since the standard parser is scoped to ``* Tasks`` and never sees the
+    template subtree.
+    """
+    start = None
+    for i, line in enumerate(lines):
+        if TEMPLATE_HEADING_RE.match(line):
+            start = i
+            break
+    if start is None:
+        return -1, -1
+    for i in range(start + 1, len(lines)):
+        if re.match(r"^\*\s+", lines[i]) and not TEMPLATE_HEADING_RE.match(lines[i]):
+            return start, i
+    return start, len(lines)
+
+
+def count_template_sections(lines: list[str]) -> int:
+    """Count top-level ``* Template`` headings (used to reject 0 or >1)."""
+    return sum(1 for line in lines if TEMPLATE_HEADING_RE.match(line))
 
 
 def parse_org(text: str) -> list[TodoItem]:

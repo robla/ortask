@@ -20,8 +20,9 @@ All scripts are stdlib-only (Python 3.10+, no external dependencies).
 ## The three tools
 
 - **`ortask.py`** — local CLI scoped to a single Org task file. Verbs: `list`,
-  `show`, `add`, `done`, `open`, `repair`. This is the core tool. The intended
-  shell alias is `ort`. Spec: `docs/ortask.md`.
+  `show`, `add`, `done`, `open`, `repair`, `apply` (instantiate the `* Template`
+  subtree as new weekly tasks; see `docs/templates.md`). This is the core tool.
+  The intended shell alias is `ort`. Spec: `docs/ortask.md`.
 - **`orgmgr.py`** — global manager across many projects, organized by a registry
   directory (one subdirectory per project, each holding symlinks to the project
   and its `.org` task file). `ortask.ini` records it as `[projects] registry`.

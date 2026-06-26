@@ -159,6 +159,32 @@ def cmd_repair(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: apply
+# ---------------------------------------------------------------------------
+
+def cmd_apply(args: argparse.Namespace) -> int:
+    text = args.file.read_text(encoding="utf-8")
+    try:
+        iso_year, week_num, monday = tasks.resolve_week_target(args.week, args.date)
+        new_lines, block, week_id = tasks.apply_template(
+            text, iso_year, week_num, monday, profile=args.template
+        )
+    except tasks.TemplateError as exc:
+        print(f"apply: {exc}", file=sys.stderr)
+        return 1
+
+    if args.dry_run:
+        for line in block:
+            print(line)
+        return 0
+
+    _write_lines(args.file, new_lines)
+    print(f"applied template '{args.template}' as {week_id} "
+          f"({len(block)} lines) to {args.file}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
 
@@ -210,6 +236,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_repair = sub.add_parser("repair", help="find and fix ID problems")
     p_repair.add_argument("--dry-run", action="store_true")
 
+    # apply
+    p_apply = sub.add_parser(
+        "apply", help="instantiate the * Template subtree as new tasks")
+    p_apply.add_argument("--template", default="weekly",
+                         help="template profile to apply (default: weekly)")
+    p_apply.add_argument("--week", default=None,
+                         help="target ISO week, e.g. 2026W26 or 26W26 (default: this week)")
+    p_apply.add_argument("--date", default=None,
+                         help="target date YYYY-MM-DD; derives the week when --week is omitted")
+    p_apply.add_argument("--dry-run", action="store_true",
+                         help="print the tasks that would be inserted without writing")
+
     return parser
 
 
@@ -250,6 +288,7 @@ def main() -> int:
         "done": cmd_done,
         "open": cmd_open,
         "repair": cmd_repair,
+        "apply": cmd_apply,
     }
 
     handler = dispatch.get(cmd)

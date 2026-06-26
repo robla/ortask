@@ -5,7 +5,10 @@ import json
 import subprocess
 import sys
 import textwrap
+from datetime import date
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -14,7 +17,7 @@ if str(ROOT) not in sys.path:
 import orgmgr
 import ortask
 import projtui
-from ortasklib import manager
+from ortasklib import manager, tasks
 
 
 def write(path: Path, content: str) -> Path:
@@ -553,3 +556,117 @@ def test_projtui_task_menu_opens_org_file_from_task_list(tmp_path: Path, monkeyp
 
     assert projtui.task_menu(project, include_done=False) is True
     assert opened == [(org_file.resolve(), None)]
+
+
+# --- apply: template instantiation (docs/templates.md) ------------------------
+
+
+def _apply_ns(org: Path, **kw) -> argparse.Namespace:
+    base = dict(file=org, template="weekly", week=None, date="2026-06-25",
+                dry_run=False)
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+def test_resolve_week_target_modes() -> None:
+    # Default/only-week/only-date/both, plus mismatch and parse errors.
+    assert tasks.resolve_week_target(None, None, today=date(2026, 6, 25)) == (
+        2026, 26, date(2026, 6, 22))
+    assert tasks.resolve_week_target("26W26", None) == (2026, 26, date(2026, 6, 22))
+    assert tasks.resolve_week_target(None, "2026-06-25") == (2026, 26, date(2026, 6, 22))
+    assert tasks.resolve_week_target("2026W26", "2026-06-25")[2] == date(2026, 6, 22)
+
+    with pytest.raises(tasks.TemplateError):       # date not in the given week
+        tasks.resolve_week_target("2026W25", "2026-06-25")
+    with pytest.raises(tasks.TemplateError):       # unparseable week
+        tasks.resolve_week_target("nope", None)
+    with pytest.raises(tasks.TemplateError):       # unparseable date
+        tasks.resolve_week_target(None, "2026-13-99")
+
+
+def test_apply_template_longest_first_ordering(tmp_path: Path) -> None:
+    # A fixture that mixes every ID placeholder confirms longest-literal-first
+    # so no shorter placeholder corrupts a longer one.
+    org = write(
+        tmp_path / "todo.org",
+        """
+        * Tasks
+        ** TODO t0001 Keep
+
+        * Template
+        ** TODO twYYWNN Week twYYWNN / twYYYYWNN / YYWNN / YYYYWNN
+        forms: YYWNN YYYYWNN twYYWNN twYYYYWNN
+        """,
+    )
+    _, block, week_id = tasks.apply_template(
+        org.read_text(encoding="utf-8"), 2026, 26, date(2026, 6, 22))
+
+    assert week_id == "tw26W26"
+    assert "** TODO tw26W26 Week tw26W26 / tw2026W26 / 26W26 / 2026W26" in block
+    assert "forms: 26W26 2026W26 tw26W26 tw2026W26" in block
+
+
+def test_apply_template_dry_run_then_insert(tmp_path: Path, capsys) -> None:
+    # End-to-end: dry-run prints without writing; a real run inserts under
+    # * Tasks before * Template, substitutes dates/IDs, preserves body URLs and
+    # the template itself; a second run refuses the duplicate week.
+    org = write(
+        tmp_path / "TODO-ElWeek.org",
+        """
+        * Tasks
+        ** TODO t0001 Keep me
+
+        * Template
+        ** TODO twYYWNN Week of Month Day's tasks for ElectoramaWeekly
+        *** TODO twYYWNN.0 Promote Month Day ElectoramaWeekly episode
+        https://example.com/promo
+        *** TODO twYYWNN.1 Prepare for Next Month Day ElectoramaWeekly episode
+        """,
+    )
+
+    before = org.read_text(encoding="utf-8")
+    assert ortask.cmd_apply(_apply_ns(org, dry_run=True)) == 0
+    out = capsys.readouterr().out
+    assert "** TODO tw26W26 Week of June 22's tasks for ElectoramaWeekly" in out
+    assert "*** TODO tw26W26.0 Promote June 22 ElectoramaWeekly episode" in out
+    assert "*** TODO tw26W26.1 Prepare for June 29 ElectoramaWeekly episode" in out
+    assert org.read_text(encoding="utf-8") == before          # dry-run wrote nothing
+
+    assert ortask.cmd_apply(_apply_ns(org)) == 0
+    capsys.readouterr()
+    lines = org.read_text(encoding="utf-8").splitlines()
+    parent = "** TODO tw26W26 Week of June 22's tasks for ElectoramaWeekly"
+    assert (lines.index("** TODO t0001 Keep me")
+            < lines.index(parent) < lines.index("* Template"))
+    assert "twYYWNN" in "\n".join(lines)                       # template preserved
+    assert lines.count("https://example.com/promo") == 2      # url copied, original kept
+
+    snapshot = org.read_text(encoding="utf-8")
+    assert ortask.cmd_apply(_apply_ns(org)) == 1               # duplicate week refused
+    assert "already exist" in capsys.readouterr().err
+    assert org.read_text(encoding="utf-8") == snapshot         # and nothing changed
+
+
+def test_apply_template_section_errors(tmp_path: Path) -> None:
+    # Missing, duplicate, empty, and unknown-profile cases all raise cleanly.
+    base = "* Tasks\n** TODO t0001 keep\n"
+    one = base + "\n* Template\n** TODO twYYWNN A\n"
+
+    with pytest.raises(tasks.TemplateError):                   # no * Template
+        tasks.apply_template(base, 2026, 26, date(2026, 6, 22))
+    with pytest.raises(tasks.TemplateError):                   # two * Template
+        tasks.apply_template(one + "\n* Template\n** TODO twYYWNN B\n",
+                             2026, 26, date(2026, 6, 22))
+    with pytest.raises(tasks.TemplateError):                   # empty * Template
+        tasks.apply_template(base + "\n* Template\n", 2026, 26, date(2026, 6, 22))
+    with pytest.raises(tasks.TemplateError):                   # unknown profile
+        tasks.apply_template(one, 2026, 26, date(2026, 6, 22), profile="monthly")
+
+
+def test_apply_template_creates_tasks_section_if_missing(tmp_path: Path) -> None:
+    # With a * Template but no * Tasks, apply creates the section then inserts.
+    text = "* Template\n** TODO twYYWNN Week of Month Day's tasks\n"
+    new_lines, block, _ = tasks.apply_template(text, 2026, 26, date(2026, 6, 22))
+    assert "* Tasks" in new_lines
+    assert "** TODO tw26W26 Week of June 22's tasks" in new_lines
+    assert new_lines.index("* Tasks") < new_lines.index(block[0])

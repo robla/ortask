@@ -8,16 +8,20 @@ owns the CLI translation: file I/O, human-readable output, and exit codes.
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 
 from .core import (
     BARE_HEADING_RE,
     HEADING_RE,
     NUMERIC_ID_RE,
+    WEEK_ID_PARTS_RE,
     TodoItem,
     build_org_heading,
     canonical_id,
+    count_template_sections,
     find_by_id,
     find_tasks_range,
+    find_template_range,
     normalize_id,
     parse_org,
 )
@@ -27,6 +31,15 @@ class TaskNotFound(Exception):
     """Raised by edit/show helpers when a task ID is absent.
 
     ``str(exc)`` is the (normalized) ID that could not be found.
+    """
+
+
+class TemplateError(Exception):
+    """Raised by template-application helpers; ``str(exc)`` is user-facing.
+
+    Covers an unknown profile, a missing/duplicate/empty ``* Template`` section,
+    unparseable ``--week``/``--date`` input, mismatched week/date, and generated
+    IDs that already exist under ``* Tasks``.
     """
 
 
@@ -262,3 +275,163 @@ def find_repair_problems(text: str) -> list[tuple[int, str, str]]:
                     problems.append((i, f"heading has TODO/DONE keyword but no valid task ID", ""))
 
     return problems
+
+
+# ---------------------------------------------------------------------------
+# Template application (ortask.py apply)
+# ---------------------------------------------------------------------------
+
+def _parse_week_arg(week: str) -> tuple[int, int]:
+    """Parse a ``--week`` value into ``(iso_year_4digit, week_number)``.
+
+    Accepts the same forms as week IDs elsewhere — two- or four-digit year,
+    upper- or lowercase ``W``, with or without a leading ``tw``. Two-digit years
+    are read as ``20YY``. Raises :class:`TemplateError` on anything else.
+    """
+    match = WEEK_ID_PARTS_RE.match(normalize_id(week.strip()))
+    if not match or match.group("suffix"):
+        raise TemplateError(
+            f"invalid --week {week!r} (expected a week like 2026W26 or 26W26)"
+        )
+    year_raw = match.group("year")
+    year4 = int(year_raw) if len(year_raw) == 4 else 2000 + int(year_raw)
+    return year4, int(match.group("week"))
+
+
+def resolve_week_target(
+    week: str | None,
+    date_str: str | None,
+    today: date | None = None,
+) -> tuple[int, int, date]:
+    """Resolve ``(iso_year_4digit, week_number, week_start_monday)``.
+
+    - neither given: use ``today`` (default: the system date).
+    - ``--week`` only: that week; the label date is its Monday.
+    - ``--date`` only: derive the ISO week and Monday from the date.
+    - both: the date must fall inside the week, else :class:`TemplateError`.
+
+    All math is ISO-calendar based, so the year is the ISO year.
+    """
+    iso_year: int | None = None
+    iso_week: int | None = None
+
+    if week is not None:
+        iso_year, iso_week = _parse_week_arg(week)
+
+    if date_str is not None:
+        try:
+            target = date.fromisoformat(date_str.strip())
+        except ValueError:
+            raise TemplateError(f"invalid --date {date_str!r} (expected YYYY-MM-DD)")
+        d_year, d_week, _ = target.isocalendar()
+        if week is not None and (iso_year, iso_week) != (d_year, d_week):
+            raise TemplateError(
+                f"--date {date_str} (ISO {d_year}W{d_week:02d}) is not in "
+                f"--week {week} (ISO {iso_year}W{iso_week:02d})"
+            )
+        iso_year, iso_week = d_year, d_week
+
+    if iso_year is None:
+        ref = today if today is not None else date.today()
+        iso_year, iso_week, _ = ref.isocalendar()
+
+    monday = date.fromisocalendar(iso_year, iso_week, 1)
+    return iso_year, iso_week, monday
+
+
+def _weekly_replacements(
+    iso_year: int, week_num: int, monday: date
+) -> list[tuple[str, str]]:
+    """Ordered (placeholder, value) pairs for the weekly profile.
+
+    Ordered **longest literal first** so a shorter placeholder cannot match
+    inside a longer one (``YYWNN`` inside ``twYYWNN``; ``Month Day`` inside
+    ``Next Month Day``).
+    """
+    next_monday = monday + timedelta(days=7)
+    year2 = f"{iso_year % 100:02d}"
+    week2 = f"{week_num:02d}"
+    label = f"{monday.strftime('%B')} {monday.day}"
+    next_label = f"{next_monday.strftime('%B')} {next_monday.day}"
+    return [
+        ("twYYYYWNN", f"tw{iso_year}W{week2}"),
+        ("twYYWNN", f"tw{year2}W{week2}"),
+        ("YYYYWNN", f"{iso_year}W{week2}"),
+        ("YYWNN", f"{year2}W{week2}"),
+        ("Next Month Day", next_label),
+        ("Month Day", label),
+    ]
+
+
+def _apply_replacements(line: str, repls: list[tuple[str, str]]) -> str:
+    for placeholder, value in repls:
+        line = line.replace(placeholder, value)
+    return line
+
+
+def apply_template(
+    text: str,
+    iso_year: int,
+    week_num: int,
+    monday: date,
+    *,
+    profile: str = "weekly",
+) -> tuple[list[str], list[str], str]:
+    """Instantiate the file's single ``* Template`` subtree for one week.
+
+    Returns ``(new_lines, inserted_block, week_id)``. ``inserted_block`` is the
+    instantiated Org lines (also what ``--dry-run`` prints); ``new_lines`` is the
+    whole file with the block inserted at the end of ``* Tasks``. Raises
+    :class:`TemplateError` for an unknown profile, a missing/duplicate/empty
+    ``* Template``, or a generated ID already present under ``* Tasks``.
+    """
+    if profile != "weekly":
+        raise TemplateError(f"unknown template profile: {profile!r}")
+
+    lines = text.splitlines()
+
+    count = count_template_sections(lines)
+    if count == 0:
+        raise TemplateError("no '* Template' section found")
+    if count > 1:
+        raise TemplateError(f"found {count} '* Template' sections; only one is supported")
+
+    t_start, t_end = find_template_range(lines)
+    body = lines[t_start + 1:t_end]
+    while body and not body[0].strip():
+        body.pop(0)
+    while body and not body[-1].strip():
+        body.pop()
+    if not body:
+        raise TemplateError("'* Template' section is empty")
+
+    repls = _weekly_replacements(iso_year, week_num, monday)
+    block = [_apply_replacements(line, repls) for line in body]
+    week_id = f"tw{iso_year % 100:02d}W{week_num:02d}"
+
+    # Duplicate-ID guard, comparing canonically (tw26W26 == tw2026W26).
+    existing = {canonical_id(t.id) for t in parse_org(text)}
+    generated = [m.group("id") for m in (HEADING_RE.match(line) for line in block) if m]
+    dups = sorted({g for g in generated if canonical_id(g) in existing})
+    if dups:
+        raise TemplateError(
+            f"generated task ID(s) already exist under * Tasks: {', '.join(dups)}"
+        )
+
+    start, end = find_tasks_range(lines)
+    if start < 0:
+        # No * Tasks yet — create one at end of file (mirrors add_task).
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append("* Tasks")
+        insert_at = len(lines)
+    else:
+        # End of the * Tasks subtree, backing up over any trailing blank lines
+        # so the block stays inside * Tasks and the blank before the next
+        # heading is preserved.
+        insert_at = end
+        while insert_at > start + 1 and not lines[insert_at - 1].strip():
+            insert_at -= 1
+
+    new_lines = lines[:insert_at] + block + lines[insert_at:]
+    return new_lines, block, week_id
