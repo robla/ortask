@@ -68,3 +68,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-13 Sat 00:49]: changed =orgmgr.py list= project summaries to display resolved Org file paths with the home directory collapsed to =~=.
 ** Codex [2026-06-13 Sat 00:53]: changed bare =orgmgr.py= and =orgmgr.py help= to print command help instead of defaulting to =list=.
 ** Codex [2026-06-13 Sat 00:56]: added a registry location header to plain =orgmgr.py list= output while leaving JSON output as a project array.
+** Codex [2026-06-25 Thu 17:43]: added =docs/templates.md= specifying a future =ortask.py= template-instantiation workflow for creating weekly ElectoramaWeekly tasks from the =* Template= subtree.
