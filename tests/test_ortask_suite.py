@@ -369,11 +369,14 @@ def test_orgmgr_no_args_and_help_show_help() -> None:
 def test_bash_completion_for_ortask_and_alias() -> None:
     # This test verifies bash completion for the script name and the common
     # "ort" alias without depending on an interactive shell.
-    script = ROOT / "completions" / "ortask.bash"
+    script = ROOT / "misc" / "ortask-completion.bash"
     cases = [
         ("COMP_WORDS=(ortask.py ad); COMP_CWORD=1", "add"),
         ("COMP_WORDS=(ort ad); COMP_CWORD=1", "add"),
+        ("COMP_WORDS=(ortask.py app); COMP_CWORD=1", "apply"),
         ("COMP_WORDS=(ortask.py list --fo); COMP_CWORD=2", "--format"),
+        ("COMP_WORDS=(ortask.py apply --te); COMP_CWORD=2", "--template"),
+        ("COMP_WORDS=(ortask.py apply --template w); COMP_CWORD=3", "weekly"),
     ]
 
     for setup, expected in cases:

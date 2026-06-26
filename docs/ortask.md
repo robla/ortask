@@ -268,9 +268,10 @@ Fix ortask.py incompatibilities (e.g. adding ortask.py IDs where missing):
 Source the bundled completion script to complete subcommands and options:
 
 ```sh
-source /path/to/ortask/completions/ortask.bash
+source /path/to/ortask/misc/ortask-completion.bash
 ```
 
 The script registers completion for `ortask.py`, `./ortask.py`, and the common
 `ort` alias. For example, `ortask.py ad<Tab>` and `ort ad<Tab>` complete to
-`add`.
+`add`. A Debian package can install the same file under
+`/usr/share/bash-completion/completions/`.

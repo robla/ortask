@@ -1,7 +1,10 @@
 # Bash completion for ortask.py and the common "ort" alias.
 #
-# Usage:
-#   source /path/to/ortask/completions/ortask.bash
+# Source-tree usage:
+#   source /path/to/ortask/misc/ortask-completion.bash
+#
+# Debian packages can install this to:
+#   /usr/share/bash-completion/completions/ortask.py
 
 _ortask_complete()
 {
@@ -17,11 +20,12 @@ _ortask_complete()
         cword=$COMP_CWORD
     fi
 
-    local subcommands="help list show add done open repair"
+    local subcommands="help list show add done open repair apply"
     local global_opts="--file --help"
     local list_opts="--todo --done --all --root-only --items --format --file --help"
     local add_opts="--parent --file --help"
     local repair_opts="--dry-run --file --help"
+    local apply_opts="--template --week --date --dry-run --file --help"
     local id_opts="--file --help"
 
     case "$prev" in
@@ -29,11 +33,15 @@ _ortask_complete()
             COMPREPLY=( $(compgen -W "plain json org" -- "$cur") )
             return 0
             ;;
+        --template)
+            COMPREPLY=( $(compgen -W "weekly" -- "$cur") )
+            return 0
+            ;;
         --file)
             COMPREPLY=( $(compgen -f -- "$cur") )
             return 0
             ;;
-        --items|--parent)
+        --items|--parent|--week|--date)
             return 0
             ;;
     esac
@@ -43,10 +51,10 @@ _ortask_complete()
     local i
     for ((i = 1; i < cword; i++)); do
         case "${words[i]}" in
-            --file)
+            --file|--items|--parent|--format|--template|--week|--date)
                 ((i++))
                 ;;
-            --help)
+            --help|--todo|--done|--all|--root-only|--dry-run)
                 ;;
             -*)
                 ;;
@@ -79,6 +87,9 @@ _ortask_complete()
                 ;;
             repair)
                 COMPREPLY=( $(compgen -W "$repair_opts" -- "$cur") )
+                ;;
+            apply)
+                COMPREPLY=( $(compgen -W "$apply_opts" -- "$cur") )
                 ;;
             *)
                 COMPREPLY=()
