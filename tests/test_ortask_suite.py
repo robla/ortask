@@ -363,6 +363,35 @@ def test_orgmgr_no_args_and_help_show_help() -> None:
         assert result.stderr == ""
 
 
+def test_bash_completion_for_ortask_and_alias() -> None:
+    # This test verifies bash completion for the script name and the common
+    # "ort" alias without depending on an interactive shell.
+    script = ROOT / "completions" / "ortask.bash"
+    cases = [
+        ("COMP_WORDS=(ortask.py ad); COMP_CWORD=1", "add"),
+        ("COMP_WORDS=(ort ad); COMP_CWORD=1", "add"),
+        ("COMP_WORDS=(ortask.py list --fo); COMP_CWORD=2", "--format"),
+    ]
+
+    for setup, expected in cases:
+        result = subprocess.run(
+            [
+                "bash",
+                "--noprofile",
+                "--norc",
+                "-c",
+                f"source {script}; {setup}; _ortask_complete; printf '%s\\n' \"${{COMPREPLY[@]}}\"",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert result.stderr == ""
+        assert result.stdout.strip() == expected
+
+
 def test_add_task_creates_tasks_section_if_missing(tmp_path: Path) -> None:
     # This test verifies that cmd_add creates a "* Tasks" section at the end
     # of the file if one does not already exist.

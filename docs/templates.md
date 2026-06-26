@@ -39,6 +39,15 @@ To keep the interface clean and avoid redundant input, all date and week paramet
 - **Both specified**: The date must fall within the specified ISO week. If not,
   fail with a clear error rather than generating mismatched IDs and labels.
 
+All week/date math uses ISO calendar semantics (`date.isocalendar()`). The
+two-digit year in `twYYWNN` is the **ISO year**, which can differ from the
+calendar year for dates in late December or early January — derive it from
+`isocalendar()`, not `date.year`. The `--week` value accepts the same forms as
+week IDs elsewhere in ortask: two- or four-digit year, upper- or lowercase `W`,
+with or without a leading `tw` (`26W26`, `2026W26`, `26w26`, `tw26W26` all name
+the same week). Reuse the week-ID parsing that `ortask.py show` already relies
+on rather than writing a second parser.
+
 `--dry-run` prints the Org content that would be inserted without modifying the file. A non-dry run writes atomically using the existing line-preserving write path.
 
 ## Template Format
@@ -73,9 +82,29 @@ Required replacements for the weekly profile:
 - `Next Month Day` -> the following week's start date, formatted as `Month D`
   (e.g., `June 29`)
 
-These replacements are applied across all instantiated headings and body lines.
-Apply longer literal placeholders first, so `Next Month Day` is replaced before
-`Month Day`.
+A placeholder that does not occur in a given template is simply a no-op. Note
+that the current ElectoramaWeekly template phrases its forward-looking subtree
+as "Prepare for next week's ElectoramaWeekly episode" and does **not** yet use
+`Next Month Day`, so that replacement only takes effect once the template is
+updated to use it.
+
+Replacements are applied as plain-text substitutions across every instantiated
+heading and body line, in a single pass over the copied template text. Several
+placeholders are substrings of others, so they must be applied **longest
+literal first**, ensuring the longer placeholder is consumed before a shorter
+one can match inside it:
+
+- The shorter ID placeholders are substrings of the longer ones: `YYWNN`
+  appears inside `twYYWNN`, `YYYYWNN`, and `twYYYYWNN`, and `YYYYWNN` appears
+  inside `twYYYYWNN`. So apply `twYYYYWNN`, then `twYYWNN` and `YYYYWNN`, then
+  `YYWNN` last.
+- `Next Month Day` contains `Month Day`, so apply `Next Month Day` first.
+
+Applying short placeholders first corrupts the longer ones — e.g. replacing
+`YYWNN` before `twYYWNN` turns `twYYWNN` into `twYY...W..` garbage rather than
+`tw26W26`. Replacement outputs (digits and month names) never contain a
+placeholder pattern, so an earlier substitution cannot be re-matched by a later
+one.
 
 Optional future placeholders:
 
@@ -96,8 +125,15 @@ them.
    heading itself.
 3. Insert the instantiated subtree at the end of the `* Tasks` subtree, before the next top-level heading.
 4. Preserve heading levels from the template, so a `**` template parent remains a `**` active task.
-5. Refuse to insert if any generated task ID already exists, unless a future `--replace` option is explicitly implemented.
+5. Refuse to insert if any generated task ID already exists under `* Tasks`,
+   comparing IDs canonically (via `core.canonical_id`) so that `tw26W26` and
+   `tw2026W26` count as the same week. This makes a second `apply` for a week
+   that is already present a safe, no-write error. A future `--replace` option
+   may override this.
 6. Do not mark old weekly tasks `DONE`; template application only adds new work.
+7. If the file has a `* Template` but no `* Tasks` heading, create an empty
+   `* Tasks` section at the end of the file first (as `ortask.py add` does),
+   then insert into it.
 
 For the week containing June 25, 2026, the parent task would become:
 
@@ -116,6 +152,31 @@ The command must be conservative:
 - Refuse mismatched `--week` and `--date` values.
 - Report duplicate generated IDs before writing.
 
+## Exit Status
+
+Follow the convention in `docs/ortask.md`: exit `0` on success, including
+`--dry-run`; exit `1` for the refuse/error conditions above (missing or
+multiple `* Template`, mismatched `--week`/`--date`, duplicate generated IDs, or
+an unreadable/missing file). `apply` does not use exit code `2`.
+
+## Implementation Notes
+
+- The shared parser (`core.parse_org` / `core.find_tasks_range`) is scoped to
+  the `* Tasks` subtree and stops at the next top-level heading, so it will not
+  see `* Template`. Locate the template with a parallel line scan — from the
+  `* Template` heading to the next top-level `*` heading — and copy those lines
+  as raw source text rather than parsing them into `TodoItem`s. This is also why
+  the placeholder IDs (`twYYWNN`) need no special handling: they are never
+  parsed, so they never have to satisfy the strict week-ID regex.
+- Reuse `core.find_tasks_range` to find the insertion point — its `end` index is
+  the next top-level heading (here, `* Template`) — and `core.write_lines` for
+  the atomic, line-preserving write. This keeps `apply` consistent with how
+  `tasks.add_task` already inserts.
+- Reuse `core.canonical_id` for the duplicate-ID check and the existing week-ID
+  parsing for interpreting `--week`. Add `apply` to the `docs/ortask.md`
+  SYNOPSIS/SUBCOMMANDS reference when the command is implemented, since that
+  file is the source of truth for `ortask.py` behavior.
+
 ## Tests
 
 Add pytest coverage with temporary Org files:
@@ -124,7 +185,10 @@ Add pytest coverage with temporary Org files:
 - verify date and week default behavior when no options, only `--week`, or only `--date` are specified.
 - reject mismatched `--week` and `--date` values.
 - instantiate `twYYWNN` into `tw26W26` and preserve dotted children.
-- replace `Month Day` and `Next Month Day` in headings while preserving bare URL body lines.
+- with a fixture that mixes `twYYWNN`, `twYYYYWNN`, and bare `YYWNN`/`YYYYWNN`,
+  confirm longest-first ordering so no placeholder is corrupted by a shorter one.
+- replace `Month Day` and (in a fixture that uses it) `Next Month Day` in
+  headings while preserving bare URL body lines.
 - insert under `* Tasks` before `* Template`.
 - refuse duplicate generated IDs.
 - verify missing, duplicate, and non-top-level templates produce clear errors.

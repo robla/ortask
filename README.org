@@ -61,6 +61,17 @@ alias ort='/path/to/ortask.py'
 
 Then: =ort list=, =ort add "Do the thing"=, =ort done t0004=.
 
+* Bash completion
+
+For command and option completion, source the bundled completion script:
+
+#+begin_src sh
+source /path/to/ortask/completions/ortask.bash
+#+end_src
+
+It registers completion for =ortask.py=, =./ortask.py=, and =ort=. After
+sourcing it, typing =ortask.py ad<Tab>= or =ort ad<Tab>= completes to =add=.
+
 * Requirements
 
 Python 3.10+ (standard library only, no dependencies).
