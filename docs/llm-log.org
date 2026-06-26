@@ -69,4 +69,5 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-13 Sat 00:53]: changed bare =orgmgr.py= and =orgmgr.py help= to print command help instead of defaulting to =list=.
 ** Codex [2026-06-13 Sat 00:56]: added a registry location header to plain =orgmgr.py list= output while leaving JSON output as a project array.
 ** Codex [2026-06-25 Thu 17:43]: added =docs/templates.md= specifying a future =ortask.py= template-instantiation workflow for creating weekly ElectoramaWeekly tasks from the =* Template= subtree.
+** Codex [2026-06-25 Thu 21:30]: revised =docs/templates.md= so =ortask.py apply= defaults to the weekly profile, supports only one top-level =* Template= per file initially, and derives week labels from ISO week Mondays.
 ** Gemini [2026-06-25 Thu 17:51]: simplified the template specification in =docs/templates.md= by replacing =template instantiate= with the flat =apply= subcommand and automating target week/date defaults.
