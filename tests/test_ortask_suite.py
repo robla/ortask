@@ -754,3 +754,102 @@ def test_apply_template_creates_tasks_section_if_missing(tmp_path: Path) -> None
     assert "* Tasks" in new_lines
     assert "** TODO tw26W26 Week of June 22's tasks" in new_lines
     assert new_lines.index("* Tasks") < new_lines.index(block[0])
+
+
+# ---------------------------------------------------------------------------
+# Interactive task selector (ortasklib.menu / projtui)
+# ---------------------------------------------------------------------------
+
+from ortasklib import menu  # noqa: E402 — grouped with the interactive tests
+
+
+def test_next_state_ring() -> None:
+    # The Emacs-style toggle ring flips between the two keywords ortask uses.
+    assert tasks.next_state("TODO") == "DONE"
+    assert tasks.next_state("DONE") == "TODO"
+    # Anything unrecognized cycles back to the first ring entry.
+    assert tasks.next_state("WAITING") == "TODO"
+
+
+def test_toggle_state_writes_only_selected_heading(tmp_path: Path) -> None:
+    # projtui._toggle_state cycles the selected task's keyword via the same
+    # surgical writer as the CLI, leaving every other line byte-for-byte intact.
+    org_file = write(
+        tmp_path / "todo.org",
+        """
+        * Tasks
+        ** TODO t0001 Target  :tag:
+        Body line
+
+        ** TODO t0002 Neighbor
+        """,
+    )
+    original = org_file.read_text(encoding="utf-8").splitlines()
+    items = projtui.load_menu_items(org_file, include_done=True)
+    target = next(i for i in items if i.task and i.task.id == "t0001")
+
+    projtui._toggle_state(org_file, target)
+    toggled = org_file.read_text(encoding="utf-8").splitlines()
+    assert toggled[1] == "** DONE t0001 Target  :tag:"
+    assert toggled[:1] + toggled[2:] == original[:1] + original[2:]
+
+    # Toggling again rings back to TODO and restores the file exactly.
+    again = next(i for i in projtui.load_menu_items(org_file, include_done=True)
+                 if i.task and i.task.id == "t0001")
+    projtui._toggle_state(org_file, again)
+    assert org_file.read_text(encoding="utf-8").splitlines() == original
+
+
+def test_interactive_select_unavailable_without_tty() -> None:
+    # Under pytest there is no TTY, so the selector must report unavailable and
+    # callers fall back to the numbered menu (no interactive code runs in CI).
+    assert menu.interactive_select_available() is False
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_select_menu_keybindings_headless() -> None:
+    # Drive select_menu through prompt_toolkit's pipe-input harness to lock down
+    # navigation, in-list action hotkeys, and select/quit/back resolution.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    rows = [
+        menu.MenuRow(1, "TODO", "t0001 first"),
+        menu.MenuRow(2, "TODO", "t0002 second"),
+        menu.MenuRow(3, "DONE", "t0003 third"),
+    ]
+    actions = {"e": "edit", "t": "toggle", "s-right": "toggle"}
+
+    def run(keys: str) -> menu.MenuResult:
+        with create_pipe_input() as pin:
+            with create_app_session(input=pin, output=DummyOutput()):
+                pin.send_text(keys)
+                return menu.select_menu(rows, actions=actions)
+
+    assert run("\x1b[B\r") == menu.MenuResult("select", 1)   # Down, Enter
+    assert run("jj\r") == menu.MenuResult("select", 2)       # j, j, Enter
+    assert run("k\r") == menu.MenuResult("select", 2)        # Up wraps to last
+    assert run("t") == menu.MenuResult("toggle", 0)          # hotkey on row 0
+    assert run("jt") == menu.MenuResult("toggle", 1)         # move then toggle
+    assert run("\x1b[1;2C") == menu.MenuResult("toggle", 0)  # Shift-Right
+    assert run("q") == menu.MenuResult("quit", None)
+    assert run("b") == menu.MenuResult("back", None)
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_select_menu_empty_rows_allows_exit() -> None:
+    # An empty list still honors quit/back and edit (edit yields index None).
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    def run(keys: str) -> menu.MenuResult:
+        with create_pipe_input() as pin:
+            with create_app_session(input=pin, output=DummyOutput()):
+                pin.send_text(keys)
+                return menu.select_menu([], actions={"e": "edit"})
+
+    assert run("q") == menu.MenuResult("quit", None)
+    assert run("b") == menu.MenuResult("back", None)
+    assert run("e") == menu.MenuResult("edit", None)

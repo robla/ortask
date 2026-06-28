@@ -15,14 +15,20 @@ except ImportError:  # pragma: no cover - optional interactive dependency
 
 try:
     from prompt_toolkit import PromptSession
+    from prompt_toolkit.application import Application
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import FormattedTextControl, Layout, Window
     from prompt_toolkit.output.defaults import create_output
     from prompt_toolkit.styles import Style
 except ImportError:  # pragma: no cover - optional interactive dependency
     PromptSession = None
+    Application = None
     FormattedText = None
     KeyBindings = None
+    FormattedTextControl = None
+    Layout = None
+    Window = None
     create_output = None
     Style = None
 
@@ -41,6 +47,20 @@ class ProjectRow:
     org_file: str
 
 
+@dataclass(frozen=True)
+class MenuResult:
+    """Outcome of a :func:`select_menu` interaction.
+
+    ``action`` is one of ``"select"``, ``"quit"``, ``"back"``, or a custom
+    action name supplied by the caller (e.g. ``"edit"``, ``"toggle"``).
+    ``index`` is the 0-based highlighted row index, or ``None`` for
+    ``"quit"``/``"back"``.
+    """
+
+    action: str
+    index: int | None
+
+
 class ContextCancelled(Exception):
     """Raised when Esc cancels the current menu context."""
 
@@ -51,6 +71,22 @@ PROMPT_STYLE = (
         {
             "field.label": "ansicyan bold",
             "field.separator": "ansibrightblack",
+        }
+    )
+    if Style is not None
+    else None
+)
+SELECT_STYLE = (
+    Style.from_dict(
+        {
+            "title": "bold",
+            "summary": "ansibrightblack",
+            "selected": "reverse",
+            "status.todo": "ansiyellow",
+            "status.done": "ansigreen",
+            "status.other": "ansibrightblack",
+            "hint": "ansibrightblack",
+            "dim": "ansibrightblack",
         }
     )
     if Style is not None
@@ -113,6 +149,141 @@ def prompt_text(label: str) -> str:
     if answer == "\x1b":
         raise ContextCancelled()
     return answer
+
+
+def interactive_select_available() -> bool:
+    """True when the prompt_toolkit highlight-bar selector can run.
+
+    Requires prompt_toolkit and an interactive terminal on both stdin and
+    stdout. Callers fall back to the plain numbered menu otherwise.
+    """
+    return (
+        Application is not None
+        and KeyBindings is not None
+        and FormattedTextControl is not None
+        and Window is not None
+        and Layout is not None
+        and sys.stdin.isatty()
+        and sys.stdout.isatty()
+    )
+
+
+def _status_class(status: str) -> str:
+    if status == "TODO":
+        return "class:status.todo"
+    if status == "DONE":
+        return "class:status.done"
+    return "class:status.other"
+
+
+def select_menu(
+    rows: list[MenuRow],
+    *,
+    title: str | None = None,
+    summary: str | None = None,
+    instruction: str | None = None,
+    actions: dict[str, str] | None = None,
+    start_index: int = 0,
+) -> MenuResult:
+    """Run an inline highlight-bar selector and return a :class:`MenuResult`.
+
+    Navigation is Up/Down or ``k``/``j`` (wrapping). ``Enter`` selects the
+    highlighted row (``"select"``); ``q`` returns ``"quit"``; ``b`` or ``Esc``
+    return ``"back"``. Each key in ``actions`` maps to a custom action name
+    returned for the highlighted row, e.g. ``{"e": "edit", "t": "toggle"}``.
+    Reserved keys (arrows, ``k``/``j``, ``Enter``, ``q``, ``b``, ``Esc``) should
+    not be reused as action keys.
+
+    Assumes :func:`interactive_select_available` is true; callers use the plain
+    numbered menu otherwise. The application renders inline (not full screen),
+    so it erases itself on exit and preserves scrollback.
+    """
+    actions = actions or {}
+    state = {"index": min(max(start_index, 0), len(rows) - 1) if rows else 0}
+
+    def render() -> FormattedText:
+        fragments: list[tuple[str, str]] = []
+        if title:
+            fragments.append(("class:title", title + "\n"))
+        if summary:
+            fragments.append(("class:summary", summary + "\n"))
+        if title or summary:
+            fragments.append(("", "\n"))
+        if not rows:
+            fragments.append(("class:dim", "  (no tasks)\n"))
+        for i, row in enumerate(rows):
+            selected = i == state["index"]
+            cursor = "› " if selected else "  "
+            if selected:
+                body = f"{cursor}{row.number:>2}  {row.status:<6}  {row.text}"
+                fragments.append(("class:selected", body + "\n"))
+            else:
+                fragments.append(("", f"{cursor}{row.number:>2}  "))
+                fragments.append((_status_class(row.status), f"{row.status:<6}"))
+                fragments.append(("", f"  {row.text}\n"))
+        if instruction:
+            fragments.append(("", "\n"))
+            fragments.append(("class:hint", instruction))
+        return FormattedText(fragments)
+
+    bindings = KeyBindings()
+
+    def _move(delta: int) -> None:
+        if rows:
+            state["index"] = (state["index"] + delta) % len(rows)
+
+    @bindings.add("up")
+    @bindings.add("k")
+    def _up(event) -> None:
+        _move(-1)
+
+    @bindings.add("down")
+    @bindings.add("j")
+    def _down(event) -> None:
+        _move(1)
+
+    @bindings.add("enter")
+    def _select(event) -> None:
+        if rows:
+            event.app.exit(result=MenuResult("select", state["index"]))
+
+    @bindings.add("q")
+    def _quit(event) -> None:
+        event.app.exit(result=MenuResult("quit", None))
+
+    # ``escape`` is intentionally non-eager so arrow-key escape sequences are
+    # not swallowed; prompt_toolkit disambiguates with its key timeout.
+    @bindings.add("b")
+    @bindings.add("escape")
+    def _back(event) -> None:
+        event.app.exit(result=MenuResult("back", None))
+
+    def _make_action(action_name: str):
+        def handler(event) -> None:
+            event.app.exit(
+                result=MenuResult(action_name, state["index"] if rows else None)
+            )
+        return handler
+
+    for key, action_name in actions.items():
+        bindings.add(key)(_make_action(action_name))
+
+    control = FormattedTextControl(render, focusable=True, show_cursor=False)
+    window = Window(control, always_hide_cursor=True, wrap_lines=False)
+    app = Application(
+        layout=Layout(window),
+        key_bindings=bindings,
+        style=SELECT_STYLE,
+        full_screen=False,
+        mouse_support=False,
+    )
+    try:
+        result = app.run()
+    except (KeyboardInterrupt, EOFError):
+        return MenuResult("quit", None)
+    if result is None:
+        return MenuResult("back", None)
+    return result
 
 
 def count_statuses(rows: list[MenuRow]) -> tuple[int, int, int]:

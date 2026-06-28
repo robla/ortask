@@ -25,13 +25,27 @@ Primary entry points:
 
 ## Current Implementation
 
-`projtui.py` is currently a numbered-menu TUI with detail display, editor
-launch, and `DONE` marking for ortask-compatible tasks with IDs. Local
-`ortask.py -i` and project task views in `projtui.py` use the same
-castabout-style task dashboard: they print the resolved task file, an
-open/done/total summary, and a status table before prompting for a task number.
-`projtui.py`'s top-level project list also uses the shared menu renderer. Rich
-is used when available, with a plain text fallback.
+`projtui.py` is a TUI with detail display, editor launch, and state changes for
+ortask-compatible tasks with IDs. Local `ortask.py -i` and project task views in
+`projtui.py` use the same castabout-style task dashboard: an open/done/total
+summary over a status table of the resolved task file.
+
+The task selector has two modes, chosen automatically by
+`menu.interactive_select_available()`:
+
+- **Highlight-bar mode** (interactive TTY with `prompt_toolkit`): an inline
+  arrow-key selector via `menu.select_menu()`. Up/Down or `j`/`k` move the
+  highlight (wrapping); `Enter` opens the focus view; `t` (also `d` and
+  Shift-Left/Right, mirroring Emacs `org-todo`) cycles the highlighted task
+  through the `TODO`/`DONE` ring with an immediate surgical writeback; `e` opens
+  the editor at the highlighted task's line; `b`/`Esc` go back; `q` quits. The
+  app renders inline (not full screen), so it erases itself on exit and leaves
+  scrollback intact.
+- **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
+  numbered dashboard + prompt, preserved unchanged as the scriptable fallback.
+
+`projtui.py`'s top-level project list uses the shared menu renderer. Rich is used
+when available, with a plain text fallback.
 
 For project navigation, `projtui.py` looks in `~/Projects` unless
 `~/.config/ortask/ortask.ini` sets:
@@ -147,16 +161,20 @@ distinguishes the options:
 
 ### Recommended Path
 
-1. Preserve the plain numbered menu as the non-TTY / fallback / scriptable mode.
-   Every interactive selection must have a non-interactive equivalent (a number,
-   an ID argument, or a flag) so automation never blocks on a picker.
-2. Add a narrow `select_menu()` abstraction in `ortasklib.menu` that takes rows
-   and returns exactly one of: a selected row, an action token (`edit`,
-   `toggle`, …) bound to a row, or a cancellation. It renders and collects
-   choices only; it owns no task logic.
-3. Implement the selector as a non-full-screen `prompt_toolkit` application, with
-   custom keybindings for navigation (arrow keys / `hjkl`), state toggles (`d`),
-   editor launching (`e`), and cancellation (`Esc` / `b`).
+Steps 1–3 are implemented for the task selector; step 4 remains the boundary to
+watch.
+
+1. **Done.** The plain numbered menu remains the non-TTY / fallback / scriptable
+   mode (`projtui._numbered_task_menu`), so every interactive selection still has
+   a non-interactive equivalent and automation never blocks on a picker.
+2. **Done.** `ortasklib.menu.select_menu()` is a narrow abstraction over rows
+   that returns exactly one of: a selected row, an action token (`edit`,
+   `toggle`, …) bound to a row (`MenuResult`), or `back`/`quit`. It renders and
+   collects choices only; it owns no task logic.
+3. **Done.** The selector is a non-full-screen `prompt_toolkit` application with
+   keybindings for navigation (arrow keys / `j`/`k`), the `TODO`/`DONE` toggle
+   ring (`t`, `d`, Shift-Left/Right), editor launching (`e`), and cancellation
+   (`Esc` / `b`). The ring itself is `tasks.next_state()`, a pure helper.
 4. Treat Textual as the *exit ramp*, not a competitor. The tripwire is concrete:
    the moment the selector wants a live detail-preview pane that re-renders as
    the highlight bar moves, multiple focusable regions, scrolling columns, or

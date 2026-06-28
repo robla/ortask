@@ -218,6 +218,24 @@ def change_state(text: str, task_id: str, target: str) -> list[str] | None:
     return lines
 
 
+# Order of the keyword cycle, mirroring Emacs org-mode's TODO fast-cycling.
+# ortask only uses two keywords, so the ring simply flips between them.
+STATE_RING = ("TODO", "DONE")
+
+
+def next_state(state: str) -> str:
+    """Return the next keyword in the ``TODO``/``DONE`` ring.
+
+    Emacs-style cycling: ``TODO`` -> ``DONE`` -> ``TODO``. An unrecognized
+    state cycles to the first ring entry (``TODO``).
+    """
+    try:
+        idx = STATE_RING.index(state)
+    except ValueError:
+        return STATE_RING[0]
+    return STATE_RING[(idx + 1) % len(STATE_RING)]
+
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------

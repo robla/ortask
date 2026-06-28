@@ -229,8 +229,82 @@ def _open_editor(org_file: Path, line_num: int | None) -> None:
     subprocess.run(parts + [str(org_file)], check=False)
 
 
+TASK_MENU_INSTRUCTION = (
+    "↑/↓ or j/k move · enter open · t toggle TODO/DONE · e editor · b back · q quit"
+)
+
+
 def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -> bool:
     org_file = canonical_org_file(project)
+    if menu.interactive_select_available():
+        return _interactive_task_menu(project, org_file, include_done)
+    return _numbered_task_menu(project, org_file, include_done, dashboard=dashboard)
+
+
+def _toggle_state(org_file: Path, item: MenuItem) -> None:
+    """Cycle the selected task's keyword in the TODO/DONE ring (Emacs-style)."""
+    if item.task is None:
+        print("not an ortask task; cannot change state")
+        return
+    target = tasks.next_state(item.task.state)
+    text = org_file.read_text(encoding="utf-8")
+    try:
+        new_lines = tasks.change_state(text, item.task.id, target)
+    except tasks.TaskNotFound:
+        new_lines = None
+    if new_lines is not None:
+        core.write_lines(org_file, new_lines)
+
+
+def _interactive_task_menu(project: Project, org_file: Path, include_done: bool) -> bool:
+    index = 0
+    while True:
+        try:
+            items = load_menu_items(org_file, include_done=include_done)
+        except ValueError as exc:
+            print(exc)
+            return True
+        rows = [_dashboard_row(i, item) for i, item in enumerate(items, start=1)]
+        todo, done, total = menu.count_statuses(rows)
+        summary = f"Open: {todo}  Done: {done}  Total: {total}"
+        index = min(index, len(items) - 1) if items else 0
+        result = menu.select_menu(
+            rows,
+            title=f"{project.name} tasks",
+            summary=summary,
+            instruction=TASK_MENU_INSTRUCTION,
+            actions={
+                "e": "edit",
+                "t": "toggle",
+                "d": "toggle",
+                "s-left": "toggle",
+                "s-right": "toggle",
+            },
+            start_index=index,
+        )
+        if result.index is not None:
+            index = result.index
+        if result.action == "quit":
+            return False
+        if result.action == "back":
+            return True
+        if result.action == "edit":
+            line = items[result.index].line_num if items and result.index is not None else None
+            _open_editor(org_file, line)
+            continue
+        if not items:
+            continue
+        item = items[result.index]
+        if result.action == "toggle":
+            _toggle_state(org_file, item)
+        elif result.action == "select":
+            if not focus_menu(org_file, item):
+                return False
+
+
+def _numbered_task_menu(
+    project: Project, org_file: Path, include_done: bool, *, dashboard: bool = True
+) -> bool:
     while True:
         try:
             items = load_menu_items(org_file, include_done=include_done)
