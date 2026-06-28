@@ -36,9 +36,9 @@ The task selector has two modes, chosen automatically by
 - **Highlight-bar mode** (interactive TTY with `prompt_toolkit`): an inline
   arrow-key selector via `menu.select_menu()`. Up/Down or `j`/`k` move the
   highlight (wrapping); `Enter` opens the focus view; `t` (also `d` and
-  Shift-Left/Right, mirroring Emacs `org-todo`) cycles the highlighted task
-  through the `TODO`/`DONE` ring; `e` opens the editor at the highlighted task's
-  line; `b`/`Esc` go back; `q` closes the current task-file context. In
+  Shift-Left/Right, mirroring Emacs `org-todo`) currently cycles the highlighted
+  task through the `TODO`/`DONE` ring; `e` opens the editor at the highlighted
+  task's line; `b`/`Esc` go back; `q` closes the current task-file context. In
   `projtui.py`, that returns to the project menu; in local `ortask.py -i`, it
   exits. The app renders inline (not full screen), so it erases itself on exit
   and leaves scrollback intact.
@@ -123,8 +123,10 @@ Shared behavior should include:
 
 - status-first dashboards that render before prompting
 - a consistent row model: number, status, title, optional detail columns
-- the same prompt vocabulary: number to select, `e` to edit/open, `b` back,
-  `q` quit, `Esc` cancel/back when prompt_toolkit is active
+- the same prompt vocabulary: number/Enter to select, arrows to move, `e` to
+  edit/open, `b` or `Esc` back, `q` close the current context
+- Org/Emacs-compatible task-state cycling with Shift-Right and Shift-Left as
+  the primary keys
 - optional Rich rendering with a plain text fallback
 - consistent task ordering and indentation
 - arrow-key selection with a highlight bar for task/project rows
@@ -202,8 +204,9 @@ watch.
    collects choices only; it owns no task logic.
 3. **Done.** The selector is a non-full-screen `prompt_toolkit` application with
    keybindings for navigation (arrow keys / `j`/`k`), the `TODO`/`DONE` toggle
-   ring (`t`, `d`, Shift-Left/Right), editor launching (`e`), and cancellation
-   (`Esc` / `b`). The ring itself is `tasks.next_state()`, a pure helper.
+   ring (Shift-Left/Right, with current `t`/`d` aliases), editor launching
+   (`e`), and cancellation (`Esc` / `b`). The ring itself is
+   `tasks.next_state()`, a pure helper.
 4. Treat Textual as the *exit ramp*, not a competitor. The tripwire is concrete:
    the moment the selector wants a live detail-preview pane that re-renders as
    the highlight bar moves, multiple focusable regions, scrolling columns, or
@@ -216,6 +219,47 @@ numbered menu as the baseline, and do not let `ortasklib.menu` grow into a
 private TUI framework. If the selector ever needs more than one column and a
 handful of keybindings, that is the signal to adopt Textual for that screen — not
 to keep extending the hand-rolled loop.
+
+## Keybinding Direction
+
+Use Emacs Org mode as the north star when it gives ortask a defensible default,
+but keep the on-screen command strip plain enough that a non-Emacs user can
+learn it in one pass. This should feel more like Pine than raw Emacs: visible
+prompts, a small vocabulary, and editor-compatible shortcuts where they are
+worth teaching.
+
+Recommended task-list bindings:
+
+- Up/Down move the highlight. `j`/`k` are acceptable vi-style aliases because
+  they are common, low-risk, and do not conflict with Org task semantics.
+- Enter opens the highlighted task's detail/focus view.
+- Shift-Right cycles the highlighted task forward through the TODO state ring;
+  Shift-Left cycles backward. These should be documented as the primary state
+  keys because they align with Org mode's `org-shiftright` / `org-shiftleft`
+  behavior closely enough to transfer muscle memory.
+- `e` opens the current Org file or selected task in the editor.
+- `b` and `Esc` go back one context without writing.
+- `q` closes the current context: local `ortask.py -i` exits, while project mode
+  returns from a project task view to the project list.
+
+Avoid making `t` the long-term primary state toggle. It is not very mnemonic
+once the command grows beyond "toggle", and it competes with future meanings
+such as "TODO-only filter", "tag", or "title". Keep `t` only as a transitional
+alias if it remains useful. Likewise, reserve plain `d` for explicit "mark
+DONE" actions in focus prompts; in the row selector, prefer Shift-Arrow for the
+ring so the same model supports both forward and backward cycling.
+
+Future TODO-state guidance:
+
+- The current ring is `TODO -> DONE -> TODO`. Org's full ring commonly includes
+  "no keyword" as another state. Do not add the no-keyword state until the
+  parser and menu can keep an ID-bearing heading visible after its TODO keyword
+  is removed; otherwise cycling would make the selected row disappear.
+- When no-keyword support lands, the ring should be explicit in the UI, for
+  example `TODO -> DONE -> none`, and Shift-Left should reverse that order.
+- Filtering should get its own key, probably `f` to cycle `all -> TODO -> DONE`.
+  This keeps state changes separate from visibility changes and avoids
+  overloading `t`.
 
 ## Workspace Discovery
 

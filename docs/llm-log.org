@@ -99,3 +99,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-28 Sun 01:51]: changed current task-file discovery terminology from "legacy names" to "compatibility names" for common Org filenames such as =TODO.org= and =todo.org=.
 ** Codex [2026-06-28 Sun 02:08]: implemented =t0003= so files without =* Tasks= can still be listed, shown, summarized, and edited via valid TODO/DONE task headings across the file.
 ** Codex [2026-06-28 Sun 11:03]: changed =projtui.py= project-mode task-menu exits to return to the parent project list instead of quitting the whole program.
+** Codex [2026-06-28 Sun 11:30]: updated =docs/interactive.md= with Org/Emacs-aligned keybinding guidance, making Shift-Arrow the recommended TODO-state ring control and treating =t= as a transitional alias.
