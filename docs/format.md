@@ -6,7 +6,8 @@ to read, with only enough convention for tools to help.
 
 ## Core Convention
 
-Prefer a dedicated task file named `TODO.org` or `TODO-ProjectName.org`.
+Prefer a dedicated task file named `task.org`. For project-specific names, use
+`NAME.task.org`, such as `castabout.task.org` or `elweek.task.org`.
 Inside it, put actionable work under a top-level `* Tasks` heading:
 
 ```org
@@ -68,14 +69,24 @@ interactive task details.
 
 ## Discovery Direction
 
-Project tooling should search in this order:
+Project tooling should prefer explicit task-file names over generic Org files.
+The resolution order is:
 
-1. `TODO*.org` files in the project directory, with `TODO.org` first.
-2. `todo.org` as a compatibility fallback.
-3. Larger Org files, especially `README.org`, that contain a clear task
-   section such as `* Tasks` or `* TODO`.
+1. An explicit CLI file option, such as `--file`.
+2. `ORTASK_FILE`, for `ortask.py`.
+3. Walk from the current directory upward, nearest directory first, looking for:
+   `task.org`, then exactly one `*.task.org`, then legacy names.
+4. Legacy names, in order: `TODO.org`, exactly one other `TODO*.org`,
+   `todo.org`, then `tasks.org`.
+5. As a compatibility fallback, use exactly one generic `*.org` in the original
+   current directory only.
 
-Dedicated `TODO*.org` files are preferred because they make intent obvious.
-Searching inside larger files is still useful for projects that keep chores
-beside prose, but the tool should avoid guessing when multiple plausible task
-sections exist.
+Ambiguity should stop resolution rather than silently choosing alphabetically.
+For example, two `*.task.org` files in the same directory require `--file` or a
+rename to `task.org`. This follows the useful part of `castabout.py`'s resolver:
+canonical task filenames are automatic, but generic Org files are never guessed
+when several plausible files exist.
+
+This convention should be acceptable for Emacs/Org users because it does not
+invent a custom file format; it only reserves a clearer filename. Upward search
+also matches the common project-root pattern used by editor tooling.

@@ -140,9 +140,10 @@ When =add= creates a new task:
 
 ** File modification safety
 
-The default org file is resolved in order: =ORTASK_FILE= env var,
-then =todo.org=, =tasks.org=, then the first =*.org= alphabetically
-(with a warning if multiple).  =--file= overrides all of these.
+The default org file should follow the shared discovery convention in
+=docs/format.md=: =--file= first, then =ORTASK_FILE=, then an upward search for
+=task.org=, exactly one =*.task.org=, and legacy names. Ambiguous matches should
+stop with a clear error rather than silently choosing alphabetically.
 
 When =status.py= edits the org file (per Codex recommendation):
 

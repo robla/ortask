@@ -49,10 +49,10 @@ Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
 ./ortask.py repair
 #+end_src
 
-By default, =ortask.py= looks for =TODO.org= and other =TODO*.org=
-files first, then compatibility names such as =todo.org= and
-=tasks.org=, then the first =*.org= file found. Use =--file= or the
-=ORTASK_FILE= env var to override.
+By default, =ortask.py= walks upward from the current directory looking for
+=task.org=, then exactly one =*.task.org=, then legacy names such as
+=TODO.org=, =todo.org=, and =tasks.org=. Use =--file= or the =ORTASK_FILE=
+env var to override. Ambiguous matches stop with an error instead of guessing.
 
 * Shell alias
 

@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import os
 import re
-import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-PROBE_NAMES = ["todo.org", "tasks.org"]
+LEGACY_PROBE_NAMES = ["todo.org", "tasks.org"]
 NUMERIC_ID_RE = re.compile(r"^t\d{4}(?:\.\d+)*$")
 WEEK_ID_RE = re.compile(r"^tw(?:\d{2}|\d{4})[Ww]\d{2}(?:\.\d+)*$")
 BARE_WEEK_ID_RE = re.compile(r"^(?:\d{2}|\d{4})[Ww]\d{2}(?:\.\d+)*$")
@@ -52,69 +51,107 @@ class TodoItem:
     body_lines: list[str] = field(default_factory=list)
 
 
+class OrgFileDiscoveryError(Exception):
+    """Raised when task-file discovery finds ambiguous candidates."""
+
+
 # ---------------------------------------------------------------------------
-# File discovery (single directory)
+# File discovery
 # ---------------------------------------------------------------------------
+
+def _relative_to_cwd(path: Path) -> Path:
+    return Path(os.path.relpath(path, Path.cwd()))
+
+
+def _format_candidates(paths: list[Path]) -> str:
+    return ", ".join(p.name for p in paths)
+
+
+def _ambiguous(directory: Path, pattern: str, matches: list[Path]) -> None:
+    raise OrgFileDiscoveryError(
+        f"ambiguous task files in {directory}: {_format_candidates(matches)} "
+        f"match {pattern}; use --file or rename the intended file to task.org"
+    )
+
+
+def _preferred_task_file_in(directory: Path) -> Path | None:
+    canonical = directory / "task.org"
+    if canonical.is_file():
+        return canonical
+
+    task_files = sorted(p for p in directory.glob("*.task.org") if p.is_file())
+    if len(task_files) == 1:
+        return task_files[0]
+    if len(task_files) > 1:
+        _ambiguous(directory, "*.task.org", task_files)
+
+    legacy_canonical = directory / "TODO.org"
+    if legacy_canonical.is_file():
+        return legacy_canonical
+
+    legacy_todo_files = sorted(
+        p for p in directory.glob("TODO*.org")
+        if p.is_file() and p.name != "TODO.org"
+    )
+    if len(legacy_todo_files) == 1:
+        return legacy_todo_files[0]
+    if len(legacy_todo_files) > 1:
+        _ambiguous(directory, "TODO*.org", legacy_todo_files)
+
+    for name in LEGACY_PROBE_NAMES:
+        candidate = directory / name
+        if candidate.is_file():
+            return candidate
+
+    return None
+
+
+def _walk_up(start: Path) -> list[Path]:
+    directory = start.resolve()
+    return [directory, *directory.parents]
+
 
 def resolve_org_file() -> Path | None:
-    """Find the default org file in the current directory using the probe order.
+    """Find the default org file from the current directory.
 
     1. ORTASK_FILE env var
-    2. Probe for TODO.org and TODO*.org files
-    3. Probe for compatibility names: todo.org, tasks.org
-    4. Pick first .org file alphabetically (warn if multiple)
+    2. Walk upward for task.org, exactly one *.task.org, and legacy names
+    3. Use exactly one generic *.org file in the original cwd
     """
     env = os.environ.get("ORTASK_FILE")
     if env:
         return Path(env)
 
-    todo_files = sorted(
-        Path(".").glob("TODO*.org"),
-        key=lambda p: (p.name != "TODO.org", p.name.lower()),
-    )
-    if todo_files:
-        if len(todo_files) > 1:
-            print(f"warning: multiple TODO*.org files found, using {todo_files[0].name}"
-                  f" (override with --file or ORTASK_FILE)", file=sys.stderr)
-        return todo_files[0]
+    cwd = Path.cwd()
+    for directory in _walk_up(cwd):
+        found = _preferred_task_file_in(directory)
+        if found is not None:
+            return _relative_to_cwd(found)
 
-    for name in PROBE_NAMES:
-        p = Path(name)
-        if p.exists():
-            return p
-
-    org_files = sorted(Path(".").glob("*.org"))
+    org_files = sorted(p for p in cwd.glob("*.org") if p.is_file())
     if len(org_files) == 1:
-        return org_files[0]
+        return Path(org_files[0].name)
     if len(org_files) > 1:
-        print(f"warning: multiple .org files found, using {org_files[0].name}"
-              f" (override with --file or ORTASK_FILE)", file=sys.stderr)
-        return org_files[0]
+        _ambiguous(cwd, "*.org", org_files)
 
     return None
 
 
 def discover_org_file(directory: Path) -> Path | None:
-    """Probe a single directory for its task file (no env var, no recursion).
+    """Probe one directory for its task file (no env var, no parent walk).
 
-    Same ordering as :func:`resolve_org_file`'s on-disk probe — ``TODO.org``
-    first, then other ``TODO*.org``, then ``todo.org``/``tasks.org``, then the
-    first ``*.org`` alphabetically — but rooted at ``directory`` and silent.
-    Used by ``orgmgr.py projadd`` to register an arbitrary project directory.
+    Used by ``orgmgr.py projadd`` to register an arbitrary project directory
+    without accidentally selecting a parent project's task file.
     """
-    todo_files = sorted(
-        directory.glob("TODO*.org"),
-        key=lambda p: (p.name != "TODO.org", p.name.lower()),
-    )
-    if todo_files:
-        return todo_files[0]
-    for name in PROBE_NAMES:
-        p = directory / name
-        if p.exists():
-            return p
-    org_files = sorted(directory.glob("*.org"))
-    if org_files:
+    found = _preferred_task_file_in(directory)
+    if found is not None:
+        return found
+
+    org_files = sorted(p for p in directory.glob("*.org") if p.is_file())
+    if len(org_files) == 1:
         return org_files[0]
+    if len(org_files) > 1:
+        _ambiguous(directory, "*.org", org_files)
     return None
 
 

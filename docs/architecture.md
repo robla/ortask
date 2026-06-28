@@ -70,16 +70,17 @@ Pure, shared building blocks that operate on in-memory strings and individual
 files:
 
 - the `TodoItem` model
-- Org heading regexes, the `TASK_ID_PATTERN`, and `PROBE_NAMES`
+- Org heading regexes, the `TASK_ID_PATTERN`, and task-file discovery constants
 - `find_tasks_range()` — `* Tasks` subtree detection
 - `parse_org()` and the low-level query helpers `filter_items()` / `find_by_id()`
 - `normalize_id()` / `canonical_id()`
 - `build_org_heading()` — render a `TodoItem` back to one heading line
 - `atomic_write()` / `write_lines()`
-- `resolve_org_file()` — single-directory task-file discovery
+- `resolve_org_file()` — local task-file discovery, including explicit
+  overrides and the upward task-file-name search described in `docs/format.md`
 
-`core.py` has no command names or argument parsing. It may print a discovery
-warning to stderr (e.g. multiple candidate `*.org` files), but nothing else.
+`core.py` has no command names or argument parsing. Ambiguous task-file
+discovery raises `OrgFileDiscoveryError`; CLI front-ends decide how to report it.
 
 ## `tasks.py`
 
@@ -119,7 +120,7 @@ Behavior used by `orgmgr.py` and shared with `projtui.py`:
 
 `orgmgr.py`'s `migrate` adapter writes the registry into `ortask.ini`; its
 `projadd` adapter creates the per-project symlink subdirectory, using
-`core.discover_org_file()` for single-directory task-file discovery. Both
+`core.discover_org_file()` for local task-file discovery. Both
 `orgmgr.py list` and `projtui.py` resolve the registry through
 `manager.resolve_registry()`, so the interactive and non-interactive tools agree
 on the same project list.

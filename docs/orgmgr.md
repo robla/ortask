@@ -106,8 +106,8 @@ Behavior:
 1. Resolve the registry (`--registry` > `[projects] registry` > `~/Projects`).
 2. Resolve the project directory from the optional `PATH` argument, defaulting
    to the current directory.
-3. Resolve the task file from `--file` or by local task-file discovery inside
-   the project directory.
+3. Resolve the task file from `--file` or by the shared local task-file
+   discovery convention in `docs/format.md`.
 4. Create `<registry>/<name>/`, where `name` is `--name` or the project
    directory basename.
 5. Create a project symlink named after the real project directory.

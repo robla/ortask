@@ -39,7 +39,7 @@ All scripts are stdlib-only (Python 3.10+, no external dependencies).
 ## Running
 
 ```sh
-./ortask.py                        # list open tasks (default: todo.org)
+./ortask.py                        # list open tasks (default: task.org)
 ./ortask.py list --todo            # open tasks only
 ./ortask.py --file /path/to.org    # operate on a different file
 ./orgmgr.py list                   # overview of all projects' top-level tasks
@@ -52,15 +52,13 @@ Despite older docs that mention `README.org`, the implemented default order is:
 
 1. `--file FILE` (wins over everything)
 2. `ORTASK_FILE` environment variable
-3. `TODO.org` / `TODO*.org` in the current directory
-4. `todo.org` in the current directory
-5. `tasks.org` in the current directory
-6. the first `*.org` file alphabetically (warns if multiple)
+3. Walk upward from the current directory, nearest first, for `task.org`
+4. In the same upward walk, exactly one `*.task.org`
+5. Legacy names in the same upward walk: `TODO.org`, one other `TODO*.org`,
+   `todo.org`, then `tasks.org`
+6. exactly one generic `*.org` in the original current directory
 
-`docs/format.md` and the TUI/orgmgr specs describe a richer intended discovery
-direction — prefer dedicated `TODO.org` / `TODO-ProjectName.org` files, then
-`todo.org`, then larger files like `README.org` that contain a `* Tasks`
-section.
+Ambiguous same-tier matches are errors. Do not silently choose alphabetically.
 
 ## Current state vs. planned state
 

@@ -189,10 +189,10 @@ the `proj2026` symlink layout before trying real project task files.
   I don't anticipate add "ortask.py project" later, but one never knows.  I think I want ortask.py to eventually be spilt into the core library (lib/orgmod.py) and the cli (ortask.py or bin/ortask.py)
 - How should the workspace scan choose among multiple `.org` files in one
   project directory?
-  Naming/placement convention.  Priority order:
-  1. TODO.org
-  2. todo.org (case insensitive)
-  3. one level deep of subdirectories, alphanumeric order
+  Follow the shared task-file discovery convention in `docs/format.md`: prefer
+  `task.org`, then exactly one `*.task.org`, then legacy names such as
+  `TODO.org` and `todo.org`. Multiple plausible files should be treated as an
+  ambiguity rather than sorted alphabetically.
 - Should there be a project metadata file, or is the symlink layout enough?
   Symlink layout is enough for now.  There may be a global file for all projects at some point down the road.
 - Should task bodies support a structured "prompt" block, or should the TUI

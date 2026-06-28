@@ -30,10 +30,12 @@ includes top-level DONE tasks but still excludes subtasks.
 
 ## 4. Discover Local Org File
 
-In a temporary project directory, verify the single-directory task-file lookup
-order: `TODO*.org` with `TODO.org` first, then compatibility names such as
-`todo.org` and `tasks.org`, then a deterministic fallback to another `*.org`
-file. Confirm discovery does not recurse into child directories.
+In temporary project directories, verify task-file lookup order: explicit file
+and `ORTASK_FILE` first; then an upward walk from the current directory that
+prefers `task.org`, exactly one `*.task.org`, and legacy names (`TODO.org`,
+one other `TODO*.org`, `todo.org`, `tasks.org`). Confirm the nearest directory
+wins, multiple same-tier matches are ambiguous, and generic `*.org` fallback is
+used only when exactly one exists in the original current directory.
 
 ## 5. Add Top-Level and Subtask
 

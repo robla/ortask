@@ -77,3 +77,5 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-25 Thu 23:04]: moved bash completion to =misc/ortask-completion.bash= and added completions for =ortask.py apply=.
 ** Codex [2026-06-27 Sat 18:05]: tightened =docs/taskwarrior.md= into a direct Taskwarrior workflow guide with a short =ortask.py= mapping section.
 ** Codex [2026-06-27 Sat 18:15]: added =ortask.py -i=/=--interactive= to open =projtui.py='s task menu for the resolved local Org file.
+** Codex [2026-06-27 Sat 18:48]: documented the target task-file discovery convention: prefer =task.org=, then exactly one =*.task.org=, then legacy names during an upward search from the current directory.
+** Codex [2026-06-27 Sat 19:00]: implemented the new task-file resolver with upward =task.org=/=*.task.org= discovery, legacy fallback, ambiguity errors, and matching tests/docs.

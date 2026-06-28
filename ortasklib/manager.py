@@ -124,13 +124,19 @@ def has_task_section(text: str) -> bool:
 
 def _org_sort_key(path: Path) -> tuple[int, str]:
     lower = path.name.lower()
-    if path.name == "TODO.org":
+    if path.name == "task.org":
         return (0, lower)
-    if lower == "todo.org":
+    if path.name.endswith(".task.org"):
         return (1, lower)
-    if path.name.startswith("TODO-") and path.suffix == ".org":
+    if path.name == "TODO.org":
         return (2, lower)
-    return (3, lower)
+    if path.name.startswith("TODO-") and path.suffix == ".org":
+        return (3, lower)
+    if lower == "todo.org":
+        return (4, lower)
+    if lower == "tasks.org":
+        return (5, lower)
+    return (6, lower)
 
 
 def choose_org_file(project_dir: Path) -> Path | None:

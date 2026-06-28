@@ -23,6 +23,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 from ortasklib import tasks
 from ortasklib.core import (  # noqa: F401 — re-exported for tooling/tests
     TASKS_HEADING_RE,
+    OrgFileDiscoveryError,
     TodoItem,
     build_org_heading as _build_org_heading,
     canonical_id,
@@ -205,7 +206,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--file", type=Path, default=None,
-        help="org file to operate on (default: TODO*.org, todo.org, tasks.org, or first *.org)",
+        help="org file to operate on (default: task.org, *.task.org, or legacy names)",
     )
     parser.add_argument(
         "-i", "--interactive", action="store_true",
@@ -274,9 +275,13 @@ def main() -> int:
         return 0
 
     if args.file is None:
-        resolved = resolve_org_file()
+        try:
+            resolved = resolve_org_file()
+        except OrgFileDiscoveryError as exc:
+            print(exc, file=sys.stderr)
+            return 1
         if resolved is None:
-            print("no org file found (create TODO.org or use --file)",
+            print("no org file found (create task.org or use --file)",
                   file=sys.stderr)
             return 1
         args.file = resolved

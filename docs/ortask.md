@@ -21,9 +21,9 @@ ortask.py -i | --interactive [--file FILE]
 ## DESCRIPTION
 
 **ortask.py** reads and edits the `* Tasks` section of a local org-mode
-file. By default it prefers `TODO.org` or another `TODO*.org` file in the
-current working directory, then falls back to compatibility names and other
-Org files.
+file. By default it prefers dedicated task files such as `task.org` or
+`NAME.task.org`, walking upward from the current directory before falling back
+to legacy names and unambiguous local Org files.
 Tasks are org headings with TODO/DONE keywords and stable IDs such as
 `t0001`, `t0001.1`, `tw26W24`, and `tw26W24.1`. See `--file` under
 GLOBAL OPTIONS for the file resolution order.
@@ -142,13 +142,19 @@ the placeholder set and insertion rules.
 ## GLOBAL OPTIONS
 
 **--file** *FILE*
-:   Org file to operate on.  Default resolution order:
-    1. `ORTASK_FILE` environment variable
-    2. `TODO.org` in the current working directory
-    3. Other `TODO*.org` files alphabetically
-    4. `todo.org` in the current working directory
-    5. `tasks.org` in the current working directory
-    6. The first `*.org` file alphabetically (warns if multiple)
+:   Org file to operate on. Default resolution order:
+    1. `--file` itself wins over all automatic discovery
+    2. `ORTASK_FILE` environment variable
+    3. From the current directory upward, nearest directory first:
+       `task.org`
+    4. In the same upward walk: exactly one `*.task.org`; multiple matches in
+       one directory are ambiguous
+    5. Legacy names in the same upward walk: `TODO.org`, exactly one other
+       `TODO*.org`, `todo.org`, then `tasks.org`
+    6. Exactly one generic `*.org` in the original current directory only
+
+    Ambiguous tiers produce an error instead of silently choosing
+    alphabetically.
 
 **-i, --interactive**
 :   Open `projtui.py`'s task menu for the resolved local Org file instead of

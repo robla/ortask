@@ -89,28 +89,56 @@ def test_filter_root_todo_tasks() -> None:
 
 
 def test_discover_local_org_file_order(tmp_path: Path, monkeypatch) -> None:
-    # This test fixes the single-directory Org task-file discovery order.
+    # This test fixes the task-file discovery order and parent walk behavior.
     monkeypatch.chdir(tmp_path)
+    write(tmp_path / "legacy.task.org", "* Tasks\n** TODO t0001 named task\n")
+    write(tmp_path / "task.org", "* Tasks\n** TODO t0002 canonical task\n")
     write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 lowercase\n")
     write(tmp_path / "TODO-Project.org", "* Tasks\n** TODO t0002 project\n")
     write(tmp_path / "TODO.org", "* Tasks\n** TODO t0003 canonical\n")
-    write(tmp_path / "nested" / "TODO.org", "* Tasks\n** TODO t0004 nested\n")
 
+    assert ortask.resolve_org_file() == Path("task.org")
+
+    (tmp_path / "task.org").unlink()
+    assert ortask.resolve_org_file() == Path("legacy.task.org")
+
+    (tmp_path / "legacy.task.org").unlink()
     assert ortask.resolve_org_file() == Path("TODO.org")
 
     (tmp_path / "TODO.org").unlink()
     assert ortask.resolve_org_file() == Path("TODO-Project.org")
-
     (tmp_path / "TODO-Project.org").unlink()
     assert ortask.resolve_org_file() == Path("todo.org")
-
     (tmp_path / "todo.org").unlink()
     write(tmp_path / "tasks.org", "* Tasks\n** TODO t0005 tasks\n")
     assert ortask.resolve_org_file() == Path("tasks.org")
-
     (tmp_path / "tasks.org").unlink()
     write(tmp_path / "README.org", "* Tasks\n** TODO t0006 readme\n")
     assert ortask.resolve_org_file() == Path("README.org")
+
+    nested = tmp_path / "src" / "pkg"
+    nested.mkdir(parents=True)
+    write(tmp_path / "task.org", "* Tasks\n** TODO t0007 parent task\n")
+    monkeypatch.chdir(nested)
+    assert ortask.resolve_org_file() == Path("../../task.org")
+
+
+def test_discover_local_org_file_ambiguity(tmp_path: Path, monkeypatch) -> None:
+    # This test ensures ambiguous task-file tiers stop instead of guessing.
+    monkeypatch.chdir(tmp_path)
+    write(tmp_path / "alpha.task.org", "* Tasks\n** TODO t0001 alpha\n")
+    write(tmp_path / "beta.task.org", "* Tasks\n** TODO t0002 beta\n")
+
+    with pytest.raises(ortask.OrgFileDiscoveryError):
+        ortask.resolve_org_file()
+
+    (tmp_path / "alpha.task.org").unlink()
+    (tmp_path / "beta.task.org").unlink()
+    write(tmp_path / "README.org", "* Tasks\n** TODO t0003 readme\n")
+    write(tmp_path / "NOTES.org", "* Tasks\n** TODO t0004 notes\n")
+
+    with pytest.raises(ortask.OrgFileDiscoveryError):
+        ortask.resolve_org_file()
 
 
 def test_add_top_level_and_subtask(tmp_path: Path) -> None:

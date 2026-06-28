@@ -27,7 +27,7 @@ This file provides instructional context for Gemini when working in the `ortask`
 
 - `ortask.py`: The main executable script.
 - `projtui.py`: A stdlib-only terminal project menu helper for selecting and focusing on tasks.
-- `todo.org` / `tasks.org`: Default files searched for task headings before falling back to other `.org` files.
+- `task.org` / `*.task.org`: Preferred task-file names; legacy `TODO.org`, `todo.org`, and `tasks.org` remain fallbacks.
 - `README.org`: Fallback data file and project quick-start guide.
 - `docs/ortask.md`: The man-page style reference; the **source of truth** for planned subcommand behavior.
 - `docs/orgmgr.md`: Design reference for the planned `orgmgr.py` global manager.

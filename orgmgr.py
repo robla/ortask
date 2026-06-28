@@ -65,7 +65,7 @@ def cmd_projadd(args: argparse.Namespace) -> int:
         print(f"projadd: not a directory: {args.path}", file=sys.stderr)
         return 1
 
-    # Resolve the task file: explicit --file, else single-directory discovery.
+    # Resolve the task file: explicit --file, else local task-file discovery.
     org_file: Path | None = None
     if args.file is not None:
         file_arg = Path(args.file).expanduser()
@@ -78,7 +78,11 @@ def cmd_projadd(args: argparse.Namespace) -> int:
             return 1
         org_file = candidate.resolve()
     else:
-        found = core.discover_org_file(project_dir)
+        try:
+            found = core.discover_org_file(project_dir)
+        except core.OrgFileDiscoveryError as exc:
+            print(f"projadd: {exc}", file=sys.stderr)
+            return 1
         if found is not None:
             if manager.has_task_section(found.read_text(encoding="utf-8")):
                 org_file = found.resolve()
