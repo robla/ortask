@@ -109,23 +109,23 @@ choices. Once rows need up/down navigation, a highlighted current row, and
 selection without typing numbers, the selector should be owned by an existing
 interactive toolkit rather than by ad hoc terminal escape handling.
 
-Recommended path:
+### Evaluation & Decision
+
+After evaluating the options in [python-tui-toolkit-options.md](file:///home/robla/src/ortask/tui2026/python-tui-toolkit-options.md), we agree that **prompt_toolkit** is the correct choice to implement the inline highlight-bar selector directly, rather than using **InquirerPy** or **Textual**.
+
+Reasons for this decision:
+- **Dependency Footprint:** `prompt_toolkit` is already an optional dependency in the codebase (reused for `Esc` cancellation). Relying on it directly avoids bringing in another package (`InquirerPy` or `questionary`), conforming to our YAGNI design.
+- **Direct In-List Actions:** Select-only wrappers like `InquirerPy` do not support direct hotkeys (such as pressing `e` to edit or `d` to toggle DONE) on the currently highlighted line without first exiting the prompt. `prompt_toolkit` allows registering custom `KeyBindings` that can operate on the selected index dynamically.
+- **Inline Flow:** Unlike `Textual`, which requires a full-screen application loop, `prompt_toolkit` keeps the interaction inline, preserving scrollback history and aligning with the "inline over full-screen" principle.
+
+### Recommended Path
 
 1. Preserve the plain numbered menu as the non-TTY/fallback mode.
-2. Add a shared `select_menu()` abstraction in `ortasklib.menu` that returns the
-   selected row or a cancellation/action token.
-3. Prototype the interactive implementation with `prompt_toolkit` directly
-   because ortask already uses it for `Esc`, and because task rows may need
-   custom keys, indentation, detail previews, and future Emacs-like behavior.
-4. Reconsider InquirerPy if the needed interaction stays close to ordinary
-   single-select menus; it may provide the highlight bar with less local code.
-5. Defer Textual unless the UI becomes a persistent application with panes,
-   live preview regions, or multiple screens.
+2. Add a shared `select_menu()` abstraction in `ortasklib.menu` that returns the selected row or a cancellation/action token.
+3. Prototype the interactive implementation with `prompt_toolkit` directly since ortask already uses it, using custom keybindings for navigation (arrow keys/hjkl), state toggles (`d`), editor launching (`e`), and cancellation (`Esc`/`b`).
+4. Defer Textual unless the UI becomes a persistent application with panes, live preview regions, or multiple screens.
 
-In short: keep the current Rich/prompt_toolkit blend for now, but do not grow
-`ortasklib.menu` into a private TUI framework. If the highlight-bar prototype
-requires more than a small selector and a few key bindings, switch to a
-maintained prompt/TUI layer before adding more features.
+In short: keep the current Rich/prompt_toolkit blend for now, but do not grow `ortasklib.menu` into a private TUI framework. Use `prompt_toolkit`'s layouts and keybindings directly for the selection loop.
 
 ## Workspace Discovery
 

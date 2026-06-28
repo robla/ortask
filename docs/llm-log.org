@@ -86,3 +86,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-27 Sat 22:33]: added castabout-style =Esc= cancellation to =ortasklib.menu= prompts and wired =projtui.py=/=ortask.py -i= menu contexts to use it.
 ** Codex [2026-06-27 Sat 22:41]: wired =projtui.py='s project picker through =ortasklib.menu= project dashboard rendering and documented the shared project-list path.
 ** Codex [2026-06-27 Sat 22:52]: updated =docs/interactive.md= to frame arrow-key highlight-bar menus as the decision point for keeping a small prompt_toolkit selector versus adopting an off-the-shelf prompt/TUI layer.
+** Gemini [2026-06-27 Sat 23:16]: evaluated the TUI toolkit options and interactive specifications, confirming the choice to use =prompt_toolkit= directly over =InquirerPy=/=Textual=, and updated the design docs.
