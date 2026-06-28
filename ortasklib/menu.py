@@ -285,10 +285,11 @@ def select_menu(
             fragments.append(("class:dim", "  (no tasks)\n"))
         for i, row in enumerate(rows):
             selected = i == selected_index
-            cursor = "› " if selected else "  "
+            cursor = "▶ " if selected else "  "
             if selected:
-                body = f"{cursor}{row.number:>2}  {row.status:<6}  {row.text}"
-                fragments.append(("class:selected", body + "\n"))
+                fragments.append(("class:selected", f"{cursor}{row.number:>2}  "))
+                fragments.append((_status_class(row.status), f"{row.status:<6}"))
+                fragments.append(("class:selected", f"  {row.text}\n"))
             else:
                 fragments.append(("", f"{cursor}{row.number:>2}  "))
                 fragments.append((_status_class(row.status), f"{row.status:<6}"))
@@ -324,10 +325,11 @@ def select_project_menu(
             fragments.append(("class:dim", "  (no projects)\n"))
         for i, row in enumerate(rows):
             selected = i == selected_index
-            cursor = "› " if selected else "  "
+            cursor = "▶ " if selected else "  "
             if selected:
-                body = f"{cursor}{row.number:>2}  {row.name:<12}  {row.org_file}"
-                fragments.append(("class:selected", body + "\n"))
+                fragments.append(("class:selected", f"{cursor}{row.number:>2}  "))
+                fragments.append(("class:project.name", f"{row.name:<12}"))
+                fragments.append(("class:selected", f"  {row.org_file}\n"))
             else:
                 fragments.append(("", f"{cursor}{row.number:>2}  "))
                 fragments.append(("class:project.name", f"{row.name:<12}"))

@@ -53,6 +53,10 @@ The top-level project list uses the same shared selection model: highlight-bar
 mode on an interactive TTY, and the Rich/plain numbered dashboard as the
 non-interactive fallback.
 
+Selected rows keep the same semantic coloring as unselected rows: TODO/DONE
+state labels stay yellow/green, and project names stay highlighted separately
+from the reverse-video row bar. The selected row marker is `▶`.
+
 ### Editing buffer (auto-save and save-on-exit)
 
 Interactive edits do not touch the real Org file immediately. Each file's task
