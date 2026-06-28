@@ -22,6 +22,7 @@ ortasklib/
   core.py
   tasks.py
   manager.py
+  menu.py
 ortask.py
 orgmgr.py
 projtui.py
@@ -37,11 +38,11 @@ later moved under `bin/` or renamed, the package can be renamed to `ortask/`.
 core    (stdlib only)
   ^ ^
   | |
-tasks  manager
-  ^      ^
-  |      |
+tasks  manager     menu
+  ^      ^          ^
+  |      |          |
 ortask.py   orgmgr.py        projtui.py
-(core,tasks) (manager)       (core, tasks, manager)
+(core,tasks) (manager)       (core, tasks, manager, menu)
 ```
 
 No script imports another script. `core` has no intra-package dependencies;
@@ -124,6 +125,18 @@ Behavior used by `orgmgr.py` and shared with `projtui.py`:
 `orgmgr.py list` and `projtui.py` resolve the registry through
 `manager.resolve_registry()`, so the interactive and non-interactive tools agree
 on the same project list.
+
+## `menu.py`
+
+Small shared rendering primitives for interactive tools:
+
+- `MenuRow` — stable row shape for numbered dashboard/menu displays
+- `count_statuses()` — open/done/total summary counts
+- `print_task_dashboard()` — Rich table rendering with a plain text fallback
+
+This is the first step toward the shared menuing layer described in
+`docs/interactive.md`. It owns presentation, not workflow behavior; `projtui.py`
+still decides which rows to show and what each action does.
 
 ## Test compatibility
 

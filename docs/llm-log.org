@@ -82,3 +82,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-27 Sat 21:45]: revised =docs/interactive.md= around castabout-derived TUI patterns and added =docs/ecosystem.md= to describe shared =ortasklib= convergence.
 ** Codex [2026-06-27 Sat 21:56]: changed =ortask.py -i= to show a castabout-style task dashboard with open/done totals before prompting.
 ** Codex [2026-06-27 Sat 22:06]: documented a future shared menuing layer for =ortask.py -i=, =projtui.py=, and castabout-style workflow tools.
+** Codex [2026-06-27 Sat 22:25]: added =ortasklib.menu= dashboard primitives and switched project task views to the same dashboard renderer as =ortask.py -i=.

@@ -27,9 +27,10 @@ Primary entry points:
 
 `projtui.py` is currently a numbered-menu TUI with detail display, editor
 launch, and `DONE` marking for ortask-compatible tasks with IDs. Local
-`ortask.py -i` starts with a castabout-style dashboard: it prints the resolved
-task file, an open/done/total summary, and a status table before prompting for
-a task number. Rich is used when available, with a plain text fallback.
+`ortask.py -i` and selected project task views in `projtui.py` use the same
+castabout-style dashboard: they print the resolved task file, an
+open/done/total summary, and a status table before prompting for a task number.
+Rich is used when available, with a plain text fallback.
 
 For project navigation, `projtui.py` looks in `~/Projects` unless
 `~/.config/ortask/ortask.ini` sets:
@@ -91,11 +92,11 @@ choices, manage cancellation, and expose hooks for actions. `castabout` can add
 `ortask.py -i` can add task-editing actions. All of them should feel like the
 same family of menus.
 
-Implementation can start inside `projtui.py`, but the likely destination is an
-`ortasklib` module once two or more tools need the same rendering, prompting,
-and cancellation behavior. The first shared abstraction should be small: a menu
-row dataclass, a dashboard/table renderer, and a prompt loop that supports both
-numbered fallback mode and a later prompt_toolkit highlight-bar mode.
+Implementation has started in `ortasklib.menu` with a small menu row dataclass
+and shared dashboard/table renderer. The next pieces to extract are the prompt
+loop, cancellation handling, and later prompt_toolkit highlight-bar mode. Keep
+the abstraction small: rendering and choice collection belong in the shared
+layer; task-specific actions stay in the calling tool.
 
 ## Workspace Discovery
 

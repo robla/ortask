@@ -15,19 +15,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-try:
-    from rich.console import Console
-    from rich.table import Table
-except ImportError:  # pragma: no cover - optional interactive dependency
-    Console = None
-    Table = None
-
 # Make ``ortasklib`` importable regardless of the working directory.
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from ortasklib import core, tasks
+from ortasklib import core, menu, tasks
 from ortasklib.manager import (
     Project,
     canonical_org_file,
@@ -37,7 +30,6 @@ from ortasklib.manager import (
 
 
 DETAIL_LINE_LIMIT = 20
-RICH_CONSOLE = Console() if Console is not None else None
 
 # ANSI escape codes for colorful prompts
 ANSI_BOLD = "\033[1m"
@@ -137,54 +129,17 @@ def _print_items(title: str, items: list[MenuItem]) -> None:
         print("  (no items)")
 
 
-def _task_counts(items: list[MenuItem]) -> tuple[int, int, int]:
-    tasks_only = [item for item in items if item.task is not None]
-    todo = sum(1 for item in tasks_only if item.task and item.task.state == "TODO")
-    done = sum(1 for item in tasks_only if item.task and item.task.state == "DONE")
-    return todo, done, len(tasks_only)
-
-
-def _dashboard_row(item: MenuItem) -> tuple[str, str]:
+def _dashboard_row(idx: int, item: MenuItem) -> menu.MenuRow:
     if item.task is None:
-        return "ORG", item.label
+        return menu.MenuRow(idx, "ORG", item.label)
     priority = f" [#{item.task.priority}]" if item.task.priority else ""
     indent = "  " * max(item.task.level - 2, 0)
-    return item.task.state, f"{indent}{item.task.id}{priority} {item.task.text}"
+    return menu.MenuRow(idx, item.task.state, f"{indent}{item.task.id}{priority} {item.task.text}")
 
 
 def _print_dashboard(title: str, org_file: Path, items: list[MenuItem]) -> None:
-    todo, done, total = _task_counts(items)
-    print()
-    if RICH_CONSOLE is not None and Table is not None:
-        RICH_CONSOLE.print(f"[bold]ortask[/] — reading {org_file}")
-        RICH_CONSOLE.print(f"[dim]Open: {todo}  Done: {done}  Total: {total}[/]")
-        table = Table(title=title)
-        table.add_column("#", justify="right")
-        table.add_column("Status")
-        table.add_column("Task")
-        for idx, item in enumerate(items, start=1):
-            status, text = _dashboard_row(item)
-            if status == "TODO":
-                rendered_status = "[yellow]TODO[/]"
-            elif status == "DONE":
-                rendered_status = "[green]DONE[/]"
-            else:
-                rendered_status = f"[dim]{status}[/]"
-            table.add_row(str(idx), rendered_status, text)
-        RICH_CONSOLE.print(table)
-        if not items:
-            RICH_CONSOLE.print("[dim](no items)[/]")
-        return
-
-    print(f"ortask — reading {org_file}")
-    print(f"Open: {todo}  Done: {done}  Total: {total}")
-    print(title)
-    print("  #  Status  Task")
-    for idx, item in enumerate(items, start=1):
-        status, text = _dashboard_row(item)
-        print(f"  {idx:>2}  {status:<6}  {text}")
-    if not items:
-        print("  (no items)")
+    rows = [_dashboard_row(idx, item) for idx, item in enumerate(items, start=1)]
+    menu.print_task_dashboard(title, org_file, rows)
 
 
 def _show_context(org_file: Path, item: MenuItem) -> None:
@@ -269,7 +224,7 @@ def _open_editor(org_file: Path, line_num: int | None) -> None:
     subprocess.run(parts + [str(org_file)], check=False)
 
 
-def task_menu(project: Project, include_done: bool, *, dashboard: bool = False) -> bool:
+def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -> bool:
     org_file = canonical_org_file(project)
     while True:
         try:
@@ -277,10 +232,10 @@ def task_menu(project: Project, include_done: bool, *, dashboard: bool = False) 
         except ValueError as exc:
             print(exc)
             return True
-        title = f"{project.name} tasks ({org_file})"
         if dashboard:
-            _print_dashboard(title, org_file, items)
+            _print_dashboard(f"{project.name} tasks", org_file, items)
         else:
+            title = f"{project.name} tasks ({org_file})"
             _print_items(title, items)
         choice = _prompt_choice(len(items), allow_editor=True)
         if choice == "q":

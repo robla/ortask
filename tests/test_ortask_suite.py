@@ -595,8 +595,9 @@ def test_projtui_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> 
 
     symlink_path = project_dir / "TODO-ElWeek.org"
     assert result.returncode == 0
-    assert f"elweek tasks ({task_file.resolve()})" in result.stdout
-    assert f"elweek tasks ({symlink_path})" not in result.stdout
+    assert f"ortask — reading {task_file.resolve()}" in result.stdout
+    assert "Open: 1" in result.stdout
+    assert f"ortask — reading {symlink_path}" not in result.stdout
 
 
 def test_projtui_task_menu_opens_org_file_from_task_list(tmp_path: Path, monkeypatch) -> None:
