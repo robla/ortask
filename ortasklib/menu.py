@@ -82,11 +82,17 @@ SELECT_STYLE = (
         {
             "title": "bold",
             "summary": "ansibrightblack",
-            "selected": "bg:#303030",
-            "selected.todo": "bg:#5f5f00",
-            "selected.done": "bg:#005f00",
-            "selected.other": "bg:#303030",
-            "selected.project": "bg:#005f5f",
+            # Selected-row highlight bar. The whole line takes a bright, solid
+            # state hue with black text, so the selection reads as one
+            # continuous bar (gold for TODO, green for DONE) and every part of
+            # the line — the label included — stays legible, rather than the
+            # label sitting same-color-on-same-color. Hex values are exact
+            # xterm-256 palette entries (214/34/250/37) so they map cleanly at
+            # 256 colors.
+            "selected.todo": "bg:#ffaf00 fg:#000000",
+            "selected.done": "bg:#00af00 fg:#000000",
+            "selected.other": "bg:#bcbcbc fg:#000000",
+            "selected.project": "bg:#00afaf fg:#000000",
             "status.todo": "ansiyellow",
             "status.done": "ansigreen",
             "status.other": "ansibrightblack",
@@ -180,6 +186,21 @@ def _status_class(status: str) -> str:
     if status == "DONE":
         return "class:status.done"
     return "class:status.other"
+
+
+def _selected_bar(status: str) -> str:
+    """Selection-bar class for a highlighted row, keyed to its task state.
+
+    Mirrors :func:`_status_class`: TODO rows get the gold bar, DONE rows the
+    green bar, anything else the neutral gray bar. The bar color (plus black
+    text) carries the task state on the selected row, so the per-label
+    ``status.*`` foreground is dropped there.
+    """
+    if status == "TODO":
+        return "selected.todo"
+    if status == "DONE":
+        return "selected.done"
+    return "selected.other"
 
 
 def _run_selector(
@@ -291,10 +312,9 @@ def select_menu(
             selected = i == selected_index
             cursor = "▶ " if selected else "  "
             if selected:
-                sel_class = f"selected.{row.status.lower()}" if row.status in ("TODO", "DONE") else "selected.other"
-                fragments.append((f"class:{sel_class}", f"{cursor}{row.number:>2}  "))
-                fragments.append((f"class:{sel_class} {_status_class(row.status)}", f"{row.status:<6}"))
-                fragments.append((f"class:{sel_class}", f"  {row.text}\n"))
+                bar = _selected_bar(row.status)
+                line = f"{cursor}{row.number:>2}  {row.status:<6}  {row.text}\n"
+                fragments.append((f"class:{bar}", line))
             else:
                 fragments.append(("", f"{cursor}{row.number:>2}  "))
                 fragments.append((_status_class(row.status), f"{row.status:<6}"))
@@ -332,10 +352,8 @@ def select_project_menu(
             selected = i == selected_index
             cursor = "▶ " if selected else "  "
             if selected:
-                sel_class = "selected.project"
-                fragments.append((f"class:{sel_class}", f"{cursor}{row.number:>2}  "))
-                fragments.append((f"class:{sel_class} class:project.name", f"{row.name:<12}"))
-                fragments.append((f"class:{sel_class}", f"  {row.org_file}\n"))
+                line = f"{cursor}{row.number:>2}  {row.name:<12}  {row.org_file}\n"
+                fragments.append(("class:selected.project", line))
             else:
                 fragments.append(("", f"{cursor}{row.number:>2}  "))
                 fragments.append(("class:project.name", f"{row.name:<12}"))
