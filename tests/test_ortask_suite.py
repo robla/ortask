@@ -983,7 +983,7 @@ def test_resolve_buffer_save_prompt_yes(tmp_path: Path, monkeypatch) -> None:
     buf = projtui.OrgBuffer(org_file)
     buf.apply(["* Tasks", "** DONE t0001 one"])
     monkeypatch.setattr(menu, "prompt_text", lambda _label: "y")
-    projtui._resolve_buffer(buf)
+    assert projtui._resolve_buffer(buf) is True  # exit proceeds
     assert org_file.read_text(encoding="utf-8") == "* Tasks\n** DONE t0001 one\n"
     assert not buf.autosave_path.exists()
 
@@ -1004,9 +1004,38 @@ def test_resolve_buffer_save_prompt_no_discards(tmp_path: Path, monkeypatch) -> 
     buf = projtui.OrgBuffer(org_file)
     buf.apply(["* Tasks", "** DONE t0001 one"])
     monkeypatch.setattr(menu, "prompt_text", lambda _label: "n")
-    projtui._resolve_buffer(buf)
+    assert projtui._resolve_buffer(buf) is True  # discard still exits
     assert org_file.read_text(encoding="utf-8") == original
     assert not buf.autosave_path.exists()
+
+
+def test_resolve_buffer_escape_stays_in_context(tmp_path: Path, monkeypatch) -> None:
+    # Esc on the save prompt vetoes the exit: returns False, keeps the buffer
+    # dirty and the auto-save in place, and never writes the real file.
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
+    original = org_file.read_text(encoding="utf-8")
+    buf = projtui.OrgBuffer(org_file)
+    buf.apply(["* Tasks", "** DONE t0001 one"])
+
+    def _esc(_label):
+        raise menu.ContextCancelled()
+
+    monkeypatch.setattr(menu, "prompt_text", _esc)
+    assert projtui._resolve_buffer(buf) is False  # stay in the running context
+    assert buf.dirty is True
+    assert buf.autosave_path.exists()
+    assert org_file.read_text(encoding="utf-8") == original
+
+
+def test_resolve_buffer_clean_buffer_exits_without_prompt(tmp_path: Path, monkeypatch) -> None:
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
+    buf = projtui.OrgBuffer(org_file)  # not dirty
+
+    def _boom(_label):
+        raise AssertionError("should not prompt when nothing is pending")
+
+    monkeypatch.setattr(menu, "prompt_text", _boom)
+    assert projtui._resolve_buffer(buf) is True
 
 
 def test_maybe_recover_yes_loads_autosave(tmp_path: Path, monkeypatch) -> None:
@@ -1020,7 +1049,8 @@ def test_maybe_recover_yes_loads_autosave(tmp_path: Path, monkeypatch) -> None:
     assert buf.dirty is True
 
 
-def test_maybe_recover_no_drops_autosave(tmp_path: Path, monkeypatch) -> None:
+def test_maybe_recover_no_discards_autosave(tmp_path: Path, monkeypatch) -> None:
+    # Explicit "n"/"no" is the only thing that throws away recovery data.
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
     original = org_file.read_text(encoding="utf-8")
     autosave = projtui.autosave_path_for(org_file)
@@ -1031,3 +1061,35 @@ def test_maybe_recover_no_drops_autosave(tmp_path: Path, monkeypatch) -> None:
     assert buf.read() == original
     assert buf.dirty is False
     assert not autosave.exists()
+
+
+def test_maybe_recover_escape_keeps_autosave_for_later(tmp_path: Path, monkeypatch) -> None:
+    # Esc leaves #todo.org# untouched and proceeds from the on-disk file.
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
+    original = org_file.read_text(encoding="utf-8")
+    autosave = projtui.autosave_path_for(org_file)
+    recovery_data = "* Tasks\n** DONE t0001 one\n"
+    autosave.write_text(recovery_data, encoding="utf-8")
+    buf = projtui.OrgBuffer(org_file)
+
+    def _esc(_label):
+        raise menu.ContextCancelled()
+
+    monkeypatch.setattr(menu, "prompt_text", _esc)
+    projtui._maybe_recover(buf)
+    assert buf.read() == original          # not recovered; buffer is the disk file
+    assert buf.dirty is False
+    assert autosave.exists()               # recovery data left in place...
+    assert autosave.read_text(encoding="utf-8") == recovery_data  # ...untouched
+
+
+def test_maybe_recover_default_enter_keeps_autosave(tmp_path: Path, monkeypatch) -> None:
+    # The default (bare Enter) also keeps the recovery data for later.
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
+    autosave = projtui.autosave_path_for(org_file)
+    autosave.write_text("* Tasks\n** DONE t0001 one\n", encoding="utf-8")
+    buf = projtui.OrgBuffer(org_file)
+    monkeypatch.setattr(menu, "prompt_text", lambda _label: "")
+    projtui._maybe_recover(buf)
+    assert buf.dirty is False
+    assert autosave.exists()

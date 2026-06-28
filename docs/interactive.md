@@ -55,12 +55,19 @@ menu runs against a `projtui.OrgBuffer`, modeled on Emacs (t0006):
   mirror it to an **auto-save sibling** named `#todo.org#` (Emacs convention) for
   crash recovery. The real file is untouched.
 - On leaving the file's editing context (`b`/`q`/Esc), if the buffer is dirty it
-  prompts `todo.org has been modified; save todo.org? [Y/n]`. A yes (the default)
-  writes the real file atomically and removes the auto-save; a no discards the
-  pending edits and removes the auto-save. The real file is never reformatted —
-  only the same surgical line edits the CLI would make are committed.
+  prompts `todo.org has been modified; save todo.org? [Y/n]`. The answer is
+  three-way:
+  - `Enter`/`y`/`yes` (the default) writes the real file atomically and removes
+    the auto-save. The file is never reformatted — only the same surgical line
+    edits the CLI would make are committed.
+  - `n`/`no` discards the pending edits and removes the auto-save.
+  - `Esc` cancels the exit: it returns to the still-running menu with the edits
+    intact (buffer dirty, auto-save kept), so it is a safe "wait, not yet" rather
+    than a save-or-lose choice.
 - On entering a context where a `#todo.org#` already exists (e.g. after a crash),
-  it offers to recover those unsaved changes into the buffer.
+  it offers a three-way choice: `y` recovers those unsaved changes into the
+  buffer, `n` discards the recovery file, and `Enter`/`Esc` keep it untouched to
+  decide later. Only an explicit `n`/`no` deletes leftover recovery data.
 - Opening the external editor (`e`) first flushes any pending buffer to the real
   file, then re-reads it afterward, so the editor and the buffer never disagree.
 

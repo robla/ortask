@@ -325,16 +325,25 @@ def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -
     org_file = canonical_org_file(project)
     buf = OrgBuffer(org_file)
     _maybe_recover(buf)
-    if menu.interactive_select_available():
-        result = _interactive_task_menu(project, buf, include_done)
-    else:
-        result = _numbered_task_menu(project, buf, include_done, dashboard=dashboard)
-    _resolve_buffer(buf)
-    return result
+    while True:
+        if menu.interactive_select_available():
+            result = _interactive_task_menu(project, buf, include_done)
+        else:
+            result = _numbered_task_menu(project, buf, include_done, dashboard=dashboard)
+        # The menu loop returned, so the user is leaving this file's context.
+        # If they Esc the save prompt, stay and re-enter the menu unsaved.
+        if _resolve_buffer(buf):
+            return result
 
 
 def _maybe_recover(buf: OrgBuffer) -> None:
-    """Offer to recover auto-save data left over from a previous session."""
+    """Offer to recover auto-save data left over from a previous session.
+
+    Three outcomes: recover (load it into the buffer), discard (delete the
+    auto-save), or keep for later (leave the ``#name#`` file untouched and decide
+    next time). Both ``Esc`` and the default keep it, since only an explicit
+    ``n``/``no`` should throw away leftover recovery data.
+    """
     if not buf.autosave_path.exists():
         return
     try:
@@ -342,38 +351,50 @@ def _maybe_recover(buf: OrgBuffer) -> None:
     except OSError:
         return
     if recovered == buf.read():
-        buf.discard()  # stale but identical -> just clean it up
+        buf.discard()  # stale but identical -> nothing to recover, clean it up
         return
     name = buf.path.name
+    auto = buf.autosave_path.name
     try:
         answer = menu.prompt_text(
-            f"found unsaved changes for {name} in {buf.autosave_path.name}; "
-            f"recover them? [y/N]"
+            f"found unsaved changes for {name} in {auto}; "
+            f"recover [y], discard [n], or keep for later [Enter]?"
         ).lower()
     except menu.ContextCancelled:
-        answer = "n"
-    if answer in ("y", "yes"):
+        answer = ""  # Esc -> keep for later
+    if answer in ("y", "yes", "r", "recover"):
         buf.recover(recovered)
         print(f"recovered unsaved changes into the {name} buffer (not yet saved)")
-    else:
+    elif answer in ("n", "no", "d", "discard"):
         buf.discard()
+        print(f"discarded the recovery data in {auto}")
+    else:
+        print(f"keeping {auto} for later (not recovered)")
 
 
-def _resolve_buffer(buf: OrgBuffer) -> None:
-    """On leaving a file's editing context, prompt to save pending changes."""
+def _resolve_buffer(buf: OrgBuffer) -> bool:
+    """Prompt to save when leaving a file's editing context.
+
+    Returns ``True`` when the exit may proceed (saved, discarded, or nothing was
+    pending). Returns ``False`` when the user pressed ``Esc`` to stay in the
+    still-running context without saving. Only an explicit ``n``/``no`` discards
+    the pending edits; the default (``Enter``/``y``/``yes``) saves.
+    """
     if not buf.dirty:
-        return
+        return True
     name = buf.path.name
     try:
         answer = menu.prompt_text(f"{name} has been modified; save {name}? [Y/n]").lower()
     except menu.ContextCancelled:
-        answer = ""  # preserve work on cancellation
-    if answer.startswith("n"):
+        print(f"continuing to edit {name} (changes not saved)")
+        return False
+    if answer in ("n", "no"):
         buf.discard()
         print(f"discarded changes to {name}")
-    else:
-        buf.save()
-        print(f"saved {name}")
+        return True
+    buf.save()
+    print(f"saved {name}")
+    return True
 
 
 def _toggle_state(buf: OrgBuffer, item: MenuItem) -> None:
