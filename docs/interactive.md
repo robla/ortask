@@ -111,21 +111,64 @@ interactive toolkit rather than by ad hoc terminal escape handling.
 
 ### Evaluation & Decision
 
-After evaluating the options in [python-tui-toolkit-options.md](file:///home/robla/src/ortask/tui2026/python-tui-toolkit-options.md), we agree that **prompt_toolkit** is the correct choice to implement the inline highlight-bar selector directly, rather than using **InquirerPy** or **Textual**.
+After evaluating the options in
+[python-tui-toolkit-options.md](../tui2026/python-tui-toolkit-options.md), the
+conclusion is that the arrow-key highlight-bar selector — the interactive
+centerpiece this design is aiming at — should be built **directly on
+`prompt_toolkit`** rather than on InquirerPy or Textual.
 
-Reasons for this decision:
-- **Dependency Footprint:** `prompt_toolkit` is already an optional dependency in the codebase (reused for `Esc` cancellation). Relying on it directly avoids bringing in another package (`InquirerPy` or `questionary`), conforming to our YAGNI design.
-- **Direct In-List Actions:** Select-only wrappers like `InquirerPy` do not support direct hotkeys (such as pressing `e` to edit or `d` to toggle DONE) on the currently highlighted line without first exiting the prompt. `prompt_toolkit` allows registering custom `KeyBindings` that can operate on the selected index dynamically.
-- **Inline Flow:** Unlike `Textual`, which requires a full-screen application loop, `prompt_toolkit` keeps the interaction inline, preserving scrollback history and aligning with the "inline over full-screen" principle.
+Two points frame the choice:
+
+- **The numbered menu stays as the fallback, not the ceiling.** Numbered
+  selection already supports in-list actions (type a number to focus a row, type
+  `e`/`d` to act), so it remains a fully usable mode for non-TTY and scripted
+  contexts. The highlight bar is the richer interactive layer built on that same
+  row model: keep the plain menu working, but treat the highlight bar as the
+  primary interactive target rather than a someday-maybe.
+- **A wrapper would not save the dependency, only the code.** InquirerPy and
+  questionary are themselves built on `prompt_toolkit`, which ortask already
+  carries (optionally) for `Esc` cancellation. So the choice is not "add a heavy
+  dependency vs. stay light"; it is "own a small selection widget vs. accept a
+  wrapper's interaction model." That reframes the YAGNI argument: the cost being
+  weighed is custom code, not a new package.
+
+Given that, `prompt_toolkit`-direct wins on the one requirement that actually
+distinguishes the options:
+
+- **Direct in-list actions.** ortask wants hotkeys that act on the *currently
+  highlighted* row — `e` to open the editor, `d` to toggle DONE — without first
+  committing the selection and tearing down the prompt. Select-only wrappers
+  model a prompt as "return one value"; bending them into "return a value *or* an
+  action token, keyed off the live cursor index" fights the framework.
+  `prompt_toolkit` `KeyBindings` express this naturally.
+- **Inline flow.** Unlike Textual, which owns a full-screen application loop,
+  `prompt_toolkit` (with `full_screen=False`) keeps the interaction inline and
+  preserves scrollback, matching the "inline over full-screen" principle.
 
 ### Recommended Path
 
-1. Preserve the plain numbered menu as the non-TTY/fallback mode.
-2. Add a shared `select_menu()` abstraction in `ortasklib.menu` that returns the selected row or a cancellation/action token.
-3. Prototype the interactive implementation with `prompt_toolkit` directly since ortask already uses it, using custom keybindings for navigation (arrow keys/hjkl), state toggles (`d`), editor launching (`e`), and cancellation (`Esc`/`b`).
-4. Defer Textual unless the UI becomes a persistent application with panes, live preview regions, or multiple screens.
+1. Preserve the plain numbered menu as the non-TTY / fallback / scriptable mode.
+   Every interactive selection must have a non-interactive equivalent (a number,
+   an ID argument, or a flag) so automation never blocks on a picker.
+2. Add a narrow `select_menu()` abstraction in `ortasklib.menu` that takes rows
+   and returns exactly one of: a selected row, an action token (`edit`,
+   `toggle`, …) bound to a row, or a cancellation. It renders and collects
+   choices only; it owns no task logic.
+3. Implement the selector as a non-full-screen `prompt_toolkit` application, with
+   custom keybindings for navigation (arrow keys / `hjkl`), state toggles (`d`),
+   editor launching (`e`), and cancellation (`Esc` / `b`).
+4. Treat Textual as the *exit ramp*, not a competitor. The tripwire is concrete:
+   the moment the selector wants a live detail-preview pane that re-renders as
+   the highlight bar moves, multiple focusable regions, scrolling columns, or
+   mouse support, stop hand-rolling `prompt_toolkit` layouts and move that screen
+   to Textual. Below that line, a one-column selector in `prompt_toolkit` is the
+   right amount of machinery.
 
-In short: keep the current Rich/prompt_toolkit blend for now, but do not grow `ortasklib.menu` into a private TUI framework. Use `prompt_toolkit`'s layouts and keybindings directly for the selection loop.
+In short: keep the Rich (output) + `prompt_toolkit` (input) blend, keep the
+numbered menu as the baseline, and do not let `ortasklib.menu` grow into a
+private TUI framework. If the selector ever needs more than one column and a
+handful of keybindings, that is the signal to adopt Textual for that screen — not
+to keep extending the hand-rolled loop.
 
 ## Workspace Discovery
 
@@ -216,8 +259,11 @@ around what ortask should implement itself:
 - `rich` for status tables, panels, progress summaries, and proposed changes.
 - `argparse` remains fine for `ortask.py`; workflow-specific tools may use
   Click if it suits their command surface.
-- InquirerPy/questionary are worth evaluating if ortask only needs conventional
-  select/confirm prompts and the custom prompt_toolkit selector starts growing.
+- InquirerPy/questionary become attractive only if the in-list hotkey
+  requirement is dropped — i.e. if a plain single/multi-select is all ortask
+  needs. They are wrappers over the same `prompt_toolkit`, so they trade control
+  for convenience, not weight. If instead the selector needs *more* (a live
+  preview pane, multiple regions), that is a Textual signal, not a wrapper one.
 
 Defer `Textual` or a full-screen event loop until the workflow clearly needs
 persistent layout or more menu machinery than a small selector. Castabout's
