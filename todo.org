@@ -6,3 +6,4 @@
 ** DONE t0005 Let's make it so that 'ort add' doesn't arbitrarily add a '* Tasks' section to anything other than maybe a new todo.org
 ** DONE t0006 Implement in-memory saving, with writing happening on exit (and writing only happening after confirmation)
 ** DONE t0007 When in menu.select_menu app mode, don't reorder the tasks based on TODO/DONE status, since that can make it so that a different task is selected upon hiting "t"
+** TODO t0008 Make ortask.py work with .org files with tasks that don't have ids on them
