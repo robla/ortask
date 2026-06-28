@@ -192,7 +192,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
 def cmd_interactive(args: argparse.Namespace) -> int:
     import projtui
 
-    return projtui.local_file_menu(args.file, include_done=False)
+    return projtui.local_file_menu(args.file, include_done=True)
 
 
 # ---------------------------------------------------------------------------

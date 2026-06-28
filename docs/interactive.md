@@ -25,10 +25,14 @@ Primary entry points:
 
 ## Current Implementation
 
-`projtui.py` is currently stdlib-only: numbered project menus, numbered task
-menus, detail display, editor launch, and `DONE` marking for ortask-compatible
-tasks with IDs. It looks in `~/Projects` unless `~/.config/ortask/ortask.ini`
-sets:
+`projtui.py` is currently a numbered-menu TUI with detail display, editor
+launch, and `DONE` marking for ortask-compatible tasks with IDs. Local
+`ortask.py -i` starts with a castabout-style dashboard: it prints the resolved
+task file, an open/done/total summary, and a status table before prompting for
+a task number. Rich is used when available, with a plain text fallback.
+
+For project navigation, `projtui.py` looks in `~/Projects` unless
+`~/.config/ortask/ortask.ini` sets:
 
 ```ini
 [projects]
@@ -41,8 +45,8 @@ On startup it prints the directory it is scanning, for example:
 Finding project in ~/tmpsorta/proj2026
 ```
 
-Keep this plain mode available as a fallback even if richer TUI behavior is
-added later.
+Keep the plain numbered mode available as a fallback even if richer TUI
+behavior is added later.
 
 ## Castabout Lessons
 

@@ -321,7 +321,7 @@ def test_interactive_uses_resolved_local_org_file(tmp_path: Path, monkeypatch) -
     )
 
     assert ortask.cmd_interactive(argparse.Namespace(file=org_file)) == 0
-    assert called == [(org_file, False)]
+    assert called == [(org_file, True)]
 
 
 def test_cli_smoke_tests(tmp_path: Path) -> None:
@@ -333,6 +333,7 @@ def test_cli_smoke_tests(tmp_path: Path) -> None:
         ** TODO t0001 Smoke parent
         Body
         *** TODO t0001.1 Smoke child
+        ** DONE t0002 Finished parent
         """,
     )
     workspace = tmp_path / "workspace"
@@ -367,7 +368,10 @@ def test_cli_smoke_tests(tmp_path: Path) -> None:
         check=False,
     )
     assert interactive_result.returncode == 0
-    assert f"tasks ({org_file})" in interactive_result.stdout
+    assert f"ortask — reading {org_file}" in interactive_result.stdout
+    assert "Open: 2" in interactive_result.stdout
+    assert "Done: 1" in interactive_result.stdout
+    assert "Finished parent" in interactive_result.stdout
 
     orgmgr_result = subprocess.run(
         [sys.executable, str(ROOT / "orgmgr.py"), "--registry", str(workspace), "list"],
