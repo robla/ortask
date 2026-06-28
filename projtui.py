@@ -337,7 +337,7 @@ def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
 def _task_menu_instruction(filter_mode: str) -> str:
     return (
         f"{_task_filter_label(filter_mode)} · ↑↓/jk · ↵ open · "
-        "⇧←/⇧→ state · / filter · e edit · Esc/b back · q quit"
+        "Shift+←/→ state · / filter · e edit · Esc/b back · q quit"
     )
 
 

@@ -101,3 +101,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-28 Sun 11:03]: changed =projtui.py= project-mode task-menu exits to return to the parent project list instead of quitting the whole program.
 ** Codex [2026-06-28 Sun 11:30]: updated =docs/interactive.md= with Org/Emacs-aligned keybinding guidance, making Shift-Arrow the recommended TODO-state ring control and treating =t= as a transitional alias.
 ** Codex [2026-06-28 Sun 11:44]: made interactive task menus show all task states by default, removed =t=/=d= row-selector state toggles, added =/= visibility cycling, and updated the interactive docs.
+** Codex [2026-06-28 Sun 11:57]: changed the interactive task-menu state hint from oversized shift-arrow glyphs to =Shift+←/→ state=.
