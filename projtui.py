@@ -107,33 +107,18 @@ class OrgBuffer:
             pass
 
 
-def _priority_rank(item: core.TodoItem) -> int:
-    if item.priority == "A":
-        return 0
-    if item.priority == "B":
-        return 1
-    if item.priority == "C":
-        return 2
-    return 3
+def _task_sort_key(item: core.TodoItem) -> int:
+    """Interactive menus preserve the hierarchy by using Org file order."""
+    return item.line_num
 
 
-def _task_sort_key(item: core.TodoItem) -> tuple[int, int, int, int]:
-    return (
-        0 if item.state == "TODO" else 1,
-        _priority_rank(item),
-        item.level,
-        item.line_num,
-    )
+def _stable_sort_key(item: core.TodoItem) -> int:
+    """Ordering for the highlight-bar selector.
 
-
-def _stable_sort_key(item: core.TodoItem) -> tuple[int, int, int]:
-    """Ordering for the highlight-bar selector that ignores TODO/DONE state.
-
-    Same as :func:`_task_sort_key` minus the state component, so toggling a
-    task's keyword does not move its row out from under the highlight (t0007).
-    Priority, nesting depth, and file order are all invariant under a toggle.
+    Same as :func:`_task_sort_key`: file order preserves Org hierarchy and keeps
+    a task's row stable when its TODO/DONE state is toggled.
     """
-    return (_priority_rank(item), item.level, item.line_num)
+    return item.line_num
 
 
 def _read_only_headings(text: str) -> list[MenuItem]:

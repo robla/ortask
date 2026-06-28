@@ -864,16 +864,29 @@ def test_select_menu_empty_rows_allows_exit() -> None:
     assert run("e") == menu.MenuResult("edit", None)
 
 
-def test_stable_sort_key_ignores_todo_done_state() -> None:
-    # t0007: the highlight-bar order must not move a row when its state flips.
-    base = "* Tasks\n** TODO t0001 alpha\n** TODO t0002 beta\n** TODO t0003 gamma\n"
-    toggled = core.parse_org(base.replace("** TODO t0001", "** DONE t0001"))
+def test_task_menu_order_preserves_org_file_hierarchy(tmp_path: Path) -> None:
+    # Menus should display tasks in file order so parent/child hierarchy stays intact.
+    org_file = write(
+        tmp_path / "todo.org",
+        """
+        * Tasks
+        ** TODO t0001 parent
+        *** TODO t0001.1 child
+        ** TODO [#A] t0002 priority sibling
+        *** DONE t0002.1 done child
+        ** TODO t0003 last
+        """,
+    )
+    buf = projtui.OrgBuffer(org_file)
 
-    state_order = [i.id for i in sorted(toggled, key=projtui._task_sort_key)]
-    stable_order = [i.id for i in sorted(toggled, key=projtui._stable_sort_key)]
+    ids = [item.task.id for item in projtui.load_menu_items(buf, include_done=True)]
+    sorted_ids = [
+        task.id
+        for task in sorted(core.parse_org(buf.read()), key=projtui._stable_sort_key)
+    ]
 
-    assert state_order[0] != "t0001"          # state sort sinks the DONE task
-    assert stable_order == ["t0001", "t0002", "t0003"]  # stable keeps file order
+    assert ids == ["t0001", "t0001.1", "t0002", "t0002.1", "t0003"]
+    assert sorted_ids == ids
 
 
 def test_anchor_index_follows_task_and_clamps() -> None:

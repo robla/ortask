@@ -242,23 +242,19 @@ elweek tasks:
 ```
 
 The user chooses what to work on. The menu should support focus without hiding
-judgment or forcing the next task in file order.
+judgment or forcing a computed priority order.
 
-Default ordering should be useful:
+Default display order is the order of headings in the Org file. This preserves
+the visible parent/child hierarchy, keeps authored weekly workflows readable,
+and matches what an Emacs Org user expects after arranging a tree by hand.
+`DONE` rows are hidden unless the caller asks to include them, but filtering
+must not otherwise reorder the remaining rows. Org priorities such as `[#A]`
+remain visible metadata; they do not move rows.
 
-1. open tasks before done tasks
-2. higher Org priority first: `[#A]`, then `[#B]`, then `[#C]`
-3. parent tasks before subtasks
-4. file order as the final tie-breaker
-
-The highlight-bar selector is the one exception: it **omits the open-before-done
-component** (rule 1) and orders only by priority, depth, and file position. That
-keeps a row from sliding out from under the highlight when its state is toggled
-in place — without it, marking the highlighted task `DONE` would re-sort it to
-the bottom and leave the bar pointing at a neighbor (`projtui._stable_sort_key`).
-The selector also re-anchors the highlight on the same task ID across reloads, so
-the toggled task stays selected even if the list membership changes. The numbered
-menu keeps the full ordering above, since each prompt re-reads the row numbers.
+The highlight-bar selector also re-anchors the highlight on the same task ID
+across reloads, so a toggled task stays selected even if the list membership
+changes. Because the menu order is file order, toggling TODO/DONE never moves a
+row out from under the cursor.
 
 ## Focus Prompt
 
@@ -345,7 +341,7 @@ Tests should separate workflow logic from terminal I/O:
 
 - registry discovery finds expected project task files
 - local `ortask.py -i` loads the resolved task file
-- task menus preserve priority and file-order rules
+- task menus preserve Org file order and hierarchy
 - selecting a task does not write to disk
 - write actions call the same parser/writer paths as CLI commands
 - duplicate IDs produce a clear stop condition
