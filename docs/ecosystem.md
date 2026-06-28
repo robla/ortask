@@ -1,0 +1,92 @@
+# Ortask Ecosystem
+
+The ortask ecosystem is a set of small tools that share Org task files and,
+where practical, share `ortasklib`. Emacs and Org mode are foundational as the
+culture and file format, but the tools should not require Emacs. The durable
+contract is plain `.org` text with recognizable task headings, stable IDs, and
+surgical edits.
+
+## Shared Center
+
+`ortasklib` should be the common substrate:
+
+- task-file discovery (`task.org`, `*.task.org`, legacy fallbacks)
+- `* Tasks` subtree parsing
+- stable task IDs and lookup normalization
+- task filtering and summary views
+- byte-preserving line edits for state changes, inserted notes, and new tasks
+- atomic writes and clear ambiguity errors
+
+The command-line tools can differ in interface and domain logic, but should not
+fork basic Org parsing or writeback behavior.
+
+## Current Projects
+
+`ortask.py` is the local task CLI. It should stay scriptable and conservative:
+list, show, add, done/open, apply templates, and open the local interactive
+menu. Its default mode should remain useful in shell scripts and simple enough
+to test with temporary fixtures.
+
+`projtui.py` is the registry/project navigator. It uses the same parser and
+manager helpers to move from a project registry to a selected Org file, then
+offers a focused task menu.
+
+`orgmgr.py` is the cross-filesystem manager. It should build and inspect the
+registry of projects and task files, not become a local task editor.
+
+`castabout.py` is a workflow assistant for recurring ElectoramaWeekly promotion
+chores. It reads a task file, shows a status dashboard, drafts promotional
+copy, opens posting destinations, and writes completion state back into Org.
+It currently carries bespoke Org parsing and writeback code; the ecosystem goal
+is to migrate that shared substrate to `ortasklib` while keeping castabout's
+domain-specific workflow in castabout.
+
+## Interface Pattern
+
+The ecosystem should support three interface layers:
+
+- **Scriptable CLI**: stable commands with plain/json/org output where useful.
+- **Inline TUI**: status-first displays, numbered choices, editable prompts,
+  clear proposed changes, and `Esc` as back/cancel.
+- **Editor workflow**: easy opening at task lines, with Org files remaining
+  readable and editable directly in Emacs or any text editor.
+
+Castabout is the best current prototype for the richer inline TUI style:
+`prompt_toolkit` for editable prefilled fields and fast `Esc` cancellation,
+`rich` for tables/panels, visible URLs before confirmation, clipboard/browser
+fallbacks, and explicit write confirmation for meaningful changes. Ortask
+should borrow those techniques without forcing every core command to depend on
+optional UI libraries.
+
+## Data Boundaries
+
+The `.org` file is the source of truth. Tools may infer temporary context, such
+as episode metadata in castabout, but persistent task state should be expressed
+as normal Org text. Avoid hidden databases, credentials, or session state unless
+a later tool has a specific reason for them.
+
+Shared conventions should remain small:
+
+- `task.org` is the preferred canonical filename.
+- `NAME.task.org` names workflow-specific task files.
+- `* Tasks` contains actionable items.
+- `* Template` contains reusable task templates.
+- Task body lines may contain URLs and notes used by workflow tools.
+
+## Convergence Plan
+
+Near-term castabout integration should happen in layers:
+
+1. Replace castabout task-file discovery with `ortasklib.core` behavior or a
+   thin wrapper that prefers `castabout.task.org`.
+2. Parse active-week and venue tasks using `ortasklib` task records where the
+   current heading shape allows it.
+3. Move reusable URL extraction and task-body insertion helpers into
+   `ortasklib`.
+4. Keep ElectoramaWeekly episode lookup, draft templates, and posting guidance
+   in castabout.
+5. Backfill tests in both repos so a shared helper change proves it did not
+   break local task management or the castabout posting flow.
+
+The goal is not a monolith. It is a family of focused tools that can cooperate
+because they agree on file discovery, task identity, parsing, and safe writes.

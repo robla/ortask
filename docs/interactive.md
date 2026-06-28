@@ -1,97 +1,98 @@
-# Project TUI for ortask.py
+# Interactive Workflow for ortask.py
 
-This document specifies a future `projtui.py` helper for using `ortask`
-from a project-management workspace such as `proj2026`. It replaces the
-earlier idea of simply stepping through one `todo.org` task after another.
-The desired flow is: choose a project, show that project's tasks as a menu,
-select one task, and receive a focused prompt for what to do next.
+This document specifies interactive use of `ortask.py` and `projtui.py`.
+The goal is a guided layer over Org task files, not a separate task database.
+It also records lessons from the sibling `castabout` project, whose inline TUI
+has a stronger workflow shape than the current minimal `projtui.py`.
 
 ## Goal
 
-`projtui.py` should help the user stay focused on a current project without
-turning Org-mode into a separate task database. Org files remain the source
-of truth. The TUI is only a guided layer over project symlinks and the task
-headings parsed by `ortask.py`.
+Interactive ortask tools should help the user stay focused on a current task
+without hiding the underlying Org file. Org files remain the source of truth.
+The TUI should display state first, ask only when needed, and make writes
+small, explicit, and reviewable.
 
-Primary usage from a workspace directory:
-
-```sh
-./ortask/ortask/projtui.py
-```
-
-When run from `proj2026`, the first useful target is promoting recent
-Electorama Weekly episodes through the `elweek/` project parent.
-
-Current minimal implementation:
+Primary entry points:
 
 ```sh
+./ortask.py -i
 ./projtui.py
-./projtui.py --registry /home/robla/tmpsorta/proj2026
+./projtui.py --registry ~/Projects
 ```
 
-The first version is intentionally plain: numbered project menus, numbered
-task/heading menus, detail display, editor launch, and `DONE` marking for
-ortask-compatible tasks with IDs. For non-task Org files such as the current
-`TODO-ElWeek.org` template, it displays headings as read-only reference.
+`ortask.py -i` opens the task menu for the local task file resolved by
+`ortask.py`. `projtui.py` starts from the configured project registry.
 
-By default, `projtui.py` looks in `~/Projects`. A suite-wide config file can
-override that default:
+## Current Implementation
+
+`projtui.py` is currently stdlib-only: numbered project menus, numbered task
+menus, detail display, editor launch, and `DONE` marking for ortask-compatible
+tasks with IDs. It looks in `~/Projects` unless `~/.config/ortask/ortask.ini`
+sets:
 
 ```ini
 [projects]
 registry = ~/tmpsorta/proj2026
 ```
 
-The config file lives at `~/.config/ortask/ortask.ini`, or under
-`$XDG_CONFIG_HOME/ortask/ortask.ini` when `XDG_CONFIG_HOME` is set.
-Command-line `--registry` wins over the config file. On startup, the tool
-prints the directory it is scanning, for example:
+On startup it prints the directory it is scanning, for example:
 
 ```text
 Finding project in ~/tmpsorta/proj2026
 ```
 
+Keep this plain mode available as a fallback even if richer TUI behavior is
+added later.
+
+## Castabout Lessons
+
+`castabout.py` is the best local prototype for a focused workflow TUI. Its
+history and guidance point to these ortask principles:
+
+- **Show before asking**: render the dashboard or task list before any prompt.
+- **Inline over full-screen**: preserve scrollback and use focused prompts.
+- **Editable defaults**: prefill inferred values in editable fields.
+- **Esc means back**: nested prompts cancel without writing.
+- **Visible URLs first**: show task body URLs before asking about completion.
+- **Graceful helpers**: clipboard/browser helpers should fall back to printed
+  instructions.
+- **Review writes**: show proposed changes before non-trivial writes.
+
+Castabout currently uses `prompt_toolkit` for editable prompts and fast `Esc`
+cancellation, `rich` for tables/panels, and ordinary line-oriented Org
+writeback. Ortask should borrow those techniques for richer interactive modes
+while keeping non-interactive CLI commands stdlib-friendly.
+
 ## Workspace Discovery
 
-The tool should treat each immediate subdirectory as a possible project
-context when it contains or points to an Org task file. In `proj2026`, that
-means examples such as:
+The project TUI treats each immediate registry subdirectory as a possible
+project context when it contains or points to an Org task file. In `proj2026`,
+examples include:
 
-- `elweek/` with `TODO-ElWeek.org`
-- `ortask/` with `todo.org`
+- `elweek/` with an ElectoramaWeekly task file
+- `ortask/` with this repository's task file
 
-The initial screen should be a project menu:
-
-```text
-Project:
-  1. elweek     TODO-ElWeek.org
-  2. ortask     todo.org
-  q. quit
-```
-
-Do not follow every nested directory looking for tasks. Keep discovery
-predictable and explain skipped entries only in a debug or verbose mode.
+Do not recursively scan arbitrary nested trees. Use the shared task-file
+discovery convention from `docs/format.md`, and treat ambiguous files as a stop
+condition rather than sorting alphabetically.
 
 ## Task Menu Workflow
 
-After project selection, display the project's open tasks as a menu rather
-than automatically advancing through them:
+After project or local-file selection, display open tasks as a menu:
 
 ```text
 elweek tasks:
-  1. [#A] publish latest episode promo post
-  2. draft social copy for last week's episode
-  3. update episode links page
+  1. [TODO] tw26W26 Promote June 24 ElectoramaWeekly episode
+  2. [TODO] tw26W26.1 Prepare next episode
   e. open this Org file in editor
-  r. refresh
-  b. back to projects
+  b. back
   q. quit
 ```
 
-The user chooses what to work on. This is important: the TUI should support
-focus without hiding judgment or forcing the next task in file order.
+The user chooses what to work on. The menu should support focus without hiding
+judgment or forcing the next task in file order.
 
-Default ordering should still be useful:
+Default ordering should be useful:
 
 1. open tasks before done tasks
 2. higher Org priority first: `[#A]`, then `[#B]`, then `[#C]`
@@ -100,11 +101,10 @@ Default ordering should still be useful:
 
 ## Focus Prompt
 
-Selecting a task should show a compact work prompt, not immediately mutate
-the file:
+Selecting a task should show details immediately and then present actions:
 
 ```text
-Task: publish latest episode promo post
+** TODO tw26W26.0.3 Post to reddit (/r/electorama)
 https://www.reddit.com/r/electorama/submit
 
 Actions:
@@ -113,100 +113,90 @@ Actions:
   b. back to task menu
 ```
 
-The prompt should show task details immediately when a task is selected,
-including descendant subtasks. Detail display is capped at 20 lines with a
-truncation note so selecting a large parent task stays readable. For the
-Electorama Weekly case, links used to complete the task should appear as plain
-body lines under the relevant task, so the TUI displays them before the action
-menu. When the selected task has direct subtasks, list them as numbered menu
-items so the user can drill into one without returning to the full task list.
-Opening the editor for a selected task should jump to that task's line when
-the configured editor supports line arguments.
+Display descendant subtasks, capped at 20 lines with a truncation note. Plain
+body URLs are important; workflow tools should display them before asking the
+user whether work is complete. Opening the editor for a selected task should
+jump to that task's line when the configured editor supports line arguments.
+
+Workflow-specific tools such as castabout may add domain actions such as "copy
+draft", "open destination", or "record result". Those actions should still use
+the same task identity, URL extraction, and writeback primitives supplied by
+`ortasklib`.
 
 ## Operations
 
-Initial operations should be small and map to existing or planned `ortask.py`
-commands:
+Initial operations should map to existing or planned CLI behavior:
 
 | TUI action | Command equivalent |
 | --- | --- |
-| list projects | workspace scan |
+| list projects | `orgmgr.py list` |
 | list tasks | `ortask.py list --todo --file FILE` |
-| show task details | `ortask.py show ID --file FILE` |
+| show details | `ortask.py show ID --file FILE` |
 | mark done | `ortask.py done ID --file FILE` |
-| add note | planned note writer |
 | add child task | `ortask.py add TITLE --parent ID --file FILE` |
 | open editor | editor at or near task heading |
 
-Every write must use the same surgical persistence rules as `ortask.py`:
-touch only the selected heading, inserted note, or inserted child task.
-Never rewrite the full Org file to save menu state.
+Every write must use the same surgical persistence rules as `ortask.py`: touch
+only the selected heading, inserted note, or inserted child task. Never rewrite
+the full Org file to save menu state.
 
 ## Toolkit Direction
 
-The first version can be a minimal terminal menu using only the Python
-standard library. Plain numbered choices are acceptable and may be better
-than a full-screen TUI while the workflow is still settling.
+Keep the stdlib numbered-menu implementation as the baseline. For richer
+interactive behavior, prefer the castabout stack:
 
-Optional libraries can come later:
+- `prompt_toolkit` for editable prefilled fields, history, key bindings, and
+  fast context cancellation.
+- `rich` for status tables, panels, progress summaries, and proposed changes.
+- `argparse` remains fine for `ortask.py`; workflow-specific tools may use
+  Click if it suits their command surface.
 
-- `prompt_toolkit`: useful for searchable menus, history, and richer input.
-- `questionary` or `InquirerPy`: useful if the tool becomes mostly menus and
-  confirmations.
-- `Textual`: defer unless the goal becomes a persistent full-screen project
-  dashboard.
-
-If optional dependencies are introduced, keep non-interactive `ortask.py`
-commands stdlib-only.
+Defer `Textual`, `InquirerPy`, or a full-screen event loop until the workflow
+clearly needs persistent layout. Castabout's inline loop is already enough for
+status-first guidance, manual task selection, and nested prompts.
 
 ## Safety Rules
 
 - Ask before mutating tasks; selection alone is read-only.
 - Keep task IDs visible whenever an ID exists.
 - Warn and stop on duplicate IDs in the selected file.
-- Preserve `--file` and `ORTASK_FILE` behavior when delegating to `ortask.py`.
+- Preserve `--file` and `ORTASK_FILE` behavior.
 - Do not auto-run repair before a session.
 - Do not store persistent session state in the Org file.
+- If a prompt is cancelled with `Esc`, do not write.
+- Preserve unrelated Org content byte-for-byte where practical.
 
 ## Testing Expectations
 
 Tests should separate workflow logic from terminal I/O:
 
-- registry discovery finds `elweek/TODO-ElWeek.org` and `ortask/todo.org`
-- project selection loads the expected Org file
+- registry discovery finds expected project task files
+- local `ortask.py -i` loads the resolved task file
 - task menus preserve priority and file-order rules
 - selecting a task does not write to disk
 - write actions call the same parser/writer paths as CLI commands
 - duplicate IDs produce a clear stop condition
+- prompt cancellation returns to the previous context without writing
+- proposed writes touch only the selected heading or body insertion
 
-Manual verification can start with temporary fixture directories that mimic
-the `proj2026` symlink layout before trying real project task files.
+Manual verification can start with temporary fixture directories that mimic the
+`proj2026` symlink layout before trying real project task files.
 
-## Open Decisions
+## Castabout Convergence
 
-- Should `projtui.py` live beside `ortask.py`, or should it become
-  `ortask.py project` later?
-  I don't anticipate add "ortask.py project" later, but one never knows.  I think I want ortask.py to eventually be spilt into the core library (lib/orgmod.py) and the cli (ortask.py or bin/ortask.py)
-- How should the workspace scan choose among multiple `.org` files in one
-  project directory?
-  Follow the shared task-file discovery convention in `docs/format.md`: prefer
-  `task.org`, then exactly one `*.task.org`, then legacy names such as
-  `TODO.org` and `todo.org`. Multiple plausible files should be treated as an
-  ambiguity rather than sorted alphabetically.
-- Should there be a project metadata file, or is the symlink layout enough?
-  Symlink layout is enough for now.  There may be a global file for all projects at some point down the road.
-- Should task bodies support a structured "prompt" block, or should the TUI
-  simply display existing body text?
-  Display the existing body text.  I don't want to deviate at all from orgmode norms, though I want the org file to be simple as possible.  This tool is meant as a complementary tool for orgmode users who may not be Emacs power users (e.g. I'm not really an Emacs power user, I don't think).  The idea is that this is training wheels for someone that eventually just wants to switch over to using Emacs to manage their day-to-day.
-- What is the smallest useful flow for the Electorama Weekly promotion work?
-  Use `TODO-ElWeek.org` as the project file. Put the latest episode promotion
-  checklist under `* Tasks` using normal ortask headings, and keep the existing
-  destination template as reference. A minimal checklist should cover:
-  1. identify the latest episode URL/title
-  2. draft short promo copy
-  3. post to `/r/electorama`
-  4. post to X/Twitter
-  5. post to Facebook
-  6. record links or notes under the task body
-  Then run `./projtui.py`, choose `elweek`, select one task, and mark it done
-  only after the external promo step is actually complete.
+`castabout.py` currently has bespoke Org parsing, task-file discovery, venue
+selection, URL extraction, and writeback. Bring it deeper into the ortask
+ecosystem in layers:
+
+1. Share task-file discovery rules with `ortasklib.core`.
+2. Use ortask parsing for `* Tasks` and stable IDs where practical.
+3. Move reusable body URL extraction and surgical writeback helpers into
+   `ortasklib`.
+4. Keep castabout-specific episode inference, draft generation, clipboard,
+   browser, and ElectoramaWeekly workflow code in castabout.
+5. Reuse castabout's prompt_toolkit/Rich interaction techniques in ortask's
+   richer interactive mode.
+
+The convergence target is not to turn castabout into an ortask subcommand. It
+is to make both tools trust the same Org-task substrate while allowing
+castabout to remain a focused workflow assistant.

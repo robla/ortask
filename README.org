@@ -89,3 +89,5 @@ Python 3.10+ (standard library only, no dependencies).
 - [[file:docs/gemini-ortask-design.org][Gemini design notes]]
 - [[file:docs/adjacent-trackers.md][Adjacent trackers]] — survey of related tools
 - [[file:docs/naming.md][Naming analysis]] — how we picked the name
+- [[file:docs/interactive.md][Interactive workflow]] — local and project task menus
+- [[file:docs/ecosystem.md][Ortask ecosystem]] — shared direction for ortask, castabout, and related tools
