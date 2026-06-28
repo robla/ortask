@@ -106,3 +106,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-28 Sun 12:59]: switched the =orgmgr.py -i= project picker to the shared prompt_toolkit highlight-bar selector, keeping the numbered project dashboard as the non-TTY fallback.
 ** Codex [2026-06-28 Sun 14:00]: changed task-list visibility filtering from =/= to =C-t=, reserving slash for future search while keeping Shift-Arrow for TODO-state cycling.
 ** Codex [2026-06-28 Sun 14:15]: changed selected highlight-bar rows to keep TODO/DONE and project-name colors while using a stronger =▶= row marker.
+** Gemini [2026-06-28 Sun 14:34]: subdued the selection bar background to bg:#3a3a3a, fixed highlight continuity across task status and project name fragments, and updated docs.

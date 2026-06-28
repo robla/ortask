@@ -55,7 +55,7 @@ non-interactive fallback.
 
 Selected rows keep the same semantic coloring as unselected rows: TODO/DONE
 state labels stay yellow/green, and project names stay highlighted separately
-from the reverse-video row bar. The selected row marker is `▶`.
+from the subdued row background bar. The selected row marker is `▶`.
 
 ### Editing buffer (auto-save and save-on-exit)
 
