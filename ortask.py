@@ -43,6 +43,17 @@ from ortasklib.tasks import (  # noqa: F401 — re-exported for tooling/tests
 )
 
 
+BOOTSTRAP_TASK_FILE_NAMES = {"task.org", "todo.org", "tasks.org", "TODO.org"}
+
+
+def _can_create_tasks_section(path: Path, text: str) -> bool:
+    """Only bootstrap empty files that are clearly intended to be task files."""
+    if text.strip():
+        return False
+    name = path.name
+    return name in BOOTSTRAP_TASK_FILE_NAMES or name.endswith(".task.org")
+
+
 # ---------------------------------------------------------------------------
 # Subcommand: list
 # ---------------------------------------------------------------------------
@@ -102,7 +113,19 @@ def cmd_show(args: argparse.Namespace) -> int:
 def cmd_add(args: argparse.Namespace) -> int:
     text = args.file.read_text(encoding="utf-8")
     try:
-        new_lines, new_id = tasks.add_task(text, args.title, args.parent)
+        new_lines, new_id = tasks.add_task(
+            text,
+            args.title,
+            args.parent,
+            allow_create_section=_can_create_tasks_section(args.file, text),
+        )
+    except tasks.MissingTasksSection:
+        print(
+            f"no '* Tasks' section found in {args.file}; add one explicitly "
+            "before using 'ortask.py add'",
+            file=sys.stderr,
+        )
+        return 1
     except tasks.TaskNotFound as exc:
         print(f"parent task not found: {exc}", file=sys.stderr)
         return 1

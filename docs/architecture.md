@@ -92,7 +92,9 @@ and return data or new line lists — they never read/write files, print, or cal
 - formatters: `format_plain()`, `format_org()`, `format_json()`
 - `show_lines()` — heading, body, and descendants for a selected task
 - ID allocation: `next_toplevel_id()`, `next_subtask_id()`
-- line-level edits: `add_task()`, `change_state()` (powers `done`/`open`)
+- line-level edits: `add_task()`, `change_state()` (powers `done`/`open`);
+  `add_task()` only creates `* Tasks` when the caller explicitly enables that
+  bootstrap path
 - validation: `find_repair_problems()`
 - `TaskNotFound` — raised by `show_lines`/`add_task`/`change_state` when an ID
   (or parent ID) does not resolve, so the helpers stay free of printing and exit

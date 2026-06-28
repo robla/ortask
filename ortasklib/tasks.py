@@ -34,6 +34,10 @@ class TaskNotFound(Exception):
     """
 
 
+class MissingTasksSection(Exception):
+    """Raised when an edit needs ``* Tasks`` but section creation is disabled."""
+
+
 class TemplateError(Exception):
     """Raised by template-application helpers; ``str(exc)`` is user-facing.
 
@@ -156,13 +160,21 @@ def next_subtask_id(items: list[TodoItem], parent_id: str) -> str:
 # Line-level edits
 # ---------------------------------------------------------------------------
 
-def add_task(text: str, title: str, parent: str | None = None) -> tuple[list[str], str]:
+def add_task(
+    text: str,
+    title: str,
+    parent: str | None = None,
+    *,
+    allow_create_section: bool = False,
+) -> tuple[list[str], str]:
     """Insert a new task and return ``(new_lines, new_id)``.
 
     A top-level task gets the next ``tNNNN`` ID and is appended to the
-    ``* Tasks`` subtree (creating the section if absent). A subtask is inserted
-    after its parent's existing descendants with the next dotted child ID.
-    Raises ``TaskNotFound`` if ``parent`` is given but does not resolve.
+    ``* Tasks`` subtree. A subtask is inserted after its parent's existing
+    descendants with the next dotted child ID. Raises ``TaskNotFound`` if
+    ``parent`` is given but does not resolve; raises ``MissingTasksSection`` if
+    a top-level add would need to create ``* Tasks`` and section creation is not
+    explicitly enabled.
     """
     lines = text.splitlines()
     items = parse_org(text)
@@ -185,8 +197,11 @@ def add_task(text: str, title: str, parent: str | None = None) -> tuple[list[str
                 insert_at = max(insert_at, item.line_num + 1 + len(item.body_lines))
     else:
         if start < 0:
-            # No * Tasks section — create one at end of file
-            lines.append("")
+            if not allow_create_section:
+                raise MissingTasksSection()
+            # Bootstrap a dedicated task file without reserializing prose.
+            if lines and lines[-1] != "":
+                lines.append("")
             lines.append("* Tasks")
             start = len(lines) - 1
             end = len(lines)

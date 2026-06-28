@@ -457,28 +457,34 @@ def test_bash_completion_for_ortask_and_alias() -> None:
         assert result.stdout.strip() == expected
 
 
-def test_add_task_creates_tasks_section_if_missing(tmp_path: Path) -> None:
-    # This test verifies that cmd_add creates a "* Tasks" section at the end
-    # of the file if one does not already exist.
+def test_add_rejects_existing_org_file_without_tasks_section(
+    tmp_path: Path, capsys
+) -> None:
+    # ort add must not silently append * Tasks to arbitrary existing Org prose.
     org_file = write(
-        tmp_path / "todo.org",
+        tmp_path / "README.org",
         """
         * Intro
         Keep me.
         """,
     )
+    before = org_file.read_text(encoding="utf-8")
+
+    assert ortask.cmd_add(argparse.Namespace(file=org_file, title="First task", parent=None)) == 1
+
+    captured = capsys.readouterr()
+    assert "no '* Tasks' section found" in captured.err
+    assert org_file.read_text(encoding="utf-8") == before
+
+
+def test_add_bootstraps_empty_dedicated_task_file(tmp_path: Path) -> None:
+    # Empty dedicated task files may be initialized with * Tasks and the new item.
+    org_file = write(tmp_path / "todo.org", "")
 
     assert ortask.cmd_add(argparse.Namespace(file=org_file, title="First task", parent=None)) == 0
 
     lines = org_file.read_text(encoding="utf-8").splitlines()
-    # It should have added the "* Tasks" section and the new task
-    assert "* Tasks" in lines
-    assert "** TODO t0001 First task" in lines
-    # Ensure they are appended at the end
-    tasks_index = lines.index("* Tasks")
-    task_index = lines.index("** TODO t0001 First task")
-    assert tasks_index > lines.index("Keep me.")
-    assert task_index == tasks_index + 1
+    assert lines == ["* Tasks", "** TODO t0001 First task"]
 
 
 # --- orgmgr registry model: migrate + projadd ---------------------------------

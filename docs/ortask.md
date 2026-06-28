@@ -72,6 +72,9 @@ ortask.py add "Determine CommonMark's suitability for FooProj" --parent t0003
 
 Append a new task heading to the `* Tasks` section.  The next
 available ID is assigned automatically (zero-padded to 4 digits).
+If the file has no `* Tasks` section, `add` refuses to modify existing prose
+files. It only bootstraps the section automatically for an empty dedicated task
+file such as `task.org`, `todo.org`, `tasks.org`, or `*.task.org`.
 
 **--parent** *ID*
 :   Create a subtask under the given parent instead of a top-level task.
