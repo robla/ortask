@@ -1,6 +1,8 @@
 * Tasks
 ** DONE t0001 Remove AI slop from docs/taskwarrior.md
-** TODO t0002 create .org file if none exist in directory when using 'ort add'
-** TODO t0003 Make it so that there doesn't have to be a 'Tasks' section
+** TODO t0002 create .org file if none exist in directory when using 'ort add' (calling it "tasks.org")
+** TODO t0003 Make it so that there doesn't have to be a 'Tasks' section in a .org file to use it
 ** TODO t0004 Test the 'ort repair' subcommand, particularly for adding identifiers to task lists without them
 ** TODO t0005 Let's make it so that 'ort add' doesn't arbitrarily add a '* Tasks' section to anything other than maybe a new todo.org
+** TODO t0006 Implement in-memory saving, with writing happening on exit (and writing only happening after confirmation)
+** TODO t0007 When in menu.select_menu app mode, don't reorder the tasks based on TODO/DONE status, since that can make it so that a different task is selected upon hiting "t"
