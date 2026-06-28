@@ -1027,7 +1027,7 @@ def test_select_menu_keybindings_headless() -> None:
         menu.MenuRow(2, "TODO", "t0002 second"),
         menu.MenuRow(3, "DONE", "t0003 third"),
     ]
-    actions = {"e": "edit", "/": "filter", "s-left": "toggle", "s-right": "toggle"}
+    actions = {"e": "edit", "c-t": "filter", "s-left": "toggle", "s-right": "toggle"}
 
     def run(keys: str) -> menu.MenuResult:
         with create_pipe_input() as pin:
@@ -1038,10 +1038,34 @@ def test_select_menu_keybindings_headless() -> None:
     assert run("\x1b[B\r") == menu.MenuResult("select", 1)   # Down, Enter
     assert run("jj\r") == menu.MenuResult("select", 2)       # j, j, Enter
     assert run("k\r") == menu.MenuResult("select", 2)        # Up wraps to last
-    assert run("/") == menu.MenuResult("filter", 0)          # filter on row 0
-    assert run("j/") == menu.MenuResult("filter", 1)         # move then filter
+    assert run("\x14") == menu.MenuResult("filter", 0)       # Ctrl-T on row 0
+    assert run("j\x14") == menu.MenuResult("filter", 1)      # move then filter
     assert run("\x1b[1;2C") == menu.MenuResult("toggle", 0)  # Shift-Right
     assert run("\x1b[1;2D") == menu.MenuResult("toggle", 0)  # Shift-Left
+    assert run("q") == menu.MenuResult("quit", None)
+    assert run("b") == menu.MenuResult("back", None)
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_select_project_menu_keybindings_headless() -> None:
+    # Project lists use the same highlight-bar navigation model as task lists.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    rows = [
+        menu.ProjectRow(1, "ortask", "~/src/ortask/todo.org"),
+        menu.ProjectRow(2, "elweek", "~/tmpsorta/electorama-weekly/TODO.org"),
+    ]
+
+    def run(keys: str) -> menu.MenuResult:
+        with create_pipe_input() as pin:
+            with create_app_session(input=pin, output=DummyOutput()):
+                pin.send_text(keys)
+                return menu.select_project_menu(rows)
+
+    assert run("\x1b[B\r") == menu.MenuResult("select", 1)  # Down, Enter
+    assert run("k\r") == menu.MenuResult("select", 1)       # Up wraps to last
     assert run("q") == menu.MenuResult("quit", None)
     assert run("b") == menu.MenuResult("back", None)
 
@@ -1062,6 +1086,50 @@ def test_select_menu_empty_rows_allows_exit() -> None:
     assert run("q") == menu.MenuResult("quit", None)
     assert run("b") == menu.MenuResult("back", None)
     assert run("e") == menu.MenuResult("edit", None)
+
+
+def test_project_menu_uses_highlight_selector_when_available(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The registry project picker should use the same fancy selector as task lists.
+    project_dir = tmp_path / "registry" / "sample"
+    org_file = write(
+        project_dir / "todo.org",
+        """
+        * Tasks
+        ** TODO t0001 Pick me
+        """,
+    )
+    results = iter([
+        menu.MenuResult("select", 0),
+        menu.MenuResult("quit", None),
+    ])
+    selector_calls: list[list[menu.ProjectRow]] = []
+    opened: list[tuple[manager.Project, bool]] = []
+
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
+    monkeypatch.setattr(
+        menu,
+        "select_project_menu",
+        lambda rows, **kw: selector_calls.append(rows) or next(results),
+    )
+    monkeypatch.setattr(
+        projtui,
+        "task_menu",
+        lambda project, include_done: opened.append((project, include_done)) or True,
+    )
+
+    assert projtui.project_menu(tmp_path / "registry", include_done=True) == 0
+
+    assert selector_calls
+    assert selector_calls[0][0].name == "sample"
+    assert selector_calls[0][0].org_file == "sample/todo.org"
+    assert opened == [
+        (
+            manager.Project("sample", project_dir, org_file.resolve()),
+            True,
+        )
+    ]
 
 
 def test_task_menu_order_preserves_org_file_hierarchy(tmp_path: Path) -> None:

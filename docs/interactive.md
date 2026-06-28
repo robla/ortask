@@ -39,18 +39,19 @@ The task selector has two modes, chosen automatically by
 - **Highlight-bar mode** (interactive TTY with `prompt_toolkit`): an inline
   arrow-key selector via `menu.select_menu()`. Up/Down or `j`/`k` move the
   highlight (wrapping); `Enter` opens the focus view; Shift-Left/Right cycles
-  the highlighted task through the `TODO`/`DONE` ring; `/` cycles the visibility
-  filter (`all -> TODO -> DONE`); `e` opens the editor at the highlighted task's
-  line; `b`/`Esc` go back; `q` closes the current task-file context. In
-  `orgmgr.py -i`, that returns to the project menu; in local `ortask.py -i`, it
-  exits. The app renders inline (not full screen), so it erases itself on exit
-  and leaves scrollback intact.
+  the highlighted task through the `TODO`/`DONE` ring; `C-t` cycles the
+  visibility filter (`all -> TODO -> DONE`); `e` opens the editor at the
+  highlighted task's line; `b`/`Esc` go back; `q` closes the current task-file
+  context. In `orgmgr.py -i`, that returns to the project menu; in local
+  `ortask.py -i`, it exits. The app renders inline (not full screen), so it
+  erases itself on exit and leaves scrollback intact.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved as the scriptable fallback with the
-  same `/` visibility cycle.
+  same `C-t` visibility cycle.
 
-The top-level project list uses the shared menu renderer. Rich is used when
-available, with a plain text fallback.
+The top-level project list uses the same shared selection model: highlight-bar
+mode on an interactive TTY, and the Rich/plain numbered dashboard as the
+non-interactive fallback.
 
 ### Editing buffer (auto-save and save-on-exit)
 
@@ -142,10 +143,10 @@ choices, manage cancellation, and expose hooks for actions. `castabout` can add
 local `ortask.py -i` can add task-editing actions. All of them should feel like
 the same family of menus.
 
-Implementation has started in `ortasklib.menu` with a small menu row dataclass,
-shared dashboard/table renderer, and prompt helper that maps `Esc` to
-`ContextCancelled` when prompt_toolkit is active. The next pieces to extract
-are richer choice loops and highlight-bar selection. Keep the abstraction small:
+Implementation has started in `ortasklib.menu` with small task/project row
+dataclasses, shared dashboard/table renderers, prompt helpers that map `Esc` to
+`ContextCancelled`, and inline highlight-bar selectors for task and project
+rows. Keep the abstraction small:
 rendering and choice collection belong in the shared layer; task-specific
 actions stay in the calling tool.
 
@@ -208,7 +209,7 @@ watch.
    collects choices only; it owns no task logic.
 3. **Done.** The selector is a non-full-screen `prompt_toolkit` application with
    keybindings for navigation (arrow keys / `j`/`k`), the `TODO`/`DONE` toggle
-   ring (Shift-Left/Right), task-state filtering (`/`), editor launching (`e`),
+   ring (Shift-Left/Right), task-state filtering (`C-t`), editor launching (`e`),
    and cancellation (`Esc` / `b`). The ring itself is `tasks.next_state()`, a
    pure helper.
 4. Treat Textual as the *exit ramp*, not a competitor. The tripwire is concrete:
@@ -242,9 +243,10 @@ Recommended task-list bindings:
   keys because they align with Org mode's `org-shiftright` / `org-shiftleft`
   behavior closely enough to transfer muscle memory.
 - `e` opens the current Org file or selected task in the editor.
-- `/` cycles the task visibility filter: `all -> TODO -> DONE`. This borrows the
-  "slash means show matching tasks" idea from Org sparse trees (`C-c / t`) while
-  avoiding a literal `C-c` chord in a terminal prompt.
+- `C-t` cycles the task visibility filter: `all -> TODO -> DONE`. This is not
+  an exact Emacs binding, but it keeps `C-c` and `C-x` open for future
+  multi-key command families while reserving `/` for search.
+- `/` should be reserved for search in the current list or backing Org file.
 - `b` and `Esc` go back one context without writing.
 - `q` closes the current context: local `ortask.py -i` exits, while project mode
   returns from a project task view to the project list.
@@ -263,8 +265,9 @@ Future TODO-state guidance:
   is removed; otherwise cycling would make the selected row disappear.
 - When no-keyword support lands, the ring should be explicit in the UI, for
   example `TODO -> DONE -> none`, and Shift-Left should reverse that order.
-- Keep filtering on `/` unless there is a strong reason to change it. This keeps
-  state changes separate from visibility changes and avoids overloading `t`.
+- Keep filtering on `C-t` unless there is a strong reason to move deeper into
+  Emacs-style multi-key sequences such as `C-c t` or `C-c / t`. This keeps state
+  changes separate from visibility changes and avoids overloading plain `t`.
 
 ## Workspace Discovery
 
@@ -298,7 +301,7 @@ judgment or forcing a computed priority order.
 Default display order is the order of headings in the Org file. This preserves
 the visible parent/child hierarchy, keeps authored weekly workflows readable,
 and matches what an Emacs Org user expects after arranging a tree by hand.
-`TODO` and `DONE` rows are visible by default. `/` cycles visibility through
+`TODO` and `DONE` rows are visible by default. `C-t` cycles visibility through
 `all -> TODO -> DONE`, but filtering must not otherwise reorder the remaining
 rows. Org priorities such as `[#A]` remain visible metadata; they do not move
 rows.

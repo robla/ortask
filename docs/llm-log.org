@@ -103,3 +103,5 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-28 Sun 11:44]: made interactive task menus show all task states by default, removed =t=/=d= row-selector state toggles, added =/= visibility cycling, and updated the interactive docs.
 ** Codex [2026-06-28 Sun 11:57]: changed the interactive task-menu state hint from oversized shift-arrow glyphs to =Shift+←/→ state=.
 ** Codex [2026-06-28 Sun 12:26]: added =orgmgr.py -i=/=--interactive= as the public registry-scoped project-browser entry point, documented the =orgm= alias, and extended bash completion for =orgmgr.py=/=orgm=.
+** Codex [2026-06-28 Sun 12:59]: switched the =orgmgr.py -i= project picker to the shared prompt_toolkit highlight-bar selector, keeping the numbered project dashboard as the non-TTY fallback.
+** Codex [2026-06-28 Sun 14:00]: changed task-list visibility filtering from =/= to =C-t=, reserving slash for future search while keeping Shift-Arrow for TODO-state cycling.

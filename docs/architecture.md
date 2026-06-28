@@ -140,6 +140,8 @@ Small shared rendering primitives for interactive tools:
 - `count_statuses()` — open/done/total summary counts
 - `print_task_dashboard()` — Rich table rendering with a plain text fallback
 - `print_project_dashboard()` — shared project-list rendering for `projtui.py`
+- `select_menu()` / `select_project_menu()` — inline prompt_toolkit
+  highlight-bar selectors for task and project rows
 - `prompt_text()` / `ContextCancelled` — prompt_toolkit Esc cancellation with
   plain `input()` fallback
 

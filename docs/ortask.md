@@ -172,7 +172,7 @@ the placeholder set and insertion rules.
 :   Open `projtui.py`'s task menu for the resolved local Org file instead of
     listing tasks. This bypasses the global project registry and uses the same
     file lookup rules as other `ortask.py` commands. Interactive task views
-    show TODO and DONE rows by default; use `/` in the menu to cycle visibility
+    show TODO and DONE rows by default; use `C-t` in the menu to cycle visibility
     through `all -> TODO -> DONE`.
 
 ## TASK ID FORMAT

@@ -208,7 +208,7 @@ def _prompt_choice(
     if allow_editor:
         suffix += ", e=open editor"
     if allow_filter:
-        suffix += ", /=filter"
+        suffix += ", C-t=filter"
     if allow_back:
         suffix += ", b=back"
     suffix += ", q=quit"
@@ -337,7 +337,7 @@ def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
 def _task_menu_instruction(filter_mode: str) -> str:
     return (
         f"{_task_filter_label(filter_mode)} · ↑↓/jk · ↵ open · "
-        "Shift+←/→ state · / filter · e edit · Esc/b back · q quit"
+        "Shift+←/→ state · C-t filter · e edit · Esc/b back · q quit"
     )
 
 
@@ -468,7 +468,7 @@ def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool)
             instruction=_task_menu_instruction(filter_mode),
             actions={
                 "e": "edit",
-                "/": "filter",
+                "c-t": "filter",
                 "s-left": "toggle",
                 "s-right": "toggle",
             },
@@ -525,7 +525,7 @@ def _numbered_task_menu(
         if choice == "e":
             _open_editor(buf, None)
             continue
-        if choice == "/":
+        if choice in {"\x14", "c-t"}:
             filter_mode = _next_task_filter(filter_mode)
             continue
         if not choice.isdigit() or not 1 <= int(choice) <= len(items):
@@ -596,14 +596,27 @@ def focus_menu(buf: OrgBuffer, item: MenuItem) -> bool:
             print("invalid choice")
 
 
+PROJECT_MENU_INSTRUCTION = "↑↓/jk · ↵ open · Esc/q quit"
+
+
 def project_menu(workspace: Path, include_done: bool) -> int:
     while True:
         projects = discover_projects(workspace)
-        menu.print_project_dashboard(
-            "Projects",
-            workspace,
-            _project_rows(workspace, projects),
-        )
+        rows = _project_rows(workspace, projects)
+        if menu.interactive_select_available():
+            result = menu.select_project_menu(
+                rows,
+                title="Projects",
+                summary=f"Registry: {workspace}",
+                instruction=PROJECT_MENU_INSTRUCTION,
+            )
+            if result.action in {"quit", "back"}:
+                return 0
+            if result.index is not None and projects:
+                task_menu(projects[result.index], include_done)
+            continue
+
+        menu.print_project_dashboard("Projects", workspace, rows)
         try:
             choice = _prompt_choice(len(projects), allow_back=False)
         except menu.ContextCancelled:

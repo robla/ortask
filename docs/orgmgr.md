@@ -108,9 +108,11 @@ orgmgr.py --registry ~/tmpsorta/proj2026 -i
 orgm -i
 ```
 
-The browser shows the project list first, then opens the selected project's Org
-task file. Task views show TODO and DONE rows by default; use `/` inside the
-task menu to cycle visibility through `all -> TODO -> DONE`, or start with:
+The browser shows the project list first using the same highlight-bar selector
+as task lists when a TTY is available; non-interactive runs keep the numbered
+fallback. Selecting a project opens that project's Org task file. Task views
+show TODO and DONE rows by default; use `C-t` inside the task menu to cycle
+visibility through `all -> TODO -> DONE`, or start with:
 
 ```sh
 orgmgr.py -i --todo-only

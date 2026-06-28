@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 try:
     from rich.console import Console
@@ -85,6 +86,7 @@ SELECT_STYLE = (
             "status.todo": "ansiyellow",
             "status.done": "ansigreen",
             "status.other": "ansibrightblack",
+            "project.name": "ansicyan",
             "hint": "ansibrightblack",
             "dim": "ansibrightblack",
         }
@@ -176,6 +178,79 @@ def _status_class(status: str) -> str:
     return "class:status.other"
 
 
+def _run_selector(
+    row_count: int,
+    render: Callable[[int], FormattedText],
+    *,
+    actions: dict[str, str] | None = None,
+    start_index: int = 0,
+) -> MenuResult:
+    actions = actions or {}
+    state = {
+        "index": min(max(start_index, 0), row_count - 1) if row_count else 0
+    }
+
+    bindings = KeyBindings()
+
+    def _move(delta: int) -> None:
+        if row_count:
+            state["index"] = (state["index"] + delta) % row_count
+
+    @bindings.add("up")
+    @bindings.add("k")
+    def _up(event) -> None:
+        _move(-1)
+
+    @bindings.add("down")
+    @bindings.add("j")
+    def _down(event) -> None:
+        _move(1)
+
+    @bindings.add("enter")
+    def _select(event) -> None:
+        if row_count:
+            event.app.exit(result=MenuResult("select", state["index"]))
+
+    @bindings.add("q")
+    def _quit(event) -> None:
+        event.app.exit(result=MenuResult("quit", None))
+
+    # ``escape`` is intentionally non-eager so arrow-key escape sequences are
+    # not swallowed; prompt_toolkit disambiguates with its key timeout.
+    @bindings.add("b")
+    @bindings.add("escape")
+    def _back(event) -> None:
+        event.app.exit(result=MenuResult("back", None))
+
+    def _make_action(action_name: str):
+        def handler(event) -> None:
+            event.app.exit(
+                result=MenuResult(action_name, state["index"] if row_count else None)
+            )
+        return handler
+
+    for key, action_name in actions.items():
+        bindings.add(key)(_make_action(action_name))
+
+    control = FormattedTextControl(lambda: render(state["index"]), focusable=True,
+                                   show_cursor=False)
+    window = Window(control, always_hide_cursor=True, wrap_lines=False)
+    app = Application(
+        layout=Layout(window),
+        key_bindings=bindings,
+        style=SELECT_STYLE,
+        full_screen=False,
+        mouse_support=False,
+    )
+    try:
+        result = app.run()
+    except (KeyboardInterrupt, EOFError):
+        return MenuResult("quit", None)
+    if result is None:
+        return MenuResult("back", None)
+    return result
+
+
 def select_menu(
     rows: list[MenuRow],
     *,
@@ -198,10 +273,7 @@ def select_menu(
     numbered menu otherwise. The application renders inline (not full screen),
     so it erases itself on exit and preserves scrollback.
     """
-    actions = actions or {}
-    state = {"index": min(max(start_index, 0), len(rows) - 1) if rows else 0}
-
-    def render() -> FormattedText:
+    def render(selected_index: int) -> FormattedText:
         fragments: list[tuple[str, str]] = []
         if title:
             fragments.append(("class:title", title + "\n"))
@@ -212,7 +284,7 @@ def select_menu(
         if not rows:
             fragments.append(("class:dim", "  (no tasks)\n"))
         for i, row in enumerate(rows):
-            selected = i == state["index"]
+            selected = i == selected_index
             cursor = "› " if selected else "  "
             if selected:
                 body = f"{cursor}{row.number:>2}  {row.status:<6}  {row.text}"
@@ -226,64 +298,46 @@ def select_menu(
             fragments.append(("class:hint", instruction))
         return FormattedText(fragments)
 
-    bindings = KeyBindings()
-
-    def _move(delta: int) -> None:
-        if rows:
-            state["index"] = (state["index"] + delta) % len(rows)
-
-    @bindings.add("up")
-    @bindings.add("k")
-    def _up(event) -> None:
-        _move(-1)
-
-    @bindings.add("down")
-    @bindings.add("j")
-    def _down(event) -> None:
-        _move(1)
-
-    @bindings.add("enter")
-    def _select(event) -> None:
-        if rows:
-            event.app.exit(result=MenuResult("select", state["index"]))
-
-    @bindings.add("q")
-    def _quit(event) -> None:
-        event.app.exit(result=MenuResult("quit", None))
-
-    # ``escape`` is intentionally non-eager so arrow-key escape sequences are
-    # not swallowed; prompt_toolkit disambiguates with its key timeout.
-    @bindings.add("b")
-    @bindings.add("escape")
-    def _back(event) -> None:
-        event.app.exit(result=MenuResult("back", None))
-
-    def _make_action(action_name: str):
-        def handler(event) -> None:
-            event.app.exit(
-                result=MenuResult(action_name, state["index"] if rows else None)
-            )
-        return handler
-
-    for key, action_name in actions.items():
-        bindings.add(key)(_make_action(action_name))
-
-    control = FormattedTextControl(render, focusable=True, show_cursor=False)
-    window = Window(control, always_hide_cursor=True, wrap_lines=False)
-    app = Application(
-        layout=Layout(window),
-        key_bindings=bindings,
-        style=SELECT_STYLE,
-        full_screen=False,
-        mouse_support=False,
+    return _run_selector(
+        len(rows), render, actions=actions, start_index=start_index
     )
-    try:
-        result = app.run()
-    except (KeyboardInterrupt, EOFError):
-        return MenuResult("quit", None)
-    if result is None:
-        return MenuResult("back", None)
-    return result
+
+
+def select_project_menu(
+    rows: list[ProjectRow],
+    *,
+    title: str | None = None,
+    summary: str | None = None,
+    instruction: str | None = None,
+    start_index: int = 0,
+) -> MenuResult:
+    """Run an inline highlight-bar selector for project rows."""
+    def render(selected_index: int) -> FormattedText:
+        fragments: list[tuple[str, str]] = []
+        if title:
+            fragments.append(("class:title", title + "\n"))
+        if summary:
+            fragments.append(("class:summary", summary + "\n"))
+        if title or summary:
+            fragments.append(("", "\n"))
+        if not rows:
+            fragments.append(("class:dim", "  (no projects)\n"))
+        for i, row in enumerate(rows):
+            selected = i == selected_index
+            cursor = "› " if selected else "  "
+            if selected:
+                body = f"{cursor}{row.number:>2}  {row.name:<12}  {row.org_file}"
+                fragments.append(("class:selected", body + "\n"))
+            else:
+                fragments.append(("", f"{cursor}{row.number:>2}  "))
+                fragments.append(("class:project.name", f"{row.name:<12}"))
+                fragments.append(("", f"  {row.org_file}\n"))
+        if instruction:
+            fragments.append(("", "\n"))
+            fragments.append(("class:hint", instruction))
+        return FormattedText(fragments)
+
+    return _run_selector(len(rows), render, start_index=start_index)
 
 
 def count_statuses(rows: list[MenuRow]) -> tuple[int, int, int]:
