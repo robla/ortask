@@ -1,4 +1,4 @@
-# Bash completion for ortask.py and the common "ort" alias.
+# Bash completion for ortask.py/orgmgr.py and common "ort"/"orgm" aliases.
 #
 # Source-tree usage:
 #   source /path/to/ortask/misc/ortask-completion.bash
@@ -103,3 +103,85 @@ _ortask_complete()
 complete -o default -F _ortask_complete ortask.py
 complete -o default -F _ortask_complete ./ortask.py
 complete -o default -F _ortask_complete ort
+
+_orgmgr_complete()
+{
+    local cur prev words cword command
+    COMPREPLY=()
+
+    if type _get_comp_words_by_ref >/dev/null 2>&1; then
+        _get_comp_words_by_ref -n : cur prev words cword
+    else
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+        words=("${COMP_WORDS[@]}")
+        cword=$COMP_CWORD
+    fi
+
+    local subcommands="help list projadd migrate"
+    local global_opts="-i --interactive --registry --todo-only --help"
+    local list_opts="--all --format --help"
+    local projadd_opts="--name --file --registry --force --dry-run --help"
+    local migrate_opts="--registry --force --dry-run --help"
+
+    case "$prev" in
+        --format)
+            COMPREPLY=( $(compgen -W "plain json" -- "$cur") )
+            return 0
+            ;;
+        --registry|--file|--name)
+            COMPREPLY=( $(compgen -f -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    command=""
+    local i
+    for ((i = 1; i < cword; i++)); do
+        case "${words[i]}" in
+            --registry|--file|--name|--format)
+                ((i++))
+                ;;
+            -i|--interactive|--todo-only|--help|--all|--force|--dry-run)
+                ;;
+            -*)
+                ;;
+            *)
+                command="${words[i]}"
+                break
+                ;;
+        esac
+    done
+
+    if [[ -z "$command" ]]; then
+        if [[ "$cur" == -* ]]; then
+            COMPREPLY=( $(compgen -W "$global_opts" -- "$cur") )
+        else
+            COMPREPLY=( $(compgen -W "$subcommands $global_opts" -- "$cur") )
+        fi
+        return 0
+    fi
+
+    if [[ "$cur" == -* ]]; then
+        case "$command" in
+            list)
+                COMPREPLY=( $(compgen -W "$list_opts" -- "$cur") )
+                ;;
+            projadd)
+                COMPREPLY=( $(compgen -W "$projadd_opts" -- "$cur") )
+                ;;
+            migrate)
+                COMPREPLY=( $(compgen -W "$migrate_opts" -- "$cur") )
+                ;;
+            *)
+                COMPREPLY=()
+                ;;
+        esac
+    else
+        COMPREPLY=()
+    fi
+}
+
+complete -o default -F _orgmgr_complete orgmgr.py
+complete -o default -F _orgmgr_complete ./orgmgr.py
+complete -o default -F _orgmgr_complete orgm

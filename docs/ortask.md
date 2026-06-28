@@ -299,7 +299,9 @@ Source the bundled completion script to complete subcommands and options:
 source /path/to/ortask/misc/ortask-completion.bash
 ```
 
-The script registers completion for `ortask.py`, `./ortask.py`, and the common
-`ort` alias. For example, `ortask.py ad<Tab>` and `ort ad<Tab>` complete to
-`add`. A Debian package can install the same file under
+The script registers completion for `ortask.py`, `./ortask.py`, the common
+`ort` alias, `orgmgr.py`, `./orgmgr.py`, and the common `orgm` alias. For
+example, `ortask.py ad<Tab>` and `ort ad<Tab>` complete to `add`, while
+`orgm -<Tab>` includes `-i` and `--interactive`. A Debian package can install
+the same file under
 `/usr/share/bash-completion/completions/`.

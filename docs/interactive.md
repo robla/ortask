@@ -1,9 +1,9 @@
-# Interactive Workflow for ortask.py
+# Interactive Workflow for the ortask suite
 
-This document specifies interactive use of `ortask.py` and `projtui.py`.
+This document specifies interactive use of `ortask.py` and `orgmgr.py`.
 The goal is a guided layer over Org task files, not a separate task database.
 It also records lessons from the sibling `castabout` project, whose inline TUI
-has a stronger workflow shape than the current minimal `projtui.py`.
+has a stronger workflow shape than the current project browser.
 
 ## Goal
 
@@ -16,19 +16,22 @@ Primary entry points:
 
 ```sh
 ./ortask.py -i
-./projtui.py
-./projtui.py --registry ~/Projects
+./orgmgr.py -i
+./orgmgr.py --registry ~/Projects -i
 ```
 
 `ortask.py -i` opens the task menu for the local task file resolved by
-`ortask.py`. `projtui.py` starts from the configured project registry.
+`ortask.py`. `orgmgr.py -i` starts from the configured project registry. The
+short aliases are expected to be `ort -i` and `orgm -i`.
 
 ## Current Implementation
 
-`projtui.py` is a TUI with detail display, editor launch, and state changes for
-ortask-compatible tasks with IDs. Local `ortask.py -i` and project task views in
-`projtui.py` use the same castabout-style task dashboard: an open/done/total
-summary over a status table of the resolved task file.
+`orgmgr.py -i` is the public registry-scoped project browser. It currently
+delegates to `projtui.py`, which remains the implementation shim with detail
+display, editor launch, and state changes for ortask-compatible tasks with IDs.
+Local `ortask.py -i` and project task views use the same castabout-style task
+dashboard: an open/done/total summary over a status table of the resolved task
+file.
 
 The task selector has two modes, chosen automatically by
 `menu.interactive_select_available()`:
@@ -39,15 +42,15 @@ The task selector has two modes, chosen automatically by
   the highlighted task through the `TODO`/`DONE` ring; `/` cycles the visibility
   filter (`all -> TODO -> DONE`); `e` opens the editor at the highlighted task's
   line; `b`/`Esc` go back; `q` closes the current task-file context. In
-  `projtui.py`, that returns to the project menu; in local `ortask.py -i`, it
+  `orgmgr.py -i`, that returns to the project menu; in local `ortask.py -i`, it
   exits. The app renders inline (not full screen), so it erases itself on exit
   and leaves scrollback intact.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved as the scriptable fallback with the
   same `/` visibility cycle.
 
-`projtui.py`'s top-level project list uses the shared menu renderer. Rich is used
-when available, with a plain text fallback.
+The top-level project list uses the shared menu renderer. Rich is used when
+available, with a plain text fallback.
 
 ### Editing buffer (auto-save and save-on-exit)
 
@@ -77,7 +80,7 @@ menu runs against a `projtui.OrgBuffer`, modeled on Emacs (t0006):
 Only the interactive TUI buffers. The one-shot CLI (`ortask.py done`, `add`, …)
 still writes immediately, since it has no editing session to defer within.
 
-For project navigation, `projtui.py` looks in `~/Projects` unless
+For project navigation, `orgmgr.py -i` looks in `~/Projects` unless
 `~/.config/ortask/ortask.ini` sets:
 
 ```ini
@@ -116,7 +119,7 @@ while keeping non-interactive CLI commands stdlib-friendly.
 ## Shared Menu System
 
 The ortask ecosystem should converge on a shared menuing layer used by
-`ortask.py -i`, `projtui.py`, and workflow tools such as `castabout.py`.
+`ortask.py -i`, `orgmgr.py -i`, and workflow tools such as `castabout.py`.
 Individual tools can provide domain-specific actions, but users should not have
 to relearn basic navigation in each program.
 
@@ -135,9 +138,9 @@ Shared behavior should include:
 
 This layer should not own business logic. It should render menu rows, collect
 choices, manage cancellation, and expose hooks for actions. `castabout` can add
-"copy draft" and "open destination"; `projtui.py` can add "open editor"; local
-`ortask.py -i` can add task-editing actions. All of them should feel like the
-same family of menus.
+"copy draft" and "open destination"; the project browser can add "open editor";
+local `ortask.py -i` can add task-editing actions. All of them should feel like
+the same family of menus.
 
 Implementation has started in `ortasklib.menu` with a small menu row dataclass,
 shared dashboard/table renderer, and prompt helper that maps `Esc` to

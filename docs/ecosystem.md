@@ -28,12 +28,14 @@ list, show, add, done/open, apply templates, and open the local interactive
 menu. Its default mode should remain useful in shell scripts and simple enough
 to test with temporary fixtures.
 
-`projtui.py` is the registry/project navigator. It uses the same parser and
-manager helpers to move from a project registry to a selected Org file, then
-offers a focused task menu.
-
 `orgmgr.py` is the cross-filesystem manager. It should build and inspect the
-registry of projects and task files, not become a local task editor.
+registry of projects and task files, not become a local task editor. Its
+interactive form, `orgmgr.py -i` (or `orgm -i`), is the public registry/project
+navigator.
+
+`projtui.py` remains the current implementation shim behind the project
+navigator. It uses the same parser and manager helpers to move from a project
+registry to a selected Org file, then offers a focused task menu.
 
 `castabout.py` is a workflow assistant for recurring ElectoramaWeekly promotion
 chores. It reads a task file, shows a status dashboard, drafts promotional

@@ -21,6 +21,18 @@ if str(_SCRIPT_DIR) not in sys.path:
 from ortasklib import core, manager
 
 
+def cmd_interactive(args: argparse.Namespace) -> int:
+    """Open the registry-scoped interactive project browser."""
+    import projtui
+
+    workspace, display_path = manager.resolve_registry(args.registry)
+    print(f"Finding project in {display_path}")
+    if not workspace.is_dir():
+        print(f"project directory not found: {workspace}", file=sys.stderr)
+        return 1
+    return projtui.project_menu(workspace, include_done=not args.todo_only)
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     workspace, display_path = manager.resolve_registry(args.registry)
 
@@ -165,6 +177,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="project registry directory containing project subdirectories",
     )
+    parser.add_argument(
+        "-i",
+        "--interactive",
+        action="store_true",
+        help="open the interactive project browser",
+    )
+    parser.add_argument(
+        "--todo-only",
+        action="store_true",
+        help="start interactive task views with only TODO tasks visible",
+    )
 
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("help", help="show this help message")
@@ -225,6 +248,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.interactive:
+        return cmd_interactive(args)
 
     if args.command is None or args.command == "help":
         parser.print_help()

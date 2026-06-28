@@ -511,6 +511,19 @@ def test_cli_smoke_tests(tmp_path: Path) -> None:
     assert "Projects in" in projtui_result.stdout
     assert "sample" in projtui_result.stdout
 
+    orgmgr_interactive_result = subprocess.run(
+        [sys.executable, str(ROOT / "orgmgr.py"), "--registry", str(workspace), "-i"],
+        cwd=ROOT,
+        input="q\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert orgmgr_interactive_result.returncode == 0
+    assert f"Finding project in {workspace}" in orgmgr_interactive_result.stdout
+    assert "Projects in" in orgmgr_interactive_result.stdout
+    assert "sample" in orgmgr_interactive_result.stdout
+
 
 def test_orgmgr_no_args_and_help_show_help() -> None:
     # This test ensures orgmgr.py is explicit: bare invocation shows help rather
@@ -529,28 +542,58 @@ def test_orgmgr_no_args_and_help_show_help() -> None:
         assert result.stderr == ""
 
 
+def test_orgmgr_interactive_uses_registry_project_menu(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # orgmgr -i is the public registry-scoped entry point for the project TUI.
+    calls: list[tuple[Path, bool]] = []
+
+    monkeypatch.setattr(
+        manager,
+        "resolve_registry",
+        lambda registry: (tmp_path, "~/Projects"),
+    )
+    monkeypatch.setattr(
+        projtui,
+        "project_menu",
+        lambda workspace, include_done: calls.append((workspace, include_done)) or 0,
+    )
+
+    assert orgmgr.cmd_interactive(
+        argparse.Namespace(registry=None, todo_only=True)
+    ) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == "Finding project in ~/Projects\n"
+    assert captured.err == ""
+    assert calls == [(tmp_path, False)]
+
+
 def test_bash_completion_for_ortask_and_alias() -> None:
-    # This test verifies bash completion for the script name and the common
-    # "ort" alias without depending on an interactive shell.
+    # This test verifies bash completion for scripts and common aliases without
+    # depending on an interactive shell.
     script = ROOT / "misc" / "ortask-completion.bash"
     cases = [
-        ("COMP_WORDS=(ortask.py ad); COMP_CWORD=1", "add"),
-        ("COMP_WORDS=(ort ad); COMP_CWORD=1", "add"),
-        ("COMP_WORDS=(ort --in); COMP_CWORD=1", "--interactive"),
-        ("COMP_WORDS=(ortask.py app); COMP_CWORD=1", "apply"),
-        ("COMP_WORDS=(ortask.py list --fo); COMP_CWORD=2", "--format"),
-        ("COMP_WORDS=(ortask.py apply --te); COMP_CWORD=2", "--template"),
-        ("COMP_WORDS=(ortask.py apply --template w); COMP_CWORD=3", "weekly"),
+        ("_ortask_complete", "COMP_WORDS=(ortask.py ad); COMP_CWORD=1", "add"),
+        ("_ortask_complete", "COMP_WORDS=(ort ad); COMP_CWORD=1", "add"),
+        ("_ortask_complete", "COMP_WORDS=(ort --in); COMP_CWORD=1", "--interactive"),
+        ("_ortask_complete", "COMP_WORDS=(ortask.py app); COMP_CWORD=1", "apply"),
+        ("_ortask_complete", "COMP_WORDS=(ortask.py list --fo); COMP_CWORD=2", "--format"),
+        ("_ortask_complete", "COMP_WORDS=(ortask.py apply --te); COMP_CWORD=2", "--template"),
+        ("_ortask_complete", "COMP_WORDS=(ortask.py apply --template w); COMP_CWORD=3", "weekly"),
+        ("_orgmgr_complete", "COMP_WORDS=(orgm --in); COMP_CWORD=1", "--interactive"),
+        ("_orgmgr_complete", "COMP_WORDS=(orgm li); COMP_CWORD=1", "list"),
+        ("_orgmgr_complete", "COMP_WORDS=(orgmgr.py list --fo); COMP_CWORD=2", "--format"),
     ]
 
-    for setup, expected in cases:
+    for function, setup, expected in cases:
         result = subprocess.run(
             [
                 "bash",
                 "--noprofile",
                 "--norc",
                 "-c",
-                f"source {script}; {setup}; _ortask_complete; printf '%s\\n' \"${{COMPREPLY[@]}}\"",
+                f"source {script}; {setup}; {function}; printf '%s\\n' \"${{COMPREPLY[@]}}\"",
             ],
             cwd=ROOT,
             text=True,

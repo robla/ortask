@@ -59,11 +59,12 @@ modules never call `sys.exit()` or parse CLI arguments.
   translates the result (and `TaskNotFound`) into output and an exit code, and
   writes via `core.write_lines`.
 - `orgmgr.py` — global multi-project commands. `cmd_list` calls
-  `manager.summarize_projects()` and formats the records. Future `projadd`,
-  `projrm`, `migrate`, and registry maintenance also belong here.
-- `projtui.py` — the interactive terminal UI. Menu rendering, prompting, and
-  editor launch stay here; it imports project discovery from `manager` and
-  parsing/edit helpers from `core`/`tasks`.
+  `manager.summarize_projects()` and formats the records. `cmd_interactive`
+  launches the registry-scoped project browser. Future `projrm` and registry
+  maintenance also belong here.
+- `projtui.py` — the current project-browser implementation shim. Menu
+  rendering, prompting, and editor launch stay here for now; it imports project
+  discovery from `manager` and parsing/edit helpers from `core`/`tasks`.
 
 ## `core.py`
 

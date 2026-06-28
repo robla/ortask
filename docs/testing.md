@@ -77,12 +77,13 @@ Run the scripts against temporary fixtures with subprocess:
 ./ortask.py --file /tmp/example.org list
 ./ortask.py --file /tmp/example.org show t0001
 ./orgmgr.py --registry /tmp/workspace list --format json
-./projtui.py --registry /tmp/workspace
+./orgmgr.py --registry /tmp/workspace -i
 ```
 
-For `projtui.py`, provide input such as `q\n` and assert it exits cleanly after
-printing the project list. These smoke tests confirm the top-level scripts still
-import the refactored library correctly and keep their basic command contracts.
+For `orgmgr.py -i`, provide input such as `q\n` and assert it exits cleanly
+after printing the project list. These smoke tests confirm the top-level scripts
+still import the refactored library correctly and keep their basic command
+contracts.
 
 ## Refactor Gate
 

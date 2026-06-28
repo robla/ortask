@@ -43,6 +43,9 @@ Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
 # open the interactive task menu for the local task file
 ./ortask.py -i
 
+# open the interactive project browser
+./orgmgr.py -i
+
 # check for ID problems (dry run)
 ./ortask.py repair --dry-run
 
@@ -58,13 +61,15 @@ finds no task file, it creates =tasks.org= in the current directory.
 
 * Shell alias
 
-For daily use, alias =ortask.py= as =ort=:
+For daily use, alias =ortask.py= as =ort= and =orgmgr.py= as =orgm=:
 
 #+begin_src sh
 alias ort='/path/to/ortask.py'
+alias orgm='/path/to/orgmgr.py'
 #+end_src
 
-Then: =ort list=, =ort add "Do the thing"=, =ort done t0004=, =ort -i=.
+Then: =ort list=, =ort add "Do the thing"=, =ort done t0004=, =ort -i=,
+and =orgm -i=.
 
 * Bash completion
 
@@ -74,8 +79,10 @@ For command and option completion, source the bundled completion script:
 source /path/to/ortask/misc/ortask-completion.bash
 #+end_src
 
-It registers completion for =ortask.py=, =./ortask.py=, and =ort=. After
-sourcing it, typing =ortask.py ad<Tab>= or =ort ad<Tab>= completes to =add=.
+It registers completion for =ortask.py=, =./ortask.py=, =ort=, =orgmgr.py=,
+=./orgmgr.py=, and =orgm=. After sourcing it, typing =ortask.py ad<Tab>= or
+=ort ad<Tab>= completes to =add=, while =orgm -<Tab>= includes =-i= and
+=--interactive=.
 A Debian package can install the same file under
 =/usr/share/bash-completion/completions/=.
 

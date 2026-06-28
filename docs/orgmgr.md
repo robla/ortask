@@ -52,11 +52,17 @@ collapsed to `~` when possible.
 ```sh
 orgmgr.py                         # show help
 orgmgr.py help                    # show help
+orgmgr.py -i                      # open the interactive project browser
 orgmgr.py list
 orgmgr.py --registry ~/tmpsorta/proj2026 list
 orgmgr.py list --all
 orgmgr.py list --format json
 ```
+
+With the common alias, `orgm -i` is the short form for opening the same
+registry-scoped project browser. This is the user-facing replacement for
+starting `projtui.py` directly; `projtui.py` remains the implementation shim for
+now.
 
 Example plain output:
 
@@ -89,6 +95,26 @@ Task selection rules:
 - With `--all`, include top-level `DONE` tasks too.
 - Warn per project, rather than crashing, for unreadable files, files with no
   parseable task headings, or duplicate task IDs.
+
+## `-i`, `--interactive`
+
+`orgmgr.py -i` opens the interactive project browser for the configured
+registry. It uses the same registry resolution as `list`: `--registry`, then
+`[projects] registry`, then `~/Projects`.
+
+```sh
+orgmgr.py -i
+orgmgr.py --registry ~/tmpsorta/proj2026 -i
+orgm -i
+```
+
+The browser shows the project list first, then opens the selected project's Org
+task file. Task views show TODO and DONE rows by default; use `/` inside the
+task menu to cycle visibility through `all -> TODO -> DONE`, or start with:
+
+```sh
+orgmgr.py -i --todo-only
+```
 
 ## `projadd`
 
