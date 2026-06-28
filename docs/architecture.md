@@ -133,6 +133,8 @@ Small shared rendering primitives for interactive tools:
 - `MenuRow` — stable row shape for numbered dashboard/menu displays
 - `count_statuses()` — open/done/total summary counts
 - `print_task_dashboard()` — Rich table rendering with a plain text fallback
+- `prompt_text()` / `ContextCancelled` — prompt_toolkit Esc cancellation with
+  plain `input()` fallback
 
 This is the first step toward the shared menuing layer described in
 `docs/interactive.md`. It owns presentation, not workflow behavior; `projtui.py`

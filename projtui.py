@@ -31,12 +31,6 @@ from ortasklib.manager import (
 
 DETAIL_LINE_LIMIT = 20
 
-# ANSI escape codes for colorful prompts
-ANSI_BOLD = "\033[1m"
-ANSI_CYAN = "\033[36m"
-ANSI_RESET = "\033[0m"
-
-
 @dataclass(frozen=True)
 class MenuItem:
     label: str
@@ -117,7 +111,7 @@ def _prompt_choice(
     if allow_back:
         suffix += ", b=back"
     suffix += ", q=quit"
-    return input(f"{ANSI_BOLD}{ANSI_CYAN}{suffix}> {ANSI_RESET}").strip().lower()
+    return menu.prompt_text(suffix).lower()
 
 
 def _print_items(title: str, items: list[MenuItem]) -> None:
@@ -237,7 +231,10 @@ def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -
         else:
             title = f"{project.name} tasks ({org_file})"
             _print_items(title, items)
-        choice = _prompt_choice(len(items), allow_editor=True)
+        try:
+            choice = _prompt_choice(len(items), allow_editor=True)
+        except menu.ContextCancelled:
+            return True
         if choice == "q":
             return False
         if choice == "b":
@@ -280,7 +277,10 @@ def focus_menu(org_file: Path, item: MenuItem) -> bool:
         print("  e. open in editor")
         print("  b. back to task menu")
         print("  q. quit")
-        choice = input(f"{ANSI_BOLD}{ANSI_CYAN}number, d/e/b/q> {ANSI_RESET}").strip().lower()
+        try:
+            choice = menu.prompt_text("number, d/e/b/q").lower()
+        except menu.ContextCancelled:
+            return True
         if choice == "q":
             return False
         if choice == "b":
@@ -290,7 +290,11 @@ def focus_menu(org_file: Path, item: MenuItem) -> bool:
                 return False
             _show_context(org_file, item)
         elif choice == "d" and item.task:
-            confirm = input(f"{ANSI_BOLD}{ANSI_CYAN}mark {item.task.id} DONE? [y/N]> {ANSI_RESET}").strip().lower()
+            try:
+                confirm = menu.prompt_text(f"mark {item.task.id} DONE? [y/N]").lower()
+            except menu.ContextCancelled:
+                print("cancelled")
+                continue
             if confirm == "y":
                 text = org_file.read_text(encoding="utf-8")
                 try:
@@ -317,7 +321,10 @@ def project_menu(workspace: Path, include_done: bool) -> int:
             print(f"  {idx}. {project.name}    {rel_file}")
         if not projects:
             print("  (no project org files found)")
-        choice = _prompt_choice(len(projects), allow_back=False)
+        try:
+            choice = _prompt_choice(len(projects), allow_back=False)
+        except menu.ContextCancelled:
+            return 0
         if choice == "q":
             return 0
         if not choice.isdigit() or not 1 <= int(choice) <= len(projects):

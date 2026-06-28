@@ -92,11 +92,12 @@ choices, manage cancellation, and expose hooks for actions. `castabout` can add
 `ortask.py -i` can add task-editing actions. All of them should feel like the
 same family of menus.
 
-Implementation has started in `ortasklib.menu` with a small menu row dataclass
-and shared dashboard/table renderer. The next pieces to extract are the prompt
-loop, cancellation handling, and later prompt_toolkit highlight-bar mode. Keep
-the abstraction small: rendering and choice collection belong in the shared
-layer; task-specific actions stay in the calling tool.
+Implementation has started in `ortasklib.menu` with a small menu row dataclass,
+shared dashboard/table renderer, and prompt helper that maps `Esc` to
+`ContextCancelled` when prompt_toolkit is active. The next pieces to extract
+are richer choice loops and a later prompt_toolkit highlight-bar mode. Keep the
+abstraction small: rendering and choice collection belong in the shared layer;
+task-specific actions stay in the calling tool.
 
 ## Workspace Discovery
 

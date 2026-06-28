@@ -83,3 +83,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-27 Sat 21:56]: changed =ortask.py -i= to show a castabout-style task dashboard with open/done totals before prompting.
 ** Codex [2026-06-27 Sat 22:06]: documented a future shared menuing layer for =ortask.py -i=, =projtui.py=, and castabout-style workflow tools.
 ** Codex [2026-06-27 Sat 22:25]: added =ortasklib.menu= dashboard primitives and switched project task views to the same dashboard renderer as =ortask.py -i=.
+** Codex [2026-06-27 Sat 22:33]: added castabout-style =Esc= cancellation to =ortasklib.menu= prompts and wired =projtui.py=/=ortask.py -i= menu contexts to use it.

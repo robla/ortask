@@ -621,6 +621,27 @@ def test_projtui_task_menu_opens_org_file_from_task_list(tmp_path: Path, monkeyp
     assert opened == [(org_file.resolve(), None)]
 
 
+def test_projtui_escape_cancels_done_confirmation(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # This test verifies Esc cancels the current focus action without writing.
+    org_file = write(
+        tmp_path / "project" / "TODO.org",
+        """
+        * Tasks
+        ** TODO t0001 Keep open
+        """,
+    )
+    item = projtui.load_menu_items(org_file)[0]
+    choices = iter(["d", "\x1b", "b"])
+
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(choices))
+
+    assert projtui.focus_menu(org_file, item) is True
+    capsys.readouterr()
+    assert "** TODO t0001 Keep open" in org_file.read_text(encoding="utf-8")
+
+
 # --- apply: template instantiation (docs/templates.md) ------------------------
 
 

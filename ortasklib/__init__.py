@@ -8,8 +8,8 @@ Splits reusable behavior out of the top-level scripts:
                 line-level edit/validation helpers used by ``ortask.py``.
 - ``manager`` — project config/discovery and multi-project summaries used by
                 ``orgmgr.py`` and ``projtui.py``.
-- ``menu``    — dashboard row models and Rich/plain rendering helpers for
-                interactive tools.
+- ``menu``    — dashboard row models, Rich/plain rendering helpers, and shared
+                prompt cancellation for interactive tools.
 
 See ``docs/architecture.md`` for the design.
 """
