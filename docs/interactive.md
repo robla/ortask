@@ -27,10 +27,11 @@ Primary entry points:
 
 `projtui.py` is currently a numbered-menu TUI with detail display, editor
 launch, and `DONE` marking for ortask-compatible tasks with IDs. Local
-`ortask.py -i` and selected project task views in `projtui.py` use the same
-castabout-style dashboard: they print the resolved task file, an
+`ortask.py -i` and project task views in `projtui.py` use the same
+castabout-style task dashboard: they print the resolved task file, an
 open/done/total summary, and a status table before prompting for a task number.
-Rich is used when available, with a plain text fallback.
+`projtui.py`'s top-level project list also uses the shared menu renderer. Rich
+is used when available, with a plain text fallback.
 
 For project navigation, `projtui.py` looks in `~/Projects` unless
 `~/.config/ortask/ortask.ini` sets:
@@ -83,7 +84,7 @@ Shared behavior should include:
   `q` quit, `Esc` cancel/back when prompt_toolkit is active
 - optional Rich rendering with a plain text fallback
 - consistent task ordering and indentation
-- one place for future highlight-bar navigation
+- arrow-key selection with a highlight bar for task/project rows
 - reusable confirmation and proposed-change displays
 
 This layer should not own business logic. It should render menu rows, collect
@@ -95,9 +96,36 @@ same family of menus.
 Implementation has started in `ortasklib.menu` with a small menu row dataclass,
 shared dashboard/table renderer, and prompt helper that maps `Esc` to
 `ContextCancelled` when prompt_toolkit is active. The next pieces to extract
-are richer choice loops and a later prompt_toolkit highlight-bar mode. Keep the
-abstraction small: rendering and choice collection belong in the shared layer;
-task-specific actions stay in the calling tool.
+are richer choice loops and highlight-bar selection. Keep the abstraction small:
+rendering and choice collection belong in the shared layer; task-specific
+actions stay in the calling tool.
+
+## Highlight-Bar Selection
+
+The current `ortasklib.menu` layer is useful as a transition point, but it is
+also close to the line where we would start reinventing a prompt library. Rich
+tables plus `prompt_toolkit` prompts are fine for static dashboards and numbered
+choices. Once rows need up/down navigation, a highlighted current row, and
+selection without typing numbers, the selector should be owned by an existing
+interactive toolkit rather than by ad hoc terminal escape handling.
+
+Recommended path:
+
+1. Preserve the plain numbered menu as the non-TTY/fallback mode.
+2. Add a shared `select_menu()` abstraction in `ortasklib.menu` that returns the
+   selected row or a cancellation/action token.
+3. Prototype the interactive implementation with `prompt_toolkit` directly
+   because ortask already uses it for `Esc`, and because task rows may need
+   custom keys, indentation, detail previews, and future Emacs-like behavior.
+4. Reconsider InquirerPy if the needed interaction stays close to ordinary
+   single-select menus; it may provide the highlight bar with less local code.
+5. Defer Textual unless the UI becomes a persistent application with panes,
+   live preview regions, or multiple screens.
+
+In short: keep the current Rich/prompt_toolkit blend for now, but do not grow
+`ortasklib.menu` into a private TUI framework. If the highlight-bar prototype
+requires more than a small selector and a few key bindings, switch to a
+maintained prompt/TUI layer before adding more features.
 
 ## Workspace Discovery
 
@@ -179,17 +207,23 @@ the full Org file to save menu state.
 ## Toolkit Direction
 
 Keep the stdlib numbered-menu implementation as the baseline. For richer
-interactive behavior, prefer the castabout stack:
+interactive behavior, prefer the castabout stack, with a stricter boundary
+around what ortask should implement itself:
 
 - `prompt_toolkit` for editable prefilled fields, history, key bindings, and
-  fast context cancellation.
+  fast context cancellation. It is also the likely first prototype for
+  highlight-bar row selection.
 - `rich` for status tables, panels, progress summaries, and proposed changes.
 - `argparse` remains fine for `ortask.py`; workflow-specific tools may use
   Click if it suits their command surface.
+- InquirerPy/questionary are worth evaluating if ortask only needs conventional
+  select/confirm prompts and the custom prompt_toolkit selector starts growing.
 
-Defer `Textual`, `InquirerPy`, or a full-screen event loop until the workflow
-clearly needs persistent layout. Castabout's inline loop is already enough for
-status-first guidance, manual task selection, and nested prompts.
+Defer `Textual` or a full-screen event loop until the workflow clearly needs
+persistent layout or more menu machinery than a small selector. Castabout's
+inline loop is already enough for status-first guidance, manual task selection,
+and nested prompts; the next test is whether it remains enough with arrow-key
+selection.
 
 ## Safety Rules
 

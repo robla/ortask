@@ -131,8 +131,10 @@ on the same project list.
 Small shared rendering primitives for interactive tools:
 
 - `MenuRow` — stable row shape for numbered dashboard/menu displays
+- `ProjectRow` — stable row shape for registry project displays
 - `count_statuses()` — open/done/total summary counts
 - `print_task_dashboard()` — Rich table rendering with a plain text fallback
+- `print_project_dashboard()` — shared project-list rendering for `projtui.py`
 - `prompt_text()` / `ContextCancelled` — prompt_toolkit Esc cancellation with
   plain `input()` fallback
 

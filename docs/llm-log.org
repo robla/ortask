@@ -84,3 +84,5 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-27 Sat 22:06]: documented a future shared menuing layer for =ortask.py -i=, =projtui.py=, and castabout-style workflow tools.
 ** Codex [2026-06-27 Sat 22:25]: added =ortasklib.menu= dashboard primitives and switched project task views to the same dashboard renderer as =ortask.py -i=.
 ** Codex [2026-06-27 Sat 22:33]: added castabout-style =Esc= cancellation to =ortasklib.menu= prompts and wired =projtui.py=/=ortask.py -i= menu contexts to use it.
+** Codex [2026-06-27 Sat 22:41]: wired =projtui.py='s project picker through =ortasklib.menu= project dashboard rendering and documented the shared project-list path.
+** Codex [2026-06-27 Sat 22:52]: updated =docs/interactive.md= to frame arrow-key highlight-bar menus as the decision point for keeping a small prompt_toolkit selector versus adopting an off-the-shelf prompt/TUI layer.

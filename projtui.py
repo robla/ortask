@@ -136,6 +136,17 @@ def _print_dashboard(title: str, org_file: Path, items: list[MenuItem]) -> None:
     menu.print_task_dashboard(title, org_file, rows)
 
 
+def _project_rows(workspace: Path, projects: list[Project]) -> list[menu.ProjectRow]:
+    rows: list[menu.ProjectRow] = []
+    for idx, project in enumerate(projects, start=1):
+        try:
+            org_file = str(project.org_file.relative_to(workspace))
+        except ValueError:
+            org_file = str(project.org_file)
+        rows.append(menu.ProjectRow(idx, project.name, org_file))
+    return rows
+
+
 def _show_context(org_file: Path, item: MenuItem) -> None:
     print()
     if item.task:
@@ -314,13 +325,11 @@ def focus_menu(org_file: Path, item: MenuItem) -> bool:
 def project_menu(workspace: Path, include_done: bool) -> int:
     while True:
         projects = discover_projects(workspace)
-        print()
-        print(f"Projects in {workspace}")
-        for idx, project in enumerate(projects, start=1):
-            rel_file = project.org_file.relative_to(workspace)
-            print(f"  {idx}. {project.name}    {rel_file}")
-        if not projects:
-            print("  (no project org files found)")
+        menu.print_project_dashboard(
+            "Projects",
+            workspace,
+            _project_rows(workspace, projects),
+        )
         try:
             choice = _prompt_choice(len(projects), allow_back=False)
         except menu.ContextCancelled:
