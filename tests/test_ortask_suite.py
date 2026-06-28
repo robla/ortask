@@ -730,6 +730,32 @@ def test_projtui_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> 
     assert f"ortask — reading {symlink_path}" not in result.stdout
 
 
+def test_projtui_project_task_quit_returns_to_project_menu(tmp_path: Path) -> None:
+    # In project mode, q from a project's task list returns to the parent menu.
+    workspace = tmp_path / "workspace"
+    write(
+        workspace / "sample" / "tasks.org",
+        """
+        * Tasks
+        ** TODO t0001 Sample task
+        """,
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "projtui.py"), "--registry", str(workspace)],
+        cwd=ROOT,
+        input="1\nq\nq\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.count(f"Projects in {workspace}") == 2
+    assert "sample" in result.stdout
+    assert "Sample task" in result.stdout
+
+
 def test_projtui_task_menu_opens_org_file_from_task_list(tmp_path: Path, monkeypatch) -> None:
     # This test ensures the file-scoped task-list menu can open the whole Org
     # file in an editor before a specific task has been selected.

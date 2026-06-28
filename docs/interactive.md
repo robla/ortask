@@ -38,8 +38,10 @@ The task selector has two modes, chosen automatically by
   highlight (wrapping); `Enter` opens the focus view; `t` (also `d` and
   Shift-Left/Right, mirroring Emacs `org-todo`) cycles the highlighted task
   through the `TODO`/`DONE` ring; `e` opens the editor at the highlighted task's
-  line; `b`/`Esc` go back; `q` quits. The app renders inline (not full screen),
-  so it erases itself on exit and leaves scrollback intact.
+  line; `b`/`Esc` go back; `q` closes the current task-file context. In
+  `projtui.py`, that returns to the project menu; in local `ortask.py -i`, it
+  exits. The app renders inline (not full screen), so it erases itself on exit
+  and leaves scrollback intact.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved unchanged as the scriptable fallback.
 
@@ -238,7 +240,7 @@ elweek tasks:
   2. [TODO] tw26W26.1 Prepare next episode
   e. open this Org file in editor
   b. back
-  q. quit
+  q. close this task view
 ```
 
 The user chooses what to work on. The menu should support focus without hiding

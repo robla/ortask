@@ -571,8 +571,7 @@ def project_menu(workspace: Path, include_done: bool) -> int:
         if not choice.isdigit() or not 1 <= int(choice) <= len(projects):
             print("invalid choice")
             continue
-        if not task_menu(projects[int(choice) - 1], include_done):
-            return 0
+        task_menu(projects[int(choice) - 1], include_done)
 
 
 def build_parser() -> argparse.ArgumentParser:
