@@ -1,109 +1,156 @@
-# Taskwarrior Workflow Notes for ortask.py
+# Taskwarrior Workflow Notes
 
-This document is for two related readers:
+Taskwarrior is a command-line task database. A task is a record with a
+description, status, UUID, and optional metadata such as project, tags,
+priority, due date, scheduled date, wait date, annotations, dependencies, and
+recurrence. Most daily use is adding tasks, filtering them into useful views,
+and marking them complete.
 
-- someone who wants to understand how Taskwarrior workflows feel without
-  adopting Taskwarrior
-- a Taskwarrior user who wants a quick mental model for `ortask.py`
+## Core Model
 
-It is not a pitch to replace Taskwarrior. The two tools solve adjacent
-problems with different tradeoffs.
+Taskwarrior stores tasks outside the files you edit by hand. Commands query and
+modify that store, then reports render selected tasks.
 
-## The Short Version
+Important concepts:
 
-Taskwarrior is a feature-rich task database with strong filtering,
-reports, dates, recurrence, and workflow metadata. `ortask.py` is a
-much narrower idea: treat one Org-mode `* Tasks` subtree as the source
-of truth and make conservative CLI reads and edits against that text.
+- **Status**: tasks are usually `pending`, `completed`, `deleted`, or waiting.
+- **ID**: report numbers are short row IDs for the current view and can change;
+  UUIDs are stable.
+- **Project**: `project:foo` groups tasks by area of work.
+- **Tags**: `+email`, `+home`, or `+blocked` add lightweight labels.
+- **Dates**: `due:`, `scheduled:`, `wait:`, `until:`, and `recur:` drive views.
+- **Urgency**: Taskwarrior computes a score from metadata; `next` sorts by it.
+- **Reports**: named views such as `list`, `next`, `waiting`, and `completed`.
 
-If you know Taskwarrior, the closest way to think about `ortask.py` is:
+## Basic Workflow
 
-- keep the command-oriented feel
-- drop the database, urgency engine, and report system
-- make the file itself the canonical store
-- use stable task IDs in headings instead of short numeric IDs
+Add a task:
 
-## Taskwarrior Workflow, in Broad Strokes
+```sh
+task add "Draft release notes"
+task add project:ortask +docs due:friday "Tighten task guide"
+```
 
-A typical Taskwarrior workflow looks like this:
+List active work:
 
-1. Add tasks quickly with short commands.
-2. Filter aggressively by project, tag, due date, status, or custom report.
-3. Mark tasks done, start/stop work, postpone, annotate, or modify fields.
-4. Let Taskwarrior compute views such as next, waiting, overdue, or ready.
+```sh
+task list
+task next
+task project:ortask
+task +docs
+task due.before:tomorrow
+```
 
-The important idea is not any one command. It is that Taskwarrior keeps
-structured task data in its own store and gives you many derived views
-over that data.
+Inspect and update one task:
 
-## The ortask.py Mental Model
+```sh
+task 12 info
+task 12 modify priority:H
+task 12 annotate "Waiting on review"
+task 12 done
+```
 
-`ortask.py` keeps much less state. The working model is:
+Task numbers in examples such as `12` come from the current report. If the
+report changes, the number may change too. Taskwarrior keeps the underlying UUID
+stable, but normal interactive use relies on the short report number.
 
-- tasks live in an Org file
-- one `* Tasks` subtree is the task database
-- tasks are plain Org headings with `TODO` or `DONE`
-- each task has a stable ID such as `t0001` or `t0001.2`
+## Filters and Reports
+
+Taskwarrior’s power comes from filters. A command is usually:
+
+```sh
+task <filter> <command>
+```
+
+Common filters:
+
+```sh
+task project:ortask list
+task +docs list
+task status:pending list
+task due.before:eow list
+task priority:H next
+task project:ortask +docs due.before:friday next
+```
+
+Common reports:
+
+```sh
+task list        # pending tasks
+task next        # prioritized pending tasks
+task waiting     # tasks hidden until a wait date
+task completed   # finished tasks
+task all         # broad view, including non-pending statuses
+```
+
+## Dates, Waiting, and Recurrence
+
+Taskwarrior distinguishes several scheduling ideas:
+
+- `due:friday` means the task is due then.
+- `scheduled:monday` means it should start appearing as scheduled work then.
+- `wait:tomorrow` hides the task until tomorrow.
+- `recur:weekly` creates repeating work.
+- `until:` can limit how long a task or recurrence remains relevant.
 
 Example:
 
-```org
-* Tasks
-** TODO t0001 Plan release
-*** TODO t0001.1 Write release notes
-*** DONE t0001.2 Tag repository
+```sh
+task add project:newsletter due:wed recur:weekly "Publish weekly update"
+task add wait:tomorrow "Follow up after meeting"
 ```
 
-That means the file is both the storage layer and the human-readable
-interface. You inspect it with your editor, grep, git, or shell tools,
-and `ortask.py` exists to make common actions easier and safer.
+## Notes and Changes
 
-## Command Mapping
+Use annotations for timestamped notes:
 
-These are rough workflow equivalents, not exact feature matches.
+```sh
+task 12 annotate "Posted draft link in chat"
+```
 
-| Taskwarrior habit | ortask.py equivalent | Notes |
-| --- | --- | --- |
-| `task add "Buy milk"` | `ortask.py add "Buy milk"` | New stable ID assigned automatically. |
-| `task list` | `ortask.py list` | Meant for simple task listing, not rich reports. |
-| `task <id> done` | `ortask.py done t0001` | Uses stable text ID, not a short numeric row ID. |
-| `task <id> info` | `ortask.py show t0001` | Shows one task with its local context. |
-| `task <id> modify ...` | limited | The design is intentionally narrower. |
-| `task <id> start` / `stop` | missing | No active-state or time-tracking workflow. |
-| `task project:foo` or `+work` filters | mostly missing | Intended CLI is much simpler than Taskwarrior filtering. |
+Use `modify` for metadata changes:
 
-## Where ortask.py Is Deliberately Narrower
+```sh
+task 12 modify project:ortask +review due:monday
+task 12 modify -review
+```
 
-If you are thinking in Taskwarrior terms, these are the biggest gaps:
+Use `delete` when a task should disappear from active work without being marked
+complete:
 
-- no urgency score or report engine
-- no built-in project, tag, due-date, or waiting filters yet
-- no recurrence engine
-- no start/stop tracking
-- no equivalent of Taskwarrior contexts, hooks, or rc customization
+```sh
+task 12 delete
+```
 
-That narrower scope is intentional. The design goal is not "Taskwarrior
-for Org files." It is "a conservative CLI for one editable Org task
-tree."
+## Mapping to ortask.py
 
-## What a Taskwarrior User Should Pay Attention To
+`ortask.py` uses Org headings as the durable record instead of a task database.
+The nearest mental translation is:
 
-The most important differences are structural:
+| Taskwarrior | ortask.py |
+| --- | --- |
+| `task add "Text"` | `ortask.py add "Text"` |
+| `task list` | `ortask.py list` |
+| `task 12 info` | `ortask.py show t0001` |
+| `task 12 done` | `ortask.py done t0001` |
+| `task 12 annotate ...` | edit notes under the Org heading |
+| `project:` / `+tag` filters | separate files, headings, or future metadata |
+| recurring weekly task | `ortask.py apply --template weekly` |
 
-- IDs are stable and meant to be referenced in prose, commits, and chat.
-- Subtasks are hierarchical in the file, not modeled as a separate
-  dependency system.
-- Manual editing is expected. Reordering headings in Emacs or another
-  editor is part of the workflow, not something the CLI fights.
-- Surrounding prose matters. Notes, drawers, and non-task sections are
-  expected to survive CLI edits unchanged.
+The biggest practical difference is identity. Taskwarrior’s visible task
+numbers are report-local; `ortask.py` IDs such as `t0001` or `tw26W24.1` are
+stored in the heading and intended to remain stable in prose, commits, and
+scripts.
 
-## A Better Comparison
+Example Org task tree:
 
-Taskwarrior is a mature general-purpose task manager with a powerful
-query model. `ortask.py` is closer to a thin command layer over a text
-file that you already want to keep in version control and edit by hand.
+```org
+* Tasks
+** TODO t0001 Draft release notes
+*** TODO t0001.1 Collect changes
+*** DONE t0001.2 Write first draft
+```
 
-If you want computed workflow views, Taskwarrior is the better model.
-If you want a readable Org file with light CLI assistance, `ortask.py`
-is aiming at a different niche.
+Taskwarrior encourages computed views over structured metadata. `ortask.py`
+keeps the structure visible in the file and uses commands for small, predictable
+edits.
