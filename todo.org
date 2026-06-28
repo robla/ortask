@@ -1,5 +1,5 @@
 * Tasks
-** TODO t0001 Remove AI slop from docs/taskwarrior.md
+** DONE t0001 Remove AI slop from docs/taskwarrior.md
 ** TODO t0002 create .org file if none exist in directory when using 'ort add'
 ** TODO t0003 Make it so that there doesn't have to be a 'Tasks' section
 ** TODO t0004 Test the 'ort repair' subcommand, particularly for adding identifiers to task lists without them
