@@ -7,3 +7,7 @@ tui2026
 proj2026
 config-ortask
 castabout
+# Emacs-style auto-save / lock files (projtui buffers, e.g. #todo.org#)
+# (the leading '#' in the glob must be escaped or git treats it as a comment)
+\#*\#
+.\#*

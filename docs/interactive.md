@@ -37,15 +37,35 @@ The task selector has two modes, chosen automatically by
   arrow-key selector via `menu.select_menu()`. Up/Down or `j`/`k` move the
   highlight (wrapping); `Enter` opens the focus view; `t` (also `d` and
   Shift-Left/Right, mirroring Emacs `org-todo`) cycles the highlighted task
-  through the `TODO`/`DONE` ring with an immediate surgical writeback; `e` opens
-  the editor at the highlighted task's line; `b`/`Esc` go back; `q` quits. The
-  app renders inline (not full screen), so it erases itself on exit and leaves
-  scrollback intact.
+  through the `TODO`/`DONE` ring; `e` opens the editor at the highlighted task's
+  line; `b`/`Esc` go back; `q` quits. The app renders inline (not full screen),
+  so it erases itself on exit and leaves scrollback intact.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved unchanged as the scriptable fallback.
 
 `projtui.py`'s top-level project list uses the shared menu renderer. Rich is used
 when available, with a plain text fallback.
+
+### Editing buffer (auto-save and save-on-exit)
+
+Interactive edits do not touch the real Org file immediately. Each file's task
+menu runs against a `projtui.OrgBuffer`, modeled on Emacs (t0006):
+
+- Edits (a `t` toggle, a focus-view `mark DONE`) update an in-memory buffer and
+  mirror it to an **auto-save sibling** named `#todo.org#` (Emacs convention) for
+  crash recovery. The real file is untouched.
+- On leaving the file's editing context (`b`/`q`/Esc), if the buffer is dirty it
+  prompts `todo.org has been modified; save todo.org? [Y/n]`. A yes (the default)
+  writes the real file atomically and removes the auto-save; a no discards the
+  pending edits and removes the auto-save. The real file is never reformatted —
+  only the same surgical line edits the CLI would make are committed.
+- On entering a context where a `#todo.org#` already exists (e.g. after a crash),
+  it offers to recover those unsaved changes into the buffer.
+- Opening the external editor (`e`) first flushes any pending buffer to the real
+  file, then re-reads it afterward, so the editor and the buffer never disagree.
+
+Only the interactive TUI buffers. The one-shot CLI (`ortask.py done`, `add`, …)
+still writes immediately, since it has no editing session to defer within.
 
 For project navigation, `projtui.py` looks in `~/Projects` unless
 `~/.config/ortask/ortask.ini` sets:
@@ -300,12 +320,15 @@ selection.
 
 ## Safety Rules
 
-- Ask before mutating tasks; selection alone is read-only.
+- Selection alone is read-only; only explicit edit keys change anything.
+- Buffer edits in memory and confirm before writing the real file on exit; never
+  write the user's Org file as a silent side effect of navigating.
+- Mirror pending edits to the `#name#` auto-save file so a crash is recoverable.
 - Keep task IDs visible whenever an ID exists.
 - Warn and stop on duplicate IDs in the selected file.
 - Preserve `--file` and `ORTASK_FILE` behavior.
 - Do not auto-run repair before a session.
-- Do not store persistent session state in the Org file.
+- Do not store persistent session state in the real Org file.
 - If a prompt is cancelled with `Esc`, do not write.
 - Preserve unrelated Org content byte-for-byte where practical.
 

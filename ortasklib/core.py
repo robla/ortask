@@ -326,5 +326,10 @@ def atomic_write(path: Path, content: str) -> None:
         raise
 
 
+def lines_to_text(lines: list[str]) -> str:
+    """Join task lines into file text with a single trailing newline."""
+    return "\n".join(lines) + "\n" if lines else ""
+
+
 def write_lines(path: Path, lines: list[str]) -> None:
-    atomic_write(path, "\n".join(lines) + "\n" if lines else "")
+    atomic_write(path, lines_to_text(lines))

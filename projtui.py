@@ -39,6 +39,74 @@ class MenuItem:
     line_num: int | None = None
 
 
+def autosave_path_for(path: Path) -> Path:
+    """Emacs-style auto-save sibling: ``todo.org`` -> ``#todo.org#``."""
+    return path.parent / f"#{path.name}#"
+
+
+class OrgBuffer:
+    """In-memory editing buffer for one Org file, with Emacs-style auto-save.
+
+    Reads come from the in-memory text; :meth:`apply` updates it and mirrors the
+    new content to the auto-save sibling (``#name#``) for crash recovery. The
+    real file is written only by :meth:`save`. :meth:`discard` drops the pending
+    changes (and the auto-save file) without touching the real file. This is the
+    interactive editing model (t0006); the one-shot CLI still writes immediately.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.autosave_path = autosave_path_for(path)
+        self._saved_text = path.read_text(encoding="utf-8")
+        self._text = self._saved_text
+        self.dirty = False
+
+    def read(self) -> str:
+        return self._text
+
+    def apply(self, new_lines: list[str]) -> None:
+        """Replace the buffer with ``new_lines`` and refresh the auto-save file."""
+        self._set_text(core.lines_to_text(new_lines))
+
+    def recover(self, text: str) -> None:
+        """Adopt recovered auto-save ``text`` as the (dirty) buffer contents."""
+        self._set_text(text)
+
+    def _set_text(self, text: str) -> None:
+        self._text = text
+        self.dirty = text != self._saved_text
+        if self.dirty:
+            core.atomic_write(self.autosave_path, text)
+        else:
+            self._remove_autosave()
+
+    def save(self) -> None:
+        """Atomically write the real file and clear the auto-save."""
+        core.atomic_write(self.path, self._text)
+        self._saved_text = self._text
+        self.dirty = False
+        self._remove_autosave()
+
+    def discard(self) -> None:
+        """Drop pending changes and the auto-save; leave the real file as-is."""
+        self._text = self._saved_text
+        self.dirty = False
+        self._remove_autosave()
+
+    def reload(self) -> None:
+        """Re-read the real file (e.g. after an external editor) as clean."""
+        self._saved_text = self.path.read_text(encoding="utf-8")
+        self._text = self._saved_text
+        self.dirty = False
+        self._remove_autosave()
+
+    def _remove_autosave(self) -> None:
+        try:
+            self.autosave_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def _priority_rank(item: core.TodoItem) -> int:
     if item.priority == "A":
         return 0
@@ -83,12 +151,12 @@ def _read_only_headings(text: str) -> list[MenuItem]:
 
 
 def load_menu_items(
-    org_file: Path,
+    buf: OrgBuffer,
     include_done: bool = False,
     *,
     sort_key=_task_sort_key,
 ) -> list[MenuItem]:
-    text = org_file.read_text(encoding="utf-8")
+    text = buf.read()
     task_items = core.parse_org(text)
     if task_items:
         seen: set[str] = set()
@@ -100,7 +168,7 @@ def load_menu_items(
             seen.add(key)
         if duplicates:
             dupes = ", ".join(sorted(duplicates))
-            raise ValueError(f"duplicate task IDs in {org_file}: {dupes}")
+            raise ValueError(f"duplicate task IDs in {buf.path}: {dupes}")
         filtered = [task for task in task_items if include_done or task.state == "TODO"]
         return [
             MenuItem(
@@ -162,10 +230,10 @@ def _project_rows(workspace: Path, projects: list[Project]) -> list[menu.Project
     return rows
 
 
-def _show_context(org_file: Path, item: MenuItem) -> None:
+def _show_context(buf: OrgBuffer, item: MenuItem) -> None:
     print()
     if item.task:
-        items = core.parse_org(org_file.read_text(encoding="utf-8"))
+        items = core.parse_org(buf.read())
         lines: list[str] = []
         selected = item.task
         prefix = selected.id + "."
@@ -179,7 +247,7 @@ def _show_context(org_file: Path, item: MenuItem) -> None:
             print(f"... truncated {len(lines) - DETAIL_LINE_LIMIT} more line(s)")
         return
 
-    lines = org_file.read_text(encoding="utf-8").splitlines()
+    lines = buf.read().splitlines()
     if item.line_num is None:
         return
     start = item.line_num
@@ -197,12 +265,12 @@ def _show_context(org_file: Path, item: MenuItem) -> None:
         print(f"... truncated {len(display_lines) - DETAIL_LINE_LIMIT} more line(s)")
 
 
-def _direct_subtasks(org_file: Path, item: MenuItem) -> list[MenuItem]:
+def _direct_subtasks(buf: OrgBuffer, item: MenuItem) -> list[MenuItem]:
     if item.task is None:
         return []
     selected = item.task
     prefix = selected.id + "."
-    items = core.parse_org(org_file.read_text(encoding="utf-8"))
+    items = core.parse_org(buf.read())
     children = [
         task for task in items
         if task.id.startswith(prefix) and task.level == selected.level + 1
@@ -218,7 +286,7 @@ def _direct_subtasks(org_file: Path, item: MenuItem) -> list[MenuItem]:
     ]
 
 
-def _open_editor(org_file: Path, line_num: int | None) -> None:
+def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
     editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
     if not editor:
         print("VISUAL or EDITOR is not set")
@@ -227,21 +295,25 @@ def _open_editor(org_file: Path, line_num: int | None) -> None:
     if not parts:
         print("VISUAL or EDITOR is empty")
         return
+    # The external editor edits the real file, so flush any buffered changes
+    # first, then re-read whatever it wrote back into the buffer.
+    if buf.dirty:
+        buf.save()
+        print(f"saved pending changes to {buf.path.name} before opening the editor")
+    org_file = buf.path
     editor_name = Path(parts[0]).name
     line = None if line_num is None else line_num + 1
     if line is not None and editor_name in {"vi", "vim", "nvim", "less"}:
         subprocess.run(parts + [f"+{line}", str(org_file)], check=False)
-        return
-    if line is not None and editor_name in {"emacs", "emacsclient"}:
+    elif line is not None and editor_name in {"emacs", "emacsclient"}:
         subprocess.run(parts + [f"+{line}", str(org_file)], check=False)
-        return
-    if line is not None and editor_name in {"nano", "pico"}:
+    elif line is not None and editor_name in {"nano", "pico"}:
         subprocess.run(parts + [f"+{line}", str(org_file)], check=False)
-        return
-    if line is not None and editor_name in {"code", "codium"}:
+    elif line is not None and editor_name in {"code", "codium"}:
         subprocess.run(parts + ["--goto", f"{org_file}:{line}"], check=False)
-        return
-    subprocess.run(parts + [str(org_file)], check=False)
+    else:
+        subprocess.run(parts + [str(org_file)], check=False)
+    buf.reload()
 
 
 TASK_MENU_INSTRUCTION = (
@@ -251,24 +323,71 @@ TASK_MENU_INSTRUCTION = (
 
 def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -> bool:
     org_file = canonical_org_file(project)
+    buf = OrgBuffer(org_file)
+    _maybe_recover(buf)
     if menu.interactive_select_available():
-        return _interactive_task_menu(project, org_file, include_done)
-    return _numbered_task_menu(project, org_file, include_done, dashboard=dashboard)
+        result = _interactive_task_menu(project, buf, include_done)
+    else:
+        result = _numbered_task_menu(project, buf, include_done, dashboard=dashboard)
+    _resolve_buffer(buf)
+    return result
 
 
-def _toggle_state(org_file: Path, item: MenuItem) -> None:
+def _maybe_recover(buf: OrgBuffer) -> None:
+    """Offer to recover auto-save data left over from a previous session."""
+    if not buf.autosave_path.exists():
+        return
+    try:
+        recovered = buf.autosave_path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    if recovered == buf.read():
+        buf.discard()  # stale but identical -> just clean it up
+        return
+    name = buf.path.name
+    try:
+        answer = menu.prompt_text(
+            f"found unsaved changes for {name} in {buf.autosave_path.name}; "
+            f"recover them? [y/N]"
+        ).lower()
+    except menu.ContextCancelled:
+        answer = "n"
+    if answer in ("y", "yes"):
+        buf.recover(recovered)
+        print(f"recovered unsaved changes into the {name} buffer (not yet saved)")
+    else:
+        buf.discard()
+
+
+def _resolve_buffer(buf: OrgBuffer) -> None:
+    """On leaving a file's editing context, prompt to save pending changes."""
+    if not buf.dirty:
+        return
+    name = buf.path.name
+    try:
+        answer = menu.prompt_text(f"{name} has been modified; save {name}? [Y/n]").lower()
+    except menu.ContextCancelled:
+        answer = ""  # preserve work on cancellation
+    if answer.startswith("n"):
+        buf.discard()
+        print(f"discarded changes to {name}")
+    else:
+        buf.save()
+        print(f"saved {name}")
+
+
+def _toggle_state(buf: OrgBuffer, item: MenuItem) -> None:
     """Cycle the selected task's keyword in the TODO/DONE ring (Emacs-style)."""
     if item.task is None:
         print("not an ortask task; cannot change state")
         return
     target = tasks.next_state(item.task.state)
-    text = org_file.read_text(encoding="utf-8")
     try:
-        new_lines = tasks.change_state(text, item.task.id, target)
+        new_lines = tasks.change_state(buf.read(), item.task.id, target)
     except tasks.TaskNotFound:
         new_lines = None
     if new_lines is not None:
-        core.write_lines(org_file, new_lines)
+        buf.apply(new_lines)
 
 
 def _anchor_index(items: list[MenuItem], selected_id: str | None, fallback: int) -> int:
@@ -286,13 +405,13 @@ def _anchor_index(items: list[MenuItem], selected_id: str | None, fallback: int)
     return min(max(fallback, 0), len(items) - 1)
 
 
-def _interactive_task_menu(project: Project, org_file: Path, include_done: bool) -> bool:
+def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool) -> bool:
     selected_id: str | None = None
     fallback_index = 0
     while True:
         try:
             items = load_menu_items(
-                org_file, include_done=include_done, sort_key=_stable_sort_key
+                buf, include_done=include_done, sort_key=_stable_sort_key
             )
         except ValueError as exc:
             print(exc)
@@ -324,31 +443,31 @@ def _interactive_task_menu(project: Project, org_file: Path, include_done: bool)
             return True
         if result.action == "edit":
             line = items[result.index].line_num if items and result.index is not None else None
-            _open_editor(org_file, line)
+            _open_editor(buf, line)
             continue
         if not items:
             continue
         item = items[result.index]
         if result.action == "toggle":
-            _toggle_state(org_file, item)
+            _toggle_state(buf, item)
         elif result.action == "select":
-            if not focus_menu(org_file, item):
+            if not focus_menu(buf, item):
                 return False
 
 
 def _numbered_task_menu(
-    project: Project, org_file: Path, include_done: bool, *, dashboard: bool = True
+    project: Project, buf: OrgBuffer, include_done: bool, *, dashboard: bool = True
 ) -> bool:
     while True:
         try:
-            items = load_menu_items(org_file, include_done=include_done)
+            items = load_menu_items(buf, include_done=include_done)
         except ValueError as exc:
             print(exc)
             return True
         if dashboard:
-            _print_dashboard(f"{project.name} tasks", org_file, items)
+            _print_dashboard(f"{project.name} tasks", buf.path, items)
         else:
-            title = f"{project.name} tasks ({org_file})"
+            title = f"{project.name} tasks ({buf.path})"
             _print_items(title, items)
         try:
             choice = _prompt_choice(len(items), allow_editor=True)
@@ -359,14 +478,14 @@ def _numbered_task_menu(
         if choice == "b":
             return True
         if choice == "e":
-            _open_editor(org_file, None)
+            _open_editor(buf, None)
             continue
         if not choice.isdigit() or not 1 <= int(choice) <= len(items):
             print("invalid choice")
             continue
 
         item = items[int(choice) - 1]
-        if not focus_menu(org_file, item):
+        if not focus_menu(buf, item):
             return False
 
 
@@ -381,10 +500,10 @@ def local_file_menu(org_file: Path, include_done: bool = False) -> int:
     return 0
 
 
-def focus_menu(org_file: Path, item: MenuItem) -> bool:
-    _show_context(org_file, item)
+def focus_menu(buf: OrgBuffer, item: MenuItem) -> bool:
+    _show_context(buf, item)
     while True:
-        subtasks = _direct_subtasks(org_file, item)
+        subtasks = _direct_subtasks(buf, item)
         print()
         if subtasks:
             print("Subtasks:")
@@ -405,9 +524,9 @@ def focus_menu(org_file: Path, item: MenuItem) -> bool:
         if choice == "b":
             return True
         if choice.isdigit() and 1 <= int(choice) <= len(subtasks):
-            if not focus_menu(org_file, subtasks[int(choice) - 1]):
+            if not focus_menu(buf, subtasks[int(choice) - 1]):
                 return False
-            _show_context(org_file, item)
+            _show_context(buf, item)
         elif choice == "d" and item.task:
             try:
                 confirm = menu.prompt_text(f"mark {item.task.id} DONE? [y/N]").lower()
@@ -415,17 +534,16 @@ def focus_menu(org_file: Path, item: MenuItem) -> bool:
                 print("cancelled")
                 continue
             if confirm == "y":
-                text = org_file.read_text(encoding="utf-8")
                 try:
-                    new_lines = tasks.change_state(text, item.task.id, "DONE")
+                    new_lines = tasks.change_state(buf.read(), item.task.id, "DONE")
                 except tasks.TaskNotFound:
                     new_lines = None
                 if new_lines is not None:
-                    core.write_lines(org_file, new_lines)
+                    buf.apply(new_lines)
                 print(f"marked {item.task.id} DONE")
                 return True
         elif choice == "e":
-            _open_editor(org_file, item.line_num)
+            _open_editor(buf, item.line_num)
         else:
             print("invalid choice")
 

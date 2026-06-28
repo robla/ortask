@@ -614,7 +614,7 @@ def test_projtui_task_menu_opens_org_file_from_task_list(tmp_path: Path, monkeyp
     opened: list[tuple[Path, int | None]] = []
     choices = iter(["e", "b"])
 
-    monkeypatch.setattr(projtui, "_open_editor", lambda path, line: opened.append((path, line)))
+    monkeypatch.setattr(projtui, "_open_editor", lambda buf, line: opened.append((buf.path, line)))
     monkeypatch.setattr("builtins.input", lambda prompt="": next(choices))
 
     assert projtui.task_menu(project, include_done=False) is True
@@ -632,14 +632,16 @@ def test_projtui_escape_cancels_done_confirmation(
         ** TODO t0001 Keep open
         """,
     )
-    item = projtui.load_menu_items(org_file)[0]
+    buf = projtui.OrgBuffer(org_file)
+    item = projtui.load_menu_items(buf)[0]
     choices = iter(["d", "\x1b", "b"])
 
     monkeypatch.setattr("builtins.input", lambda prompt="": next(choices))
 
-    assert projtui.focus_menu(org_file, item) is True
+    assert projtui.focus_menu(buf, item) is True
     capsys.readouterr()
     assert "** TODO t0001 Keep open" in org_file.read_text(encoding="utf-8")
+    assert buf.dirty is False  # Esc cancelled the toggle; nothing buffered
 
 
 # --- apply: template instantiation (docs/templates.md) ------------------------
@@ -771,9 +773,10 @@ def test_next_state_ring() -> None:
     assert tasks.next_state("WAITING") == "TODO"
 
 
-def test_toggle_state_writes_only_selected_heading(tmp_path: Path) -> None:
-    # projtui._toggle_state cycles the selected task's keyword via the same
-    # surgical writer as the CLI, leaving every other line byte-for-byte intact.
+def test_toggle_state_buffers_change_until_save(tmp_path: Path) -> None:
+    # t0006: projtui._toggle_state edits the in-memory buffer (and the auto-save
+    # file), NOT the real file. The real file changes only on buf.save(), and
+    # then only the selected heading line, leaving the rest byte-for-byte intact.
     org_file = write(
         tmp_path / "todo.org",
         """
@@ -784,20 +787,26 @@ def test_toggle_state_writes_only_selected_heading(tmp_path: Path) -> None:
         ** TODO t0002 Neighbor
         """,
     )
-    original = org_file.read_text(encoding="utf-8").splitlines()
-    items = projtui.load_menu_items(org_file, include_done=True)
-    target = next(i for i in items if i.task and i.task.id == "t0001")
+    original = org_file.read_text(encoding="utf-8")
+    buf = projtui.OrgBuffer(org_file)
+    target = next(i for i in projtui.load_menu_items(buf, include_done=True)
+                  if i.task and i.task.id == "t0001")
 
-    projtui._toggle_state(org_file, target)
+    projtui._toggle_state(buf, target)
+    # Real file untouched; change lives in the buffer and the auto-save sibling.
+    assert org_file.read_text(encoding="utf-8") == original
+    assert buf.dirty is True
+    assert "** DONE t0001 Target  :tag:" in buf.read()
+    assert buf.autosave_path.exists()
+    assert buf.autosave_path.read_text(encoding="utf-8") == buf.read()
+
+    buf.save()
     toggled = org_file.read_text(encoding="utf-8").splitlines()
+    orig_lines = original.splitlines()
     assert toggled[1] == "** DONE t0001 Target  :tag:"
-    assert toggled[:1] + toggled[2:] == original[:1] + original[2:]
-
-    # Toggling again rings back to TODO and restores the file exactly.
-    again = next(i for i in projtui.load_menu_items(org_file, include_done=True)
-                 if i.task and i.task.id == "t0001")
-    projtui._toggle_state(org_file, again)
-    assert org_file.read_text(encoding="utf-8").splitlines() == original
+    assert toggled[:1] + toggled[2:] == orig_lines[:1] + orig_lines[2:]
+    assert not buf.autosave_path.exists()  # save clears the auto-save
+    assert buf.dirty is False
 
 
 def test_interactive_select_unavailable_without_tty() -> None:
@@ -899,11 +908,126 @@ def test_interactive_toggle_keeps_highlight_on_same_task(tmp_path: Path, monkeyp
     )
     original = org_file.read_text(encoding="utf-8")
     project = manager.Project(name="demo", path=tmp_path, org_file=org_file)
+    buf = projtui.OrgBuffer(org_file)
     monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             pin.send_text("ttq")  # toggle highlighted, toggle it back, quit
-            projtui._interactive_task_menu(project, org_file, include_done=True)
+            projtui._interactive_task_menu(project, buf, include_done=True)
 
+    # Two toggles of the same task cancel out in the buffer (so the highlight
+    # stayed put), and nothing was written to the real file (still buffered).
+    assert buf.read() == original
     assert org_file.read_text(encoding="utf-8") == original
+
+
+# ---------------------------------------------------------------------------
+# OrgBuffer auto-save / save-on-exit (t0006)
+# ---------------------------------------------------------------------------
+
+def test_org_buffer_autosave_path_naming(tmp_path: Path) -> None:
+    assert projtui.autosave_path_for(tmp_path / "todo.org") == tmp_path / "#todo.org#"
+    assert projtui.autosave_path_for(tmp_path / "a.task.org") == tmp_path / "#a.task.org#"
+
+
+def test_org_buffer_apply_save_and_discard(tmp_path: Path) -> None:
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
+    original = org_file.read_text(encoding="utf-8")
+    buf = projtui.OrgBuffer(org_file)
+    assert buf.dirty is False and not buf.autosave_path.exists()
+
+    buf.apply(["* Tasks", "** DONE t0001 one"])
+    assert buf.dirty is True
+    assert org_file.read_text(encoding="utf-8") == original          # real file untouched
+    assert buf.autosave_path.read_text(encoding="utf-8") == buf.read()
+
+    # discard reverts the buffer and removes the auto-save; real file unchanged.
+    buf.discard()
+    assert buf.read() == original
+    assert buf.dirty is False
+    assert not buf.autosave_path.exists()
+    assert org_file.read_text(encoding="utf-8") == original
+
+    # apply then save commits to the real file and clears the auto-save.
+    buf.apply(["* Tasks", "** DONE t0001 one"])
+    buf.save()
+    assert org_file.read_text(encoding="utf-8") == "* Tasks\n** DONE t0001 one\n"
+    assert not buf.autosave_path.exists()
+    assert buf.dirty is False
+
+
+def test_org_buffer_apply_back_to_original_clears_autosave(tmp_path: Path) -> None:
+    # Editing back to the saved content marks the buffer clean and drops the file.
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
+    buf = projtui.OrgBuffer(org_file)
+    buf.apply(["* Tasks", "** DONE t0001 one"])
+    assert buf.autosave_path.exists()
+    buf.apply(["* Tasks", "** TODO t0001 one"])  # back to original
+    assert buf.dirty is False
+    assert not buf.autosave_path.exists()
+
+
+def test_org_buffer_recover_adopts_autosave(tmp_path: Path) -> None:
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
+    buf = projtui.OrgBuffer(org_file)
+    recovered = "* Tasks\n** DONE t0001 one\n"
+    buf.recover(recovered)
+    assert buf.read() == recovered
+    assert buf.dirty is True
+    assert buf.autosave_path.read_text(encoding="utf-8") == recovered
+
+
+def test_resolve_buffer_save_prompt_yes(tmp_path: Path, monkeypatch) -> None:
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
+    buf = projtui.OrgBuffer(org_file)
+    buf.apply(["* Tasks", "** DONE t0001 one"])
+    monkeypatch.setattr(menu, "prompt_text", lambda _label: "y")
+    projtui._resolve_buffer(buf)
+    assert org_file.read_text(encoding="utf-8") == "* Tasks\n** DONE t0001 one\n"
+    assert not buf.autosave_path.exists()
+
+
+def test_resolve_buffer_save_prompt_default_enter_saves(tmp_path: Path, monkeypatch) -> None:
+    # The prompt defaults to yes, so a bare Enter ("") preserves the work.
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
+    buf = projtui.OrgBuffer(org_file)
+    buf.apply(["* Tasks", "** DONE t0001 one"])
+    monkeypatch.setattr(menu, "prompt_text", lambda _label: "")
+    projtui._resolve_buffer(buf)
+    assert org_file.read_text(encoding="utf-8") == "* Tasks\n** DONE t0001 one\n"
+
+
+def test_resolve_buffer_save_prompt_no_discards(tmp_path: Path, monkeypatch) -> None:
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
+    original = org_file.read_text(encoding="utf-8")
+    buf = projtui.OrgBuffer(org_file)
+    buf.apply(["* Tasks", "** DONE t0001 one"])
+    monkeypatch.setattr(menu, "prompt_text", lambda _label: "n")
+    projtui._resolve_buffer(buf)
+    assert org_file.read_text(encoding="utf-8") == original
+    assert not buf.autosave_path.exists()
+
+
+def test_maybe_recover_yes_loads_autosave(tmp_path: Path, monkeypatch) -> None:
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
+    autosave = projtui.autosave_path_for(org_file)
+    autosave.write_text("* Tasks\n** DONE t0001 one\n", encoding="utf-8")
+    buf = projtui.OrgBuffer(org_file)
+    monkeypatch.setattr(menu, "prompt_text", lambda _label: "y")
+    projtui._maybe_recover(buf)
+    assert buf.read() == "* Tasks\n** DONE t0001 one\n"
+    assert buf.dirty is True
+
+
+def test_maybe_recover_no_drops_autosave(tmp_path: Path, monkeypatch) -> None:
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
+    original = org_file.read_text(encoding="utf-8")
+    autosave = projtui.autosave_path_for(org_file)
+    autosave.write_text("* Tasks\n** DONE t0001 one\n", encoding="utf-8")
+    buf = projtui.OrgBuffer(org_file)
+    monkeypatch.setattr(menu, "prompt_text", lambda _label: "n")
+    projtui._maybe_recover(buf)
+    assert buf.read() == original
+    assert buf.dirty is False
+    assert not autosave.exists()
