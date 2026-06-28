@@ -53,9 +53,11 @@ The top-level project list uses the same shared selection model: highlight-bar
 mode on an interactive TTY, and the Rich/plain numbered dashboard as the
 non-interactive fallback.
 
-Selected rows keep the same semantic coloring as unselected rows: TODO/DONE
-state labels stay yellow/green, and project names stay highlighted separately
-from the subdued row background bar. The selected row marker is `▶`.
+Selected rows keep the same semantic coloring as unselected rows (TODO/DONE
+state labels stay yellow/green), and the entire selection bar background
+changes color to reflect the state of the highlighted task: gold/brown for
+TODO, green for DONE, and dark gray for other states. Project selections
+use a subdued dark cyan/blue background. The selected row marker is `▶`.
 
 ### Editing buffer (auto-save and save-on-exit)
 

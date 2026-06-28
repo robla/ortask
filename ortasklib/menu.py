@@ -82,7 +82,11 @@ SELECT_STYLE = (
         {
             "title": "bold",
             "summary": "ansibrightblack",
-            "selected": "bg:#3a3a3a",
+            "selected": "bg:#303030",
+            "selected.todo": "bg:#5f5f00",
+            "selected.done": "bg:#005f00",
+            "selected.other": "bg:#303030",
+            "selected.project": "bg:#005f5f",
             "status.todo": "ansiyellow",
             "status.done": "ansigreen",
             "status.other": "ansibrightblack",
@@ -287,9 +291,10 @@ def select_menu(
             selected = i == selected_index
             cursor = "▶ " if selected else "  "
             if selected:
-                fragments.append(("class:selected", f"{cursor}{row.number:>2}  "))
-                fragments.append((f"class:selected {_status_class(row.status)}", f"{row.status:<6}"))
-                fragments.append(("class:selected", f"  {row.text}\n"))
+                sel_class = f"selected.{row.status.lower()}" if row.status in ("TODO", "DONE") else "selected.other"
+                fragments.append((f"class:{sel_class}", f"{cursor}{row.number:>2}  "))
+                fragments.append((f"class:{sel_class} {_status_class(row.status)}", f"{row.status:<6}"))
+                fragments.append((f"class:{sel_class}", f"  {row.text}\n"))
             else:
                 fragments.append(("", f"{cursor}{row.number:>2}  "))
                 fragments.append((_status_class(row.status), f"{row.status:<6}"))
@@ -327,9 +332,10 @@ def select_project_menu(
             selected = i == selected_index
             cursor = "▶ " if selected else "  "
             if selected:
-                fragments.append(("class:selected", f"{cursor}{row.number:>2}  "))
-                fragments.append(("class:selected class:project.name", f"{row.name:<12}"))
-                fragments.append(("class:selected", f"  {row.org_file}\n"))
+                sel_class = "selected.project"
+                fragments.append((f"class:{sel_class}", f"{cursor}{row.number:>2}  "))
+                fragments.append((f"class:{sel_class} class:project.name", f"{row.name:<12}"))
+                fragments.append((f"class:{sel_class}", f"  {row.org_file}\n"))
             else:
                 fragments.append(("", f"{cursor}{row.number:>2}  "))
                 fragments.append(("class:project.name", f"{row.name:<12}"))
