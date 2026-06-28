@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 import orgmgr
 import ortask
 import projtui
-from ortasklib import manager, tasks
+from ortasklib import core, manager, tasks
 
 
 def write(path: Path, content: str) -> Path:
@@ -853,3 +853,57 @@ def test_select_menu_empty_rows_allows_exit() -> None:
     assert run("q") == menu.MenuResult("quit", None)
     assert run("b") == menu.MenuResult("back", None)
     assert run("e") == menu.MenuResult("edit", None)
+
+
+def test_stable_sort_key_ignores_todo_done_state() -> None:
+    # t0007: the highlight-bar order must not move a row when its state flips.
+    base = "* Tasks\n** TODO t0001 alpha\n** TODO t0002 beta\n** TODO t0003 gamma\n"
+    toggled = core.parse_org(base.replace("** TODO t0001", "** DONE t0001"))
+
+    state_order = [i.id for i in sorted(toggled, key=projtui._task_sort_key)]
+    stable_order = [i.id for i in sorted(toggled, key=projtui._stable_sort_key)]
+
+    assert state_order[0] != "t0001"          # state sort sinks the DONE task
+    assert stable_order == ["t0001", "t0002", "t0003"]  # stable keeps file order
+
+
+def test_anchor_index_follows_task_and_clamps() -> None:
+    # Build MenuItems directly so the helper is tested in isolation.
+    org = "* Tasks\n** TODO t0001 a\n** TODO t0002 b\n** TODO t0003 c\n"
+    items = [
+        projtui.MenuItem(label=t.text, detail="ortask task", task=t, line_num=t.line_num)
+        for t in core.parse_org(org)
+    ]
+    assert projtui._anchor_index(items, "t0002", 0) == 1     # follows the id
+    assert projtui._anchor_index(items, "t0999", 2) == 2     # missing -> fallback
+    assert projtui._anchor_index(items, "t0999", 99) == 2    # fallback clamped
+    assert projtui._anchor_index([], "t0001", 5) == 0        # empty list
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_interactive_toggle_keeps_highlight_on_same_task(tmp_path: Path, monkeypatch) -> None:
+    # t0007 end-to-end: toggling the highlighted task twice must cancel out,
+    # which only holds if the highlight stays on that same task after a reload.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(
+        tmp_path / "todo.org",
+        """
+        * Tasks
+        ** TODO t0001 alpha
+        ** TODO t0002 beta
+        ** TODO t0003 gamma
+        """,
+    )
+    original = org_file.read_text(encoding="utf-8")
+    project = manager.Project(name="demo", path=tmp_path, org_file=org_file)
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("ttq")  # toggle highlighted, toggle it back, quit
+            projtui._interactive_task_menu(project, org_file, include_done=True)
+
+    assert org_file.read_text(encoding="utf-8") == original

@@ -58,6 +58,16 @@ def _task_sort_key(item: core.TodoItem) -> tuple[int, int, int, int]:
     )
 
 
+def _stable_sort_key(item: core.TodoItem) -> tuple[int, int, int]:
+    """Ordering for the highlight-bar selector that ignores TODO/DONE state.
+
+    Same as :func:`_task_sort_key` minus the state component, so toggling a
+    task's keyword does not move its row out from under the highlight (t0007).
+    Priority, nesting depth, and file order are all invariant under a toggle.
+    """
+    return (_priority_rank(item), item.level, item.line_num)
+
+
 def _read_only_headings(text: str) -> list[MenuItem]:
     items: list[MenuItem] = []
     lines = text.splitlines()
@@ -72,7 +82,12 @@ def _read_only_headings(text: str) -> list[MenuItem]:
     return items
 
 
-def load_menu_items(org_file: Path, include_done: bool = False) -> list[MenuItem]:
+def load_menu_items(
+    org_file: Path,
+    include_done: bool = False,
+    *,
+    sort_key=_task_sort_key,
+) -> list[MenuItem]:
     text = org_file.read_text(encoding="utf-8")
     task_items = core.parse_org(text)
     if task_items:
@@ -94,7 +109,7 @@ def load_menu_items(org_file: Path, include_done: bool = False) -> list[MenuItem
                 task=task,
                 line_num=task.line_num,
             )
-            for task in sorted(filtered, key=_task_sort_key)
+            for task in sorted(filtered, key=sort_key)
         ]
     return _read_only_headings(text)
 
@@ -256,18 +271,35 @@ def _toggle_state(org_file: Path, item: MenuItem) -> None:
         core.write_lines(org_file, new_lines)
 
 
+def _anchor_index(items: list[MenuItem], selected_id: str | None, fallback: int) -> int:
+    """Index of the task with ``selected_id``; clamped ``fallback`` if it's gone.
+
+    Keeps the highlight on the same task across reloads (e.g. after a toggle),
+    so the bar does not drift to a neighbor (t0007).
+    """
+    if selected_id is not None:
+        for i, item in enumerate(items):
+            if item.task is not None and item.task.id == selected_id:
+                return i
+    if not items:
+        return 0
+    return min(max(fallback, 0), len(items) - 1)
+
+
 def _interactive_task_menu(project: Project, org_file: Path, include_done: bool) -> bool:
-    index = 0
+    selected_id: str | None = None
+    fallback_index = 0
     while True:
         try:
-            items = load_menu_items(org_file, include_done=include_done)
+            items = load_menu_items(
+                org_file, include_done=include_done, sort_key=_stable_sort_key
+            )
         except ValueError as exc:
             print(exc)
             return True
         rows = [_dashboard_row(i, item) for i, item in enumerate(items, start=1)]
         todo, done, total = menu.count_statuses(rows)
         summary = f"Open: {todo}  Done: {done}  Total: {total}"
-        index = min(index, len(items) - 1) if items else 0
         result = menu.select_menu(
             rows,
             title=f"{project.name} tasks",
@@ -280,10 +312,12 @@ def _interactive_task_menu(project: Project, org_file: Path, include_done: bool)
                 "s-left": "toggle",
                 "s-right": "toggle",
             },
-            start_index=index,
+            start_index=_anchor_index(items, selected_id, fallback_index),
         )
-        if result.index is not None:
-            index = result.index
+        if result.index is not None and items:
+            fallback_index = result.index
+            chosen = items[result.index]
+            selected_id = chosen.task.id if chosen.task is not None else None
         if result.action == "quit":
             return False
         if result.action == "back":

@@ -224,6 +224,15 @@ Default ordering should be useful:
 3. parent tasks before subtasks
 4. file order as the final tie-breaker
 
+The highlight-bar selector is the one exception: it **omits the open-before-done
+component** (rule 1) and orders only by priority, depth, and file position. That
+keeps a row from sliding out from under the highlight when its state is toggled
+in place — without it, marking the highlighted task `DONE` would re-sort it to
+the bottom and leave the bar pointing at a neighbor (`projtui._stable_sort_key`).
+The selector also re-anchors the highlight on the same task ID across reloads, so
+the toggled task stays selected even if the list membership changes. The numbered
+menu keeps the full ordering above, since each prompt re-reads the row numbers.
+
 ## Focus Prompt
 
 Selecting a task should show details immediately and then present actions:
