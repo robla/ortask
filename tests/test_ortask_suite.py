@@ -281,6 +281,21 @@ def test_show_expands_descendants_and_resolves_shorthand(tmp_path: Path, capsys)
     assert ortask.cmd_show(argparse.Namespace(file=org_file, id="t0404")) == 1
 
 
+def test_interactive_uses_resolved_local_org_file(tmp_path: Path, monkeypatch) -> None:
+    # This test keeps ortask.py -i scoped to the current directory's task file.
+    org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 Local task\n")
+    called: list[tuple[Path, bool]] = []
+
+    monkeypatch.setattr(
+        projtui,
+        "local_file_menu",
+        lambda path, include_done=False: called.append((path, include_done)) or 0,
+    )
+
+    assert ortask.cmd_interactive(argparse.Namespace(file=org_file)) == 0
+    assert called == [(org_file, False)]
+
+
 def test_cli_smoke_tests(tmp_path: Path) -> None:
     # This test proves top-level scripts still import and run on temp fixtures.
     org_file = write(
@@ -314,6 +329,17 @@ def test_cli_smoke_tests(tmp_path: Path) -> None:
     )
     assert show_result.returncode == 0
     assert "*** TODO t0001.1 Smoke child" in show_result.stdout
+
+    interactive_result = subprocess.run(
+        [sys.executable, str(ROOT / "ortask.py"), "-i", "--file", str(org_file)],
+        cwd=ROOT,
+        input="q\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert interactive_result.returncode == 0
+    assert f"tasks ({org_file})" in interactive_result.stdout
 
     orgmgr_result = subprocess.run(
         [sys.executable, str(ROOT / "orgmgr.py"), "--registry", str(workspace), "list"],
@@ -373,6 +399,7 @@ def test_bash_completion_for_ortask_and_alias() -> None:
     cases = [
         ("COMP_WORDS=(ortask.py ad); COMP_CWORD=1", "add"),
         ("COMP_WORDS=(ort ad); COMP_CWORD=1", "add"),
+        ("COMP_WORDS=(ort --in); COMP_CWORD=1", "--interactive"),
         ("COMP_WORDS=(ortask.py app); COMP_CWORD=1", "apply"),
         ("COMP_WORDS=(ortask.py list --fo); COMP_CWORD=2", "--format"),
         ("COMP_WORDS=(ortask.py apply --te); COMP_CWORD=2", "--template"),

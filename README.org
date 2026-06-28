@@ -39,6 +39,9 @@ Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
 # reopen a task
 ./ortask.py open t0002
 
+# open the interactive task menu for the local task file
+./ortask.py -i
+
 # check for ID problems (dry run)
 ./ortask.py repair --dry-run
 
@@ -59,7 +62,7 @@ For daily use, alias =ortask.py= as =ort=:
 alias ort='/path/to/ortask.py'
 #+end_src
 
-Then: =ort list=, =ort add "Do the thing"=, =ort done t0004=.
+Then: =ort list=, =ort add "Do the thing"=, =ort done t0004=, =ort -i=.
 
 * Bash completion
 

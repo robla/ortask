@@ -185,6 +185,16 @@ def cmd_apply(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: interactive
+# ---------------------------------------------------------------------------
+
+def cmd_interactive(args: argparse.Namespace) -> int:
+    import projtui
+
+    return projtui.local_file_menu(args.file, include_done=False)
+
+
+# ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
 
@@ -196,6 +206,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--file", type=Path, default=None,
         help="org file to operate on (default: TODO*.org, todo.org, tasks.org, or first *.org)",
+    )
+    parser.add_argument(
+        "-i", "--interactive", action="store_true",
+        help="open an interactive task menu for the resolved org file",
     )
 
     sub = parser.add_subparsers(dest="command")
@@ -270,6 +284,9 @@ def main() -> int:
     if not args.file.exists():
         print(f"file not found: {args.file}", file=sys.stderr)
         return 1
+
+    if args.interactive:
+        return cmd_interactive(args)
 
     cmd = args.command or "list"
 

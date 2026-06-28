@@ -21,7 +21,7 @@ _ortask_complete()
     fi
 
     local subcommands="help list show add done open repair apply"
-    local global_opts="--file --help"
+    local global_opts="-i --interactive --file --help"
     local list_opts="--todo --done --all --root-only --items --format --file --help"
     local add_opts="--parent --file --help"
     local repair_opts="--dry-run --file --help"

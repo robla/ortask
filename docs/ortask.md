@@ -15,6 +15,7 @@ ortask.py done <id> [--file FILE]
 ortask.py open <id> [--file FILE]
 ortask.py repair [--dry-run | --fix] [--file FILE]
 ortask.py apply [--template NAME] [--week WEEK] [--date YYYY-MM-DD] [--dry-run] [--file FILE]
+ortask.py -i | --interactive [--file FILE]
 ```
 
 ## DESCRIPTION
@@ -148,6 +149,11 @@ the placeholder set and insertion rules.
     4. `todo.org` in the current working directory
     5. `tasks.org` in the current working directory
     6. The first `*.org` file alphabetically (warns if multiple)
+
+**-i, --interactive**
+:   Open `projtui.py`'s task menu for the resolved local Org file instead of
+    listing tasks. This bypasses the global project registry and uses the same
+    file lookup rules as other `ortask.py` commands.
 
 ## TASK ID FORMAT
 

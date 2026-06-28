@@ -237,6 +237,17 @@ def task_menu(project: Project, include_done: bool) -> bool:
             return False
 
 
+def local_file_menu(org_file: Path, include_done: bool = False) -> int:
+    project_path = org_file.parent.resolve()
+    project = Project(
+        name=project_path.name or str(project_path),
+        path=project_path,
+        org_file=org_file,
+    )
+    task_menu(project, include_done)
+    return 0
+
+
 def focus_menu(org_file: Path, item: MenuItem) -> bool:
     _show_context(org_file, item)
     while True:
