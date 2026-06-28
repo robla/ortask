@@ -67,6 +67,36 @@ cancellation, `rich` for tables/panels, and ordinary line-oriented Org
 writeback. Ortask should borrow those techniques for richer interactive modes
 while keeping non-interactive CLI commands stdlib-friendly.
 
+## Shared Menu System
+
+The ortask ecosystem should converge on a shared menuing layer used by
+`ortask.py -i`, `projtui.py`, and workflow tools such as `castabout.py`.
+Individual tools can provide domain-specific actions, but users should not have
+to relearn basic navigation in each program.
+
+Shared behavior should include:
+
+- status-first dashboards that render before prompting
+- a consistent row model: number, status, title, optional detail columns
+- the same prompt vocabulary: number to select, `e` to edit/open, `b` back,
+  `q` quit, `Esc` cancel/back when prompt_toolkit is active
+- optional Rich rendering with a plain text fallback
+- consistent task ordering and indentation
+- one place for future highlight-bar navigation
+- reusable confirmation and proposed-change displays
+
+This layer should not own business logic. It should render menu rows, collect
+choices, manage cancellation, and expose hooks for actions. `castabout` can add
+"copy draft" and "open destination"; `projtui.py` can add "open editor"; local
+`ortask.py -i` can add task-editing actions. All of them should feel like the
+same family of menus.
+
+Implementation can start inside `projtui.py`, but the likely destination is an
+`ortasklib` module once two or more tools need the same rendering, prompting,
+and cancellation behavior. The first shared abstraction should be small: a menu
+row dataclass, a dashboard/table renderer, and a prompt loop that supports both
+numbered fallback mode and a later prompt_toolkit highlight-bar mode.
+
 ## Workspace Discovery
 
 The project TUI treats each immediate registry subdirectory as a possible

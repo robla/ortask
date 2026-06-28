@@ -81,3 +81,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-06-27 Sat 19:00]: implemented the new task-file resolver with upward =task.org=/=*.task.org= discovery, legacy fallback, ambiguity errors, and matching tests/docs.
 ** Codex [2026-06-27 Sat 21:45]: revised =docs/interactive.md= around castabout-derived TUI patterns and added =docs/ecosystem.md= to describe shared =ortasklib= convergence.
 ** Codex [2026-06-27 Sat 21:56]: changed =ortask.py -i= to show a castabout-style task dashboard with open/done totals before prompting.
+** Codex [2026-06-27 Sat 22:06]: documented a future shared menuing layer for =ortask.py -i=, =projtui.py=, and castabout-style workflow tools.
