@@ -9,7 +9,7 @@ to read, with only enough convention for tools to help.
 Prefer a dedicated task file named `tasks.org`. `task.org` remains recognized
 for compatibility. For project-specific names, use `NAME.task.org`, such as
 `castabout.task.org` or `elweek.task.org`.
-Inside it, put actionable work under a top-level `* Tasks` heading:
+For new files, put actionable work under a top-level `* Tasks` heading:
 
 ```org
 * Tasks
@@ -42,6 +42,11 @@ This keeps weekly recurring chores and one-time work in the same file without
 requiring custom Org extensions. Each week, copy or reopen the checklist,
 adjust the title/body for the latest episode, then mark steps `DONE` as they
 are completed.
+
+`* Tasks` is preferred but not required. If it exists, ortask treats that
+subtree as the task scope and ignores task-like headings elsewhere. If it does
+not exist, ortask reads valid TODO/DONE task headings across the file, which is
+friendlier to existing Org notes and Emacs-authored task lists.
 
 ## Task Headings
 

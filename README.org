@@ -1,8 +1,9 @@
 #+TITLE: ortask — org-mode task CLI
 
 =ortask.py= is a command-line tool for querying and editing TODO tasks
-in org-mode files.  It operates on a =* Tasks= subtree, leaving the
-rest of the file untouched.
+in org-mode files.  If a file has a =* Tasks= subtree, ortask uses that as the
+task scope; otherwise it uses valid TODO/DONE task headings throughout the file.
+Edits touch only selected task headings or explicitly inserted tasks.
 
 Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
 

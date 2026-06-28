@@ -73,7 +73,9 @@ files:
 - the `TodoItem` model
 - Org heading regexes, the `TASK_ID_PATTERN`, and task-file discovery constants
 - `find_tasks_range()` — `* Tasks` subtree detection
-- `parse_org()` and the low-level query helpers `filter_items()` / `find_by_id()`
+- `parse_org()` — parses the `* Tasks` subtree when present, otherwise valid
+  task headings across the whole file
+- low-level query helpers `filter_items()` / `find_by_id()`
 - `normalize_id()` / `canonical_id()`
 - `build_org_heading()` — render a `TodoItem` back to one heading line
 - `atomic_write()` / `write_lines()`
@@ -118,8 +120,8 @@ Behavior used by `orgmgr.py` and shared with `projtui.py`:
   subdirectories and per-project Org-file selection (`choose_org_file()`, which
   transparently follows the project/task symlinks)
 - `summarize_projects()` — JSON-ready, top-level task summaries per project,
-  attaching a `warning` (instead of raising) for unreadable files, missing
-  `* Tasks` sections, or duplicate IDs
+  attaching a `warning` (instead of raising) for unreadable files, files with no
+  parseable task headings, or duplicate IDs
 
 `orgmgr.py`'s `migrate` adapter writes the registry into `ortask.ini`; its
 `projadd` adapter creates the per-project symlink subdirectory, using

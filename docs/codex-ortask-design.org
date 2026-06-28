@@ -56,11 +56,13 @@ So the first parser change should support both formats:
 
 This avoids a flag day and lets the file migrate incrementally.
 
-** Scope edits to one task section
+** Scope edits to parsed task headings
 
-If =ortask.py= edits =README.org=, it should operate only on the
-well-defined =* Tasks= subtree.  That keeps the script from
-accidentally rewriting unrelated notes or prose elsewhere in the file.
+If =README.org= has a well-defined =* Tasks= subtree, =ortask.py= should use
+that as its scope. If the section is absent, it may operate on valid task
+headings across the file, while still changing only selected headings or
+explicit insertion points. That keeps the script from accidentally rewriting
+unrelated notes or prose elsewhere in the file.
 
 ** Preserve file text as much as possible
 

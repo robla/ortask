@@ -358,7 +358,8 @@ selection, URL extraction, and writeback. Bring it deeper into the ortask
 ecosystem in layers:
 
 1. Share task-file discovery rules with `ortasklib.core`.
-2. Use ortask parsing for `* Tasks` and stable IDs where practical.
+2. Use ortask parsing for `* Tasks` when present, whole-file task headings when
+   absent, and stable IDs where practical.
 3. Move reusable body URL extraction and surgical writeback helpers into
    `ortasklib`.
 4. Keep castabout-specific episode inference, draft generation, clipboard,

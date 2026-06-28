@@ -182,10 +182,9 @@ def summarize_projects(workspace: Path, include_all: bool = False) -> list[dict]
 
     Each record has ``project`` and ``file`` (the resolved Org file path with
     ``$HOME`` collapsed to ``~`` where possible). Valid projects also carry
-    ``tasks`` — top-level (``level == 2``) tasks, TODO-only unless
-    ``include_all``. Projects whose Org file is unreadable, lacks a ``* Tasks``
-    section, or has duplicate IDs carry a ``warning`` and empty ``tasks``
-    instead of raising.
+    ``tasks`` — top-level tasks, TODO-only unless ``include_all``. Projects
+    whose Org file is unreadable, has no parseable task headings, or has
+    duplicate IDs carry a ``warning`` and empty ``tasks`` instead of raising.
     """
     records: list[dict] = []
 
@@ -201,13 +200,12 @@ def summarize_projects(workspace: Path, include_all: bool = False) -> list[dict]
             records.append(record)
             continue
 
-        if not has_task_section(text):
-            record["warning"] = "no parseable * Tasks section found"
+        tasks = core.parse_org(text)
+        if not tasks:
+            record["warning"] = "no parseable tasks found"
             record["tasks"] = []
             records.append(record)
             continue
-
-        tasks = core.parse_org(text)
 
         seen: set[str] = set()
         duplicates: set[str] = set()
@@ -223,10 +221,11 @@ def summarize_projects(workspace: Path, include_all: bool = False) -> list[dict]
             records.append(record)
             continue
 
+        root_level = min((t.level for t in tasks), default=2)
         record["tasks"] = [
             {"id": t.id, "state": t.state, "title": t.text}
             for t in tasks
-            if t.level == 2 and (include_all or t.state == "TODO")
+            if t.level == root_level and (include_all or t.state == "TODO")
         ]
         records.append(record)
 

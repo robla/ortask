@@ -159,7 +159,7 @@ them.
    heading itself.
 3. Insert the instantiated subtree at the end of the `* Tasks` subtree, before the next top-level heading.
 4. Preserve heading levels from the template, so a `**` template parent remains a `**` active task.
-5. Refuse to insert if any generated task ID already exists under `* Tasks`,
+5. Refuse to insert if any generated task ID already exists among parsed tasks,
    comparing IDs canonically (via `core.canonical_id`) so that `tw26W26` and
    `tw2026W26` count as the same week. This makes a second `apply` for a week
    that is already present a safe, no-write error. A future `--replace` option
@@ -195,13 +195,14 @@ an unreadable/missing file). `apply` does not use exit code `2`.
 
 ## Implementation Notes
 
-- The shared parser (`core.parse_org` / `core.find_tasks_range`) is scoped to
-  the `* Tasks` subtree and stops at the next top-level heading, so it will not
-  see `* Template`. Locate the template with a parallel line scan — from the
-  `* Template` heading to the next top-level `*` heading — and copy those lines
-  as raw source text rather than parsing them into `TodoItem`s. This is also why
-  the placeholder IDs (`twYYWNN`) need no special handling: they are never
-  parsed, so they never have to satisfy the strict week-ID regex.
+- `core.find_tasks_range` is scoped to the `* Tasks` subtree and stops at the
+  next top-level heading. `core.parse_org` uses that scope when `* Tasks`
+  exists, otherwise it scans task headings across the file. Locate the template
+  with a parallel line scan — from the `* Template` heading to the next
+  top-level `*` heading — and copy those lines as raw source text rather than
+  parsing them into `TodoItem`s. This is also why the placeholder IDs
+  (`twYYWNN`) need no special handling: they are never parsed from the template,
+  so they never have to satisfy the strict week-ID regex.
 - Reuse `core.find_tasks_range` to find the insertion point — its `end` index is
   the next top-level heading (here, `* Template`) — and `core.write_lines` for
   the atomic, line-preserving write. This keeps `apply` consistent with how

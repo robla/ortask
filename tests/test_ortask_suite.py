@@ -52,6 +52,28 @@ def test_parse_standard_task_tree() -> None:
     assert items[0].line_num == 3
 
 
+def test_parse_org_without_tasks_section() -> None:
+    # t0003: files without * Tasks still expose valid TODO/DONE task headings.
+    text = """
+    * Overview
+    ** TODO t0001 First task
+    Body line
+    *** DONE t0001.1 Child task
+    * Notes
+    This prose should not become task body.
+    ** TODO Missing ID is ignored
+    * TODO t0002 Top-level fallback task  :tag:
+    """
+
+    items = ortask.parse_org(textwrap.dedent(text).lstrip())
+
+    assert [item.id for item in items] == ["t0001", "t0001.1", "t0002"]
+    assert [item.level for item in items] == [2, 3, 1]
+    assert items[0].body_lines == ["Body line"]
+    assert items[1].body_lines == []
+    assert items[2].tags == "tag"
+
+
 def test_normalize_and_match_weekly_ids() -> None:
     # This test keeps all accepted week-ID spellings equivalent for lookup.
     items = [
@@ -86,6 +108,22 @@ def test_filter_root_todo_tasks() -> None:
 
     assert [item.id for item in todo_roots] == ["t0001", "t0003"]
     assert [item.id for item in all_roots] == ["t0001", "t0002", "t0003"]
+
+
+def test_filter_root_tasks_without_tasks_section() -> None:
+    # Root-only filtering uses the minimum parsed level when there is no * Tasks.
+    items = ortask.parse_org(
+        textwrap.dedent(
+            """
+            * TODO t0001 Root task
+            ** TODO t0001.1 Child task
+            * DONE t0002 Done root
+            """
+        ).lstrip()
+    )
+
+    assert [item.id for item in ortask.filter_items(items, state="todo", root_only=True)] == ["t0001"]
+    assert [item.id for item in ortask.filter_items(items, state="all", root_only=True)] == ["t0001", "t0002"]
 
 
 def test_discover_local_org_file_order(tmp_path: Path, monkeypatch) -> None:
@@ -195,6 +233,44 @@ def test_toggle_task_state_in_place(tmp_path: Path) -> None:
     assert org_file.read_text(encoding="utf-8").splitlines() == original
 
 
+def test_list_and_done_without_tasks_section(tmp_path: Path, capsys) -> None:
+    # t0003: list/done operate on valid task headings even without * Tasks.
+    org_file = write(
+        tmp_path / "notes.org",
+        """
+        * TODO t0001 Root task
+        Body
+        ** TODO t0001.1 Child task
+        * Notes
+        Keep me.
+        """,
+    )
+
+    list_args = argparse.Namespace(
+        file=org_file,
+        state="all",
+        root_only=False,
+        items=None,
+        format="plain",
+    )
+    assert ortask.cmd_list(list_args) == 0
+    captured = capsys.readouterr()
+    assert "[TODO] t0001 Root task" in captured.out
+    assert "  [TODO] t0001.1 Child task" in captured.out
+
+    assert ortask.cmd_done(argparse.Namespace(file=org_file, id="t0001")) == 0
+    lines = org_file.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "* DONE t0001 Root task"
+    assert lines[3] == "* Notes"
+
+    assert ortask.cmd_add(
+        argparse.Namespace(file=org_file, title="New child", parent="t0001")
+    ) == 0
+    lines = org_file.read_text(encoding="utf-8").splitlines()
+    assert "** TODO t0001.2 New child" in lines
+    assert lines.index("** TODO t0001.2 New child") < lines.index("* Notes")
+
+
 def test_detect_repair_problems() -> None:
     # This test locks down current repair diagnostics before auto-fix work.
     text = """
@@ -252,6 +328,15 @@ def test_summarize_projects_for_orgmgr(tmp_path: Path, capsys) -> None:
         No task section.
         """,
     )
+    write(
+        workspace / "gamma" / "README.org",
+        """
+        * TODO t0003 Gamma root
+        ** TODO t0003.1 Gamma child
+        * Notes
+        No dedicated task section.
+        """,
+    )
     write(workspace / ".hidden" / "TODO.org", "* Tasks\n** TODO t0003 Hidden\n")
     write(workspace / "docs" / "TODO.org", "* Tasks\n** TODO t0004 Docs\n")
 
@@ -260,12 +345,15 @@ def test_summarize_projects_for_orgmgr(tmp_path: Path, capsys) -> None:
     projects = json.loads(capsys.readouterr().out)
 
     by_name = {project["project"]: project for project in projects}
-    assert set(by_name) == {"alpha", "beta"}
+    assert set(by_name) == {"alpha", "beta", "gamma"}
     assert by_name["alpha"]["file"] == str(real_alpha_org.resolve())
     assert by_name["alpha"]["tasks"] == [
         {"id": "t0001", "state": "TODO", "title": "Alpha parent"},
     ]
-    assert by_name["beta"]["warning"] == "no parseable * Tasks section found"
+    assert by_name["beta"]["warning"] == "no parseable tasks found"
+    assert by_name["gamma"]["tasks"] == [
+        {"id": "t0003", "state": "TODO", "title": "Gamma root"},
+    ]
 
 
 # --- Tests beyond the original nine in docs/testing.md -----------------------

@@ -20,8 +20,10 @@ ortask.py -i | --interactive [--file FILE]
 
 ## DESCRIPTION
 
-**ortask.py** reads and edits the `* Tasks` section of a local org-mode
-file. By default it prefers dedicated task files such as `tasks.org`,
+**ortask.py** reads and edits TODO/DONE task headings in a local org-mode file.
+If a top-level `* Tasks` section exists, parsing is scoped to that subtree;
+otherwise valid task headings are read from the whole file. By default it
+prefers dedicated task files such as `tasks.org`,
 `task.org`, or `NAME.task.org`, walking upward from the current directory before
 falling back to compatibility names and unambiguous local Org files.
 Tasks are org headings with TODO/DONE keywords and stable IDs such as
@@ -46,7 +48,9 @@ Print tasks.  With no flags, prints all tasks in indented plain text.
 :   Show all tasks regardless of state.
 
 **--root-only**
-:   Show only top-level tasks (direct children of `* Tasks`), hiding subtasks.
+:   Show only top-level parsed tasks, hiding subtasks. In a `* Tasks` file this
+    means direct children of `* Tasks`; otherwise it means the shallowest parsed
+    task heading level.
 
 **--items** *N*
 :   Limit output to the first *N* matching tasks.
@@ -70,8 +74,10 @@ ortask.py add "Research storage formats"
 ortask.py add "Determine CommonMark's suitability for FooProj" --parent t0003
 ```
 
-Append a new task heading to the `* Tasks` section.  The next
-available ID is assigned automatically (zero-padded to 4 digits).
+Append a new top-level task heading to the `* Tasks` section.  The next
+available ID is assigned automatically (zero-padded to 4 digits). With
+`--parent`, add a child under an existing parsed task even if the file has no
+`* Tasks` section.
 If the file has no `* Tasks` section, `add` refuses to modify existing prose
 files. It only bootstraps the section automatically for an empty dedicated task
 file such as `tasks.org`, `task.org`, `todo.org`, or `*.task.org`.
@@ -236,7 +242,9 @@ filtering with `--state` or `--root-only`).
 
 Write operations (`add`, `done`, `open`, `repair --fix`) follow these rules:
 
-- Only the `* Tasks` subtree is touched; all other content is preserved.
+- Edits touch only selected task headings, inserted task headings, or the
+  `* Tasks` subtree when a command explicitly inserts there; all other content
+  is preserved.
 - For state changes, only the matched heading line is rewritten.
 - For `add`, the new heading is appended at the end of the task subtree
   (or after the last sibling under the parent for subtasks).

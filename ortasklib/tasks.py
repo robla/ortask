@@ -53,8 +53,9 @@ class TemplateError(Exception):
 
 def format_plain(items: list[TodoItem]) -> str:
     lines = []
+    root_level = min((item.level for item in items), default=2)
     for item in items:
-        indent = "  " * (item.level - 2)
+        indent = "  " * max(item.level - root_level, 0)
         lines.append(f"{indent}[{item.state}] {item.id} {item.text}")
     return "\n".join(lines)
 

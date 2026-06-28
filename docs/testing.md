@@ -10,10 +10,11 @@ at a temporary directory.
 
 ## 1. Parse Standard Task Tree
 
-Verify that `core.parse_org()` reads only the `* Tasks` subtree and returns
-`TodoItem` records for TODO/DONE headings with IDs, priority cookies, tags,
-line numbers, and body lines. Include prose before and after `* Tasks` to prove
-unrelated sections are ignored.
+Verify that `core.parse_org()` reads the `* Tasks` subtree when present and
+otherwise reads valid TODO/DONE task headings across the file. It should return
+`TodoItem` records with IDs, priority cookies, tags, line numbers, and body
+lines. Include prose before and after `* Tasks` to prove unrelated sections are
+ignored when the explicit section exists.
 
 ## 2. Normalize and Match Weekly IDs
 
@@ -24,9 +25,9 @@ preserving the stored ID on parsed items.
 ## 3. Filter Root TODO Tasks
 
 Given a mixed tree with TODO, DONE, top-level tasks, and subtasks, verify that
-task filtering can produce the `orgmgr.py list` view: only direct children of
-`* Tasks` (`level == 2`) and only TODO tasks by default. Also verify `--all`
-includes top-level DONE tasks but still excludes subtasks.
+task filtering can produce the `orgmgr.py list` view: only root-level parsed
+tasks and only TODO tasks by default. Also verify `--all` includes root-level
+DONE tasks but still excludes subtasks, including for files without `* Tasks`.
 
 ## 4. Discover Local Org File
 
@@ -64,8 +65,9 @@ the future `repair` implementation even while automatic fixes remain limited.
 Build a temporary workspace with multiple project directories, hidden/skipped
 directories, and selected Org files. Verify the manager layer lists only valid
 projects, reports each project’s selected task file, and returns only top-level
-task summaries. Include one project with no parseable `* Tasks` section and
-assert it produces a warning rather than crashing.
+task summaries. Include one project with task headings but no `* Tasks` section,
+and one project with no parseable tasks that produces a warning rather than
+crashing.
 
 ## 9. CLI Smoke Tests
 

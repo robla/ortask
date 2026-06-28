@@ -35,6 +35,7 @@ HEADING_RE = re.compile(
 
 # Matches any org heading under * Tasks (with or without a TODO keyword / ID)
 BARE_HEADING_RE = re.compile(r"^(?P<stars>\*{2,})\s+(?P<rest>.+)$")
+ORG_HEADING_RE = re.compile(r"^\*+\s+")
 
 TASKS_HEADING_RE = re.compile(r"^\*\s+Tasks\s*$")
 TEMPLATE_HEADING_RE = re.compile(r"^\*\s+Template\s*$")
@@ -186,9 +187,9 @@ def find_template_range(lines: list[str]) -> tuple[int, int]:
 
     ``start`` is the index of the ``* Template`` heading itself; ``end`` is the
     index of the next top-level heading, or ``len(lines)``. Returns ``(-1, -1)``
-    when there is no ``* Template`` heading. Mirrors :func:`find_tasks_range`,
-    since the standard parser is scoped to ``* Tasks`` and never sees the
-    template subtree.
+    when there is no ``* Template`` heading. Mirrors :func:`find_tasks_range`
+    so template application can copy raw template lines without parsing them
+    into ``TodoItem`` records.
     """
     start = None
     for i, line in enumerate(lines):
@@ -208,18 +209,13 @@ def count_template_sections(lines: list[str]) -> int:
     return sum(1 for line in lines if TEMPLATE_HEADING_RE.match(line))
 
 
-def parse_org(text: str) -> list[TodoItem]:
-    """Parse the * Tasks subtree and return a list of TodoItems."""
-    lines = text.splitlines()
-    start, end = find_tasks_range(lines)
-    if start < 0:
-        return []
-
+def _parse_task_headings(lines: list[str], start: int, end: int) -> list[TodoItem]:
     items: list[TodoItem] = []
-    for i in range(start + 1, end):
+    active_item: TodoItem | None = None
+    for i in range(start, end):
         m = HEADING_RE.match(lines[i])
         if m:
-            items.append(TodoItem(
+            active_item = TodoItem(
                 level=len(m.group("stars")),
                 state=m.group("state"),
                 id=m.group("id"),
@@ -227,13 +223,29 @@ def parse_org(text: str) -> list[TodoItem]:
                 priority=m.group("priority"),
                 tags=m.group("tags"),
                 line_num=i,
-            ))
-        elif items:
+            )
+            items.append(active_item)
+        elif ORG_HEADING_RE.match(lines[i]):
+            active_item = None
+        elif active_item is not None:
             # Non-heading lines belong to the most recent task's body
-            if not BARE_HEADING_RE.match(lines[i]):
-                items[-1].body_lines.append(lines[i])
+            active_item.body_lines.append(lines[i])
 
     return items
+
+
+def parse_org(text: str) -> list[TodoItem]:
+    """Parse ortask-compatible TODO/DONE headings.
+
+    If a top-level ``* Tasks`` section exists, parsing is scoped to that subtree.
+    Otherwise, parse valid TODO/DONE task headings from the whole file. This
+    lets ordinary Org files participate without requiring a dedicated section.
+    """
+    lines = text.splitlines()
+    start, end = find_tasks_range(lines)
+    if start >= 0:
+        return _parse_task_headings(lines, start + 1, end)
+    return _parse_task_headings(lines, 0, len(lines))
 
 
 # ---------------------------------------------------------------------------
@@ -276,13 +288,14 @@ def filter_items(
     root_only: bool = False,
     max_items: int | None = None,
 ) -> list[TodoItem]:
+    root_level = min((t.level for t in items), default=2)
     result = items
     if state == "todo":
         result = [t for t in result if t.state == "TODO"]
     elif state == "done":
         result = [t for t in result if t.state == "DONE"]
     if root_only:
-        result = [t for t in result if t.level == 2]
+        result = [t for t in result if t.level == root_level]
     if max_items is not None:
         result = result[:max_items]
     return result

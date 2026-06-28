@@ -21,8 +21,9 @@ Goals:
 
 ** Heading structure
 
-Tasks live under a top-level =* Tasks= heading.  Each task is a
-standard org-mode heading with a TODO/DONE keyword and a stable ID:
+Tasks preferably live under a top-level =* Tasks= heading, but ortask can also
+use valid task headings across a file when that section is absent. Each task is
+a standard org-mode heading with a TODO/DONE keyword and a stable ID:
 
 #+begin_example
 ,* Tasks
@@ -148,7 +149,7 @@ alphabetically.
 
 When =status.py= edits the org file (per Codex recommendation):
 
-- Operate only on the task subtree under =* Tasks=
+- Prefer the task subtree under =* Tasks= when present
 - Change only the matched heading line (for =done=, =todo=, =rename=)
 - Append new headings in one place (for =add=)
 - Preserve blank lines, body text, properties, and non-task headings

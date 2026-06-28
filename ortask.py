@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """ortask — query and edit TODO tasks in org-mode files.
 
-Operates on the ``* Tasks`` subtree of an org file, using standard
-TODO/DONE keywords and stable task IDs (t0001, tw26W24, etc.).
+Operates on the ``* Tasks`` subtree when present, otherwise on valid task
+headings across the org file, using standard TODO/DONE keywords and stable task
+IDs (t0001, tw26W24, etc.).
 
 This script is a thin CLI front-end: argument parsing, dispatch, and turning
 ``ortasklib`` results into human-readable output and exit codes. The parsing,
@@ -67,11 +68,7 @@ def cmd_list(args: argparse.Namespace) -> int:
     all_items = parse_org(text)
 
     if not all_items:
-        start, _ = _find_tasks_range(text.splitlines())
-        if start < 0:
-            print(f"no '* Tasks' section found in {args.file}", file=sys.stderr)
-        else:
-            print(f"no tasks found in {args.file}", file=sys.stderr)
+        print(f"no tasks found in {args.file}", file=sys.stderr)
         return 1
 
     items = filter_items(all_items, state=args.state, root_only=args.root_only,

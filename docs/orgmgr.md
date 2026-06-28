@@ -82,11 +82,13 @@ Discovery rules:
 Task selection rules:
 
 - Parse the selected Org file with the shared ortask parser.
-- Show only direct children of `* Tasks` (`level == 2`).
+- Show only root-level parsed tasks. In a `* Tasks` file this means direct
+  children of `* Tasks`; otherwise it means the shallowest parsed task heading
+  level.
 - Show only `TODO` tasks by default.
 - With `--all`, include top-level `DONE` tasks too.
-- Warn per project, rather than crashing, for unreadable files, missing
-  `* Tasks` sections, or duplicate task IDs.
+- Warn per project, rather than crashing, for unreadable files, files with no
+  parseable task headings, or duplicate task IDs.
 
 ## `projadd`
 
