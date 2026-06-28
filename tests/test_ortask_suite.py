@@ -984,7 +984,7 @@ def test_select_menu_keybindings_headless() -> None:
         menu.MenuRow(2, "TODO", "t0002 second"),
         menu.MenuRow(3, "DONE", "t0003 third"),
     ]
-    actions = {"e": "edit", "t": "toggle", "s-right": "toggle"}
+    actions = {"e": "edit", "/": "filter", "s-left": "toggle", "s-right": "toggle"}
 
     def run(keys: str) -> menu.MenuResult:
         with create_pipe_input() as pin:
@@ -995,9 +995,10 @@ def test_select_menu_keybindings_headless() -> None:
     assert run("\x1b[B\r") == menu.MenuResult("select", 1)   # Down, Enter
     assert run("jj\r") == menu.MenuResult("select", 2)       # j, j, Enter
     assert run("k\r") == menu.MenuResult("select", 2)        # Up wraps to last
-    assert run("t") == menu.MenuResult("toggle", 0)          # hotkey on row 0
-    assert run("jt") == menu.MenuResult("toggle", 1)         # move then toggle
+    assert run("/") == menu.MenuResult("filter", 0)          # filter on row 0
+    assert run("j/") == menu.MenuResult("filter", 1)         # move then filter
     assert run("\x1b[1;2C") == menu.MenuResult("toggle", 0)  # Shift-Right
+    assert run("\x1b[1;2D") == menu.MenuResult("toggle", 0)  # Shift-Left
     assert run("q") == menu.MenuResult("quit", None)
     assert run("b") == menu.MenuResult("back", None)
 
@@ -1045,6 +1046,30 @@ def test_task_menu_order_preserves_org_file_hierarchy(tmp_path: Path) -> None:
     assert sorted_ids == ids
 
 
+def test_load_menu_items_defaults_to_all_task_states(tmp_path: Path) -> None:
+    # The shared task view starts with TODO and DONE rows visible, then filters explicitly.
+    org_file = write(
+        tmp_path / "todo.org",
+        """
+        * Tasks
+        ** TODO t0001 open
+        ** DONE t0002 done
+        """,
+    )
+    buf = projtui.OrgBuffer(org_file)
+
+    assert [item.task.id for item in projtui.load_menu_items(buf)] == [
+        "t0001",
+        "t0002",
+    ]
+    assert [item.task.id for item in projtui.load_menu_items(buf, include_done=False)] == [
+        "t0001",
+    ]
+    assert [item.task.id for item in projtui.load_menu_items(buf, filter_mode="done")] == [
+        "t0002",
+    ]
+
+
 def test_anchor_index_follows_task_and_clamps() -> None:
     # Build MenuItems directly so the helper is tested in isolation.
     org = "* Tasks\n** TODO t0001 a\n** TODO t0002 b\n** TODO t0003 c\n"
@@ -1082,7 +1107,8 @@ def test_interactive_toggle_keeps_highlight_on_same_task(tmp_path: Path, monkeyp
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            pin.send_text("ttq")  # toggle highlighted, toggle it back, quit
+            # Shift-Right twice toggles highlighted, toggles it back, then quits.
+            pin.send_text("\x1b[1;2C\x1b[1;2Cq")
             projtui._interactive_task_menu(project, buf, include_done=True)
 
     # Two toggles of the same task cancel out in the buffer (so the highlight

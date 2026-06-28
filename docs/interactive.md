@@ -35,15 +35,16 @@ The task selector has two modes, chosen automatically by
 
 - **Highlight-bar mode** (interactive TTY with `prompt_toolkit`): an inline
   arrow-key selector via `menu.select_menu()`. Up/Down or `j`/`k` move the
-  highlight (wrapping); `Enter` opens the focus view; `t` (also `d` and
-  Shift-Left/Right, mirroring Emacs `org-todo`) currently cycles the highlighted
-  task through the `TODO`/`DONE` ring; `e` opens the editor at the highlighted
-  task's line; `b`/`Esc` go back; `q` closes the current task-file context. In
+  highlight (wrapping); `Enter` opens the focus view; Shift-Left/Right cycles
+  the highlighted task through the `TODO`/`DONE` ring; `/` cycles the visibility
+  filter (`all -> TODO -> DONE`); `e` opens the editor at the highlighted task's
+  line; `b`/`Esc` go back; `q` closes the current task-file context. In
   `projtui.py`, that returns to the project menu; in local `ortask.py -i`, it
   exits. The app renders inline (not full screen), so it erases itself on exit
   and leaves scrollback intact.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
-  numbered dashboard + prompt, preserved unchanged as the scriptable fallback.
+  numbered dashboard + prompt, preserved as the scriptable fallback with the
+  same `/` visibility cycle.
 
 `projtui.py`'s top-level project list uses the shared menu renderer. Rich is used
 when available, with a plain text fallback.
@@ -53,9 +54,9 @@ when available, with a plain text fallback.
 Interactive edits do not touch the real Org file immediately. Each file's task
 menu runs against a `projtui.OrgBuffer`, modeled on Emacs (t0006):
 
-- Edits (a `t` toggle, a focus-view `mark DONE`) update an in-memory buffer and
-  mirror it to an **auto-save sibling** named `#todo.org#` (Emacs convention) for
-  crash recovery. The real file is untouched.
+- Edits (Shift-Left/Right in the selector, a focus-view `mark DONE`) update an
+  in-memory buffer and mirror it to an **auto-save sibling** named `#todo.org#`
+  (Emacs convention) for crash recovery. The real file is untouched.
 - On leaving the file's editing context (`b`/`q`/Esc), if the buffer is dirty it
   prompts `todo.org has been modified; save todo.org? [Y/n]`. The answer is
   three-way:
@@ -204,9 +205,9 @@ watch.
    collects choices only; it owns no task logic.
 3. **Done.** The selector is a non-full-screen `prompt_toolkit` application with
    keybindings for navigation (arrow keys / `j`/`k`), the `TODO`/`DONE` toggle
-   ring (Shift-Left/Right, with current `t`/`d` aliases), editor launching
-   (`e`), and cancellation (`Esc` / `b`). The ring itself is
-   `tasks.next_state()`, a pure helper.
+   ring (Shift-Left/Right), task-state filtering (`/`), editor launching (`e`),
+   and cancellation (`Esc` / `b`). The ring itself is `tasks.next_state()`, a
+   pure helper.
 4. Treat Textual as the *exit ramp*, not a competitor. The tripwire is concrete:
    the moment the selector wants a live detail-preview pane that re-renders as
    the highlight bar moves, multiple focusable regions, scrolling columns, or
@@ -238,14 +239,16 @@ Recommended task-list bindings:
   keys because they align with Org mode's `org-shiftright` / `org-shiftleft`
   behavior closely enough to transfer muscle memory.
 - `e` opens the current Org file or selected task in the editor.
+- `/` cycles the task visibility filter: `all -> TODO -> DONE`. This borrows the
+  "slash means show matching tasks" idea from Org sparse trees (`C-c / t`) while
+  avoiding a literal `C-c` chord in a terminal prompt.
 - `b` and `Esc` go back one context without writing.
 - `q` closes the current context: local `ortask.py -i` exits, while project mode
   returns from a project task view to the project list.
 
-Avoid making `t` the long-term primary state toggle. It is not very mnemonic
-once the command grows beyond "toggle", and it competes with future meanings
-such as "TODO-only filter", "tag", or "title". Keep `t` only as a transitional
-alias if it remains useful. Likewise, reserve plain `d` for explicit "mark
+Avoid making `t` a row-selector state toggle. It is not very mnemonic once the
+command grows beyond "toggle", and it competes with future meanings such as
+"TODO-only filter", "tag", or "title". Reserve plain `d` for explicit "mark
 DONE" actions in focus prompts; in the row selector, prefer Shift-Arrow for the
 ring so the same model supports both forward and backward cycling.
 
@@ -257,9 +260,8 @@ Future TODO-state guidance:
   is removed; otherwise cycling would make the selected row disappear.
 - When no-keyword support lands, the ring should be explicit in the UI, for
   example `TODO -> DONE -> none`, and Shift-Left should reverse that order.
-- Filtering should get its own key, probably `f` to cycle `all -> TODO -> DONE`.
-  This keeps state changes separate from visibility changes and avoids
-  overloading `t`.
+- Keep filtering on `/` unless there is a strong reason to change it. This keeps
+  state changes separate from visibility changes and avoids overloading `t`.
 
 ## Workspace Discovery
 
@@ -293,9 +295,10 @@ judgment or forcing a computed priority order.
 Default display order is the order of headings in the Org file. This preserves
 the visible parent/child hierarchy, keeps authored weekly workflows readable,
 and matches what an Emacs Org user expects after arranging a tree by hand.
-`DONE` rows are hidden unless the caller asks to include them, but filtering
-must not otherwise reorder the remaining rows. Org priorities such as `[#A]`
-remain visible metadata; they do not move rows.
+`TODO` and `DONE` rows are visible by default. `/` cycles visibility through
+`all -> TODO -> DONE`, but filtering must not otherwise reorder the remaining
+rows. Org priorities such as `[#A]` remain visible metadata; they do not move
+rows.
 
 The highlight-bar selector also re-anchors the highlight on the same task ID
 across reloads, so a toggled task stays selected even if the list membership

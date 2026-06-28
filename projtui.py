@@ -137,8 +137,9 @@ def _read_only_headings(text: str) -> list[MenuItem]:
 
 def load_menu_items(
     buf: OrgBuffer,
-    include_done: bool = False,
+    include_done: bool = True,
     *,
+    filter_mode: str | None = None,
     sort_key=_task_sort_key,
 ) -> list[MenuItem]:
     text = buf.read()
@@ -154,7 +155,13 @@ def load_menu_items(
         if duplicates:
             dupes = ", ".join(sorted(duplicates))
             raise ValueError(f"duplicate task IDs in {buf.path}: {dupes}")
-        filtered = [task for task in task_items if include_done or task.state == "TODO"]
+        mode = _task_filter_mode(include_done, filter_mode)
+        if mode == "done":
+            filtered = [task for task in task_items if task.state == "DONE"]
+        elif mode == "todo":
+            filtered = [task for task in task_items if task.state == "TODO"]
+        else:
+            filtered = task_items
         return [
             MenuItem(
                 label=f"[{task.state}] {task.id} {task.text}",
@@ -167,15 +174,41 @@ def load_menu_items(
     return _read_only_headings(text)
 
 
+TASK_FILTERS = ("all", "todo", "done")
+
+
+def _task_filter_mode(include_done: bool, filter_mode: str | None = None) -> str:
+    if filter_mode is None:
+        return "all" if include_done else "todo"
+    normalized = filter_mode.lower()
+    if normalized not in TASK_FILTERS:
+        raise ValueError(f"unknown task filter: {filter_mode}")
+    return normalized
+
+
+def _next_task_filter(filter_mode: str) -> str:
+    index = TASK_FILTERS.index(_task_filter_mode(True, filter_mode))
+    return TASK_FILTERS[(index + 1) % len(TASK_FILTERS)]
+
+
+def _task_filter_label(filter_mode: str) -> str:
+    return {"all": "all", "todo": "TODO", "done": "DONE"}[
+        _task_filter_mode(True, filter_mode)
+    ]
+
+
 def _prompt_choice(
     count: int,
     *,
     allow_back: bool = True,
     allow_editor: bool = False,
+    allow_filter: bool = False,
 ) -> str:
     suffix = "number"
     if allow_editor:
         suffix += ", e=open editor"
+    if allow_filter:
+        suffix += ", /=filter"
     if allow_back:
         suffix += ", b=back"
     suffix += ", q=quit"
@@ -301,9 +334,11 @@ def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
     buf.reload()
 
 
-TASK_MENU_INSTRUCTION = (
-    "↑/↓ or j/k move · enter open · t toggle TODO/DONE · e editor · b back · q quit"
-)
+def _task_menu_instruction(filter_mode: str) -> str:
+    return (
+        f"{_task_filter_label(filter_mode)} · ↑↓/jk · ↵ open · "
+        "⇧←/⇧→ state · / filter · e edit · Esc/b back · q quit"
+    )
 
 
 def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -> bool:
@@ -414,10 +449,11 @@ def _anchor_index(items: list[MenuItem], selected_id: str | None, fallback: int)
 def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool) -> bool:
     selected_id: str | None = None
     fallback_index = 0
+    filter_mode = _task_filter_mode(include_done)
     while True:
         try:
             items = load_menu_items(
-                buf, include_done=include_done, sort_key=_stable_sort_key
+                buf, filter_mode=filter_mode, sort_key=_stable_sort_key
             )
         except ValueError as exc:
             print(exc)
@@ -429,11 +465,10 @@ def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool)
             rows,
             title=f"{project.name} tasks",
             summary=summary,
-            instruction=TASK_MENU_INSTRUCTION,
+            instruction=_task_menu_instruction(filter_mode),
             actions={
                 "e": "edit",
-                "t": "toggle",
-                "d": "toggle",
+                "/": "filter",
                 "s-left": "toggle",
                 "s-right": "toggle",
             },
@@ -451,6 +486,9 @@ def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool)
             line = items[result.index].line_num if items and result.index is not None else None
             _open_editor(buf, line)
             continue
+        if result.action == "filter":
+            filter_mode = _next_task_filter(filter_mode)
+            continue
         if not items:
             continue
         item = items[result.index]
@@ -464,9 +502,10 @@ def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool)
 def _numbered_task_menu(
     project: Project, buf: OrgBuffer, include_done: bool, *, dashboard: bool = True
 ) -> bool:
+    filter_mode = _task_filter_mode(include_done)
     while True:
         try:
-            items = load_menu_items(buf, include_done=include_done)
+            items = load_menu_items(buf, filter_mode=filter_mode)
         except ValueError as exc:
             print(exc)
             return True
@@ -476,7 +515,7 @@ def _numbered_task_menu(
             title = f"{project.name} tasks ({buf.path})"
             _print_items(title, items)
         try:
-            choice = _prompt_choice(len(items), allow_editor=True)
+            choice = _prompt_choice(len(items), allow_editor=True, allow_filter=True)
         except menu.ContextCancelled:
             return True
         if choice == "q":
@@ -485,6 +524,9 @@ def _numbered_task_menu(
             return True
         if choice == "e":
             _open_editor(buf, None)
+            continue
+        if choice == "/":
+            filter_mode = _next_task_filter(filter_mode)
             continue
         if not choice.isdigit() or not 1 <= int(choice) <= len(items):
             print("invalid choice")
@@ -495,7 +537,7 @@ def _numbered_task_menu(
             return False
 
 
-def local_file_menu(org_file: Path, include_done: bool = False) -> int:
+def local_file_menu(org_file: Path, include_done: bool = True) -> int:
     project_path = org_file.parent.resolve()
     project = Project(
         name=project_path.name or str(project_path),
@@ -585,9 +627,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="project registry directory containing project subdirectories",
     )
     parser.add_argument(
-        "--include-done",
+        "--todo-only",
         action="store_true",
-        help="include DONE tasks in ortask-compatible files",
+        help="start task views with only TODO tasks visible",
     )
     return parser
 
@@ -599,7 +641,7 @@ def main() -> int:
     if not workspace.is_dir():
         print(f"project directory not found: {workspace}", file=sys.stderr)
         return 1
-    return project_menu(workspace, args.include_done)
+    return project_menu(workspace, include_done=not args.todo_only)
 
 
 if __name__ == "__main__":

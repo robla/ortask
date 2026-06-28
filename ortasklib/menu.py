@@ -190,7 +190,7 @@ def select_menu(
     Navigation is Up/Down or ``k``/``j`` (wrapping). ``Enter`` selects the
     highlighted row (``"select"``); ``q`` returns ``"quit"``; ``b`` or ``Esc``
     return ``"back"``. Each key in ``actions`` maps to a custom action name
-    returned for the highlighted row, e.g. ``{"e": "edit", "t": "toggle"}``.
+    returned for the highlighted row, e.g. ``{"e": "edit", "s-right": "toggle"}``.
     Reserved keys (arrows, ``k``/``j``, ``Enter``, ``q``, ``b``, ``Esc``) should
     not be reused as action keys.
 
