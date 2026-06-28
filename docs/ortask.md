@@ -21,9 +21,9 @@ ortask.py -i | --interactive [--file FILE]
 ## DESCRIPTION
 
 **ortask.py** reads and edits the `* Tasks` section of a local org-mode
-file. By default it prefers dedicated task files such as `task.org` or
-`NAME.task.org`, walking upward from the current directory before falling back
-to legacy names and unambiguous local Org files.
+file. By default it prefers dedicated task files such as `tasks.org`,
+`task.org`, or `NAME.task.org`, walking upward from the current directory before
+falling back to compatibility names and unambiguous local Org files.
 Tasks are org headings with TODO/DONE keywords and stable IDs such as
 `t0001`, `t0001.1`, `tw26W24`, and `tw26W24.1`. See `--file` under
 GLOBAL OPTIONS for the file resolution order.
@@ -74,7 +74,9 @@ Append a new task heading to the `* Tasks` section.  The next
 available ID is assigned automatically (zero-padded to 4 digits).
 If the file has no `* Tasks` section, `add` refuses to modify existing prose
 files. It only bootstraps the section automatically for an empty dedicated task
-file such as `task.org`, `todo.org`, `tasks.org`, or `*.task.org`.
+file such as `tasks.org`, `task.org`, `todo.org`, or `*.task.org`.
+If no task file is discovered and no `--file` is supplied, `add` creates
+`tasks.org` in the current directory.
 
 **--parent** *ID*
 :   Create a subtask under the given parent instead of a top-level task.
@@ -149,11 +151,12 @@ the placeholder set and insertion rules.
     1. `--file` itself wins over all automatic discovery
     2. `ORTASK_FILE` environment variable
     3. From the current directory upward, nearest directory first:
-       `task.org`
+       `tasks.org`, then `task.org`
     4. In the same upward walk: exactly one `*.task.org`; multiple matches in
-       one directory are ambiguous
-    5. Legacy names in the same upward walk: `TODO.org`, exactly one other
-       `TODO*.org`, `todo.org`, then `tasks.org`
+       one directory are ambiguous. This tier is preferred over generic
+       `*.org` files such as `foo.org`.
+    5. Compatibility names in the same upward walk: `TODO.org`, exactly one other
+       `TODO*.org`, then `todo.org`
     6. Exactly one generic `*.org` in the original current directory only
 
     Ambiguous tiers produce an error instead of silently choosing

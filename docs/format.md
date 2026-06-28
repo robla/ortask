@@ -6,8 +6,9 @@ to read, with only enough convention for tools to help.
 
 ## Core Convention
 
-Prefer a dedicated task file named `task.org`. For project-specific names, use
-`NAME.task.org`, such as `castabout.task.org` or `elweek.task.org`.
+Prefer a dedicated task file named `tasks.org`. `task.org` remains recognized
+for compatibility. For project-specific names, use `NAME.task.org`, such as
+`castabout.task.org` or `elweek.task.org`.
 Inside it, put actionable work under a top-level `* Tasks` heading:
 
 ```org
@@ -75,15 +76,18 @@ The resolution order is:
 1. An explicit CLI file option, such as `--file`.
 2. `ORTASK_FILE`, for `ortask.py`.
 3. Walk from the current directory upward, nearest directory first, looking for:
-   `task.org`, then exactly one `*.task.org`, then legacy names.
-4. Legacy names, in order: `TODO.org`, exactly one other `TODO*.org`,
-   `todo.org`, then `tasks.org`.
+   `tasks.org`, then `task.org`, then exactly one `*.task.org`, then
+   compatibility names.
+4. Compatibility names, in order: `TODO.org`, exactly one other `TODO*.org`,
+   then `todo.org`.
 5. As a compatibility fallback, use exactly one generic `*.org` in the original
    current directory only.
 
 Ambiguity should stop resolution rather than silently choosing alphabetically.
 For example, two `*.task.org` files in the same directory require `--file` or a
-rename to `task.org`. This follows the useful part of `castabout.py`'s resolver:
+rename to `tasks.org`. A named file such as `castabout.task.org` is still an
+ortask-compatible task file and is preferred over generic files such as
+`castabout.org`. This follows the useful part of `castabout.py`'s resolver:
 canonical task filenames are automatic, but generic Org files are never guessed
 when several plausible files exist.
 

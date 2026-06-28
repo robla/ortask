@@ -15,7 +15,8 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-LEGACY_PROBE_NAMES = ["todo.org", "tasks.org"]
+PRIMARY_PROBE_NAMES = ["tasks.org", "task.org"]
+COMPAT_PROBE_NAMES = ["todo.org"]
 NUMERIC_ID_RE = re.compile(r"^t\d{4}(?:\.\d+)*$")
 WEEK_ID_RE = re.compile(r"^tw(?:\d{2}|\d{4})[Ww]\d{2}(?:\.\d+)*$")
 BARE_WEEK_ID_RE = re.compile(r"^(?:\d{2}|\d{4})[Ww]\d{2}(?:\.\d+)*$")
@@ -70,14 +71,15 @@ def _format_candidates(paths: list[Path]) -> str:
 def _ambiguous(directory: Path, pattern: str, matches: list[Path]) -> None:
     raise OrgFileDiscoveryError(
         f"ambiguous task files in {directory}: {_format_candidates(matches)} "
-        f"match {pattern}; use --file or rename the intended file to task.org"
+        f"match {pattern}; use --file or rename the intended file to tasks.org"
     )
 
 
 def _preferred_task_file_in(directory: Path) -> Path | None:
-    canonical = directory / "task.org"
-    if canonical.is_file():
-        return canonical
+    for name in PRIMARY_PROBE_NAMES:
+        candidate = directory / name
+        if candidate.is_file():
+            return candidate
 
     task_files = sorted(p for p in directory.glob("*.task.org") if p.is_file())
     if len(task_files) == 1:
@@ -85,20 +87,20 @@ def _preferred_task_file_in(directory: Path) -> Path | None:
     if len(task_files) > 1:
         _ambiguous(directory, "*.task.org", task_files)
 
-    legacy_canonical = directory / "TODO.org"
-    if legacy_canonical.is_file():
-        return legacy_canonical
+    compat_canonical = directory / "TODO.org"
+    if compat_canonical.is_file():
+        return compat_canonical
 
-    legacy_todo_files = sorted(
+    compat_todo_files = sorted(
         p for p in directory.glob("TODO*.org")
         if p.is_file() and p.name != "TODO.org"
     )
-    if len(legacy_todo_files) == 1:
-        return legacy_todo_files[0]
-    if len(legacy_todo_files) > 1:
-        _ambiguous(directory, "TODO*.org", legacy_todo_files)
+    if len(compat_todo_files) == 1:
+        return compat_todo_files[0]
+    if len(compat_todo_files) > 1:
+        _ambiguous(directory, "TODO*.org", compat_todo_files)
 
-    for name in LEGACY_PROBE_NAMES:
+    for name in COMPAT_PROBE_NAMES:
         candidate = directory / name
         if candidate.is_file():
             return candidate
@@ -115,7 +117,8 @@ def resolve_org_file() -> Path | None:
     """Find the default org file from the current directory.
 
     1. ORTASK_FILE env var
-    2. Walk upward for task.org, exactly one *.task.org, and legacy names
+    2. Walk upward for tasks.org, task.org, exactly one *.task.org, and
+       compatibility names
     3. Use exactly one generic *.org file in the original cwd
     """
     env = os.environ.get("ORTASK_FILE")

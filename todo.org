@@ -1,6 +1,6 @@
 * Tasks
 ** DONE t0001 Remove AI slop from docs/taskwarrior.md
-** TODO t0002 create .org file if none exist in directory when using 'ort add' (calling it "tasks.org")
+** DONE t0002 create .org file if none exist in directory when using 'ort add' (calling it "tasks.org")
 ** TODO t0003 Make it so that there doesn't have to be a 'Tasks' section in a .org file to use it
 ** TODO t0004 Test the 'ort repair' subcommand, particularly for adding identifiers to task lists without them
 ** DONE t0005 Let's make it so that 'ort add' doesn't arbitrarily add a '* Tasks' section to anything other than maybe a new todo.org

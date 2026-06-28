@@ -32,10 +32,11 @@ includes top-level DONE tasks but still excludes subtasks.
 
 In temporary project directories, verify task-file lookup order: explicit file
 and `ORTASK_FILE` first; then an upward walk from the current directory that
-prefers `task.org`, exactly one `*.task.org`, and legacy names (`TODO.org`,
-one other `TODO*.org`, `todo.org`, `tasks.org`). Confirm the nearest directory
-wins, multiple same-tier matches are ambiguous, and generic `*.org` fallback is
-used only when exactly one exists in the original current directory.
+prefers `tasks.org`, `task.org`, exactly one `*.task.org`, and compatibility names
+(`TODO.org`, one other `TODO*.org`, `todo.org`). Confirm the nearest directory
+wins, multiple same-tier matches are ambiguous, `*.task.org` beats generic
+`*.org`, and generic fallback is used only when exactly one exists in the
+original current directory.
 
 ## 5. Add Top-Level and Subtask
 
@@ -43,6 +44,8 @@ Using a temporary Org file, verify that adding a top-level task allocates the
 next `tNNNN` ID and inserts under `* Tasks`. Then add a subtask under an
 existing parent and verify it gets the next dotted child ID, is inserted after
 the parent’s existing descendants, and preserves unrelated prose.
+Also verify that `ortask.py add` creates `tasks.org` only when no task file is
+discovered, and does not append `* Tasks` to arbitrary existing Org prose.
 
 ## 6. Toggle Task State In Place
 

@@ -10,7 +10,7 @@ surgical edits.
 
 `ortasklib` should be the common substrate:
 
-- task-file discovery (`task.org`, `*.task.org`, legacy fallbacks)
+- task-file discovery (`tasks.org`, `task.org`, `*.task.org`, compatibility fallbacks)
 - `* Tasks` subtree parsing
 - stable task IDs and lookup normalization
 - task filtering and summary views
@@ -67,7 +67,8 @@ a later tool has a specific reason for them.
 
 Shared conventions should remain small:
 
-- `task.org` is the preferred canonical filename.
+- `tasks.org` is the preferred canonical filename.
+- `task.org` remains recognized for compatibility.
 - `NAME.task.org` names workflow-specific task files.
 - `* Tasks` contains actionable items.
 - `* Template` contains reusable task templates.

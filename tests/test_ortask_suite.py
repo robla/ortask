@@ -91,18 +91,22 @@ def test_filter_root_todo_tasks() -> None:
 def test_discover_local_org_file_order(tmp_path: Path, monkeypatch) -> None:
     # This test fixes the task-file discovery order and parent walk behavior.
     monkeypatch.chdir(tmp_path)
-    write(tmp_path / "legacy.task.org", "* Tasks\n** TODO t0001 named task\n")
+    write(tmp_path / "tasks.org", "* Tasks\n** TODO t0000 tasks canonical\n")
+    write(tmp_path / "project.task.org", "* Tasks\n** TODO t0001 named task\n")
     write(tmp_path / "task.org", "* Tasks\n** TODO t0002 canonical task\n")
     write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 lowercase\n")
     write(tmp_path / "TODO-Project.org", "* Tasks\n** TODO t0002 project\n")
     write(tmp_path / "TODO.org", "* Tasks\n** TODO t0003 canonical\n")
+    write(tmp_path / "README.org", "* Tasks\n** TODO t0006 readme\n")
 
+    assert ortask.resolve_org_file() == Path("tasks.org")
+
+    (tmp_path / "tasks.org").unlink()
     assert ortask.resolve_org_file() == Path("task.org")
-
     (tmp_path / "task.org").unlink()
-    assert ortask.resolve_org_file() == Path("legacy.task.org")
+    assert ortask.resolve_org_file() == Path("project.task.org")
 
-    (tmp_path / "legacy.task.org").unlink()
+    (tmp_path / "project.task.org").unlink()
     assert ortask.resolve_org_file() == Path("TODO.org")
 
     (tmp_path / "TODO.org").unlink()
@@ -110,17 +114,13 @@ def test_discover_local_org_file_order(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "TODO-Project.org").unlink()
     assert ortask.resolve_org_file() == Path("todo.org")
     (tmp_path / "todo.org").unlink()
-    write(tmp_path / "tasks.org", "* Tasks\n** TODO t0005 tasks\n")
-    assert ortask.resolve_org_file() == Path("tasks.org")
-    (tmp_path / "tasks.org").unlink()
-    write(tmp_path / "README.org", "* Tasks\n** TODO t0006 readme\n")
     assert ortask.resolve_org_file() == Path("README.org")
 
     nested = tmp_path / "src" / "pkg"
     nested.mkdir(parents=True)
-    write(tmp_path / "task.org", "* Tasks\n** TODO t0007 parent task\n")
+    write(tmp_path / "tasks.org", "* Tasks\n** TODO t0007 parent task\n")
     monkeypatch.chdir(nested)
-    assert ortask.resolve_org_file() == Path("../../task.org")
+    assert ortask.resolve_org_file() == Path("../../tasks.org")
 
 
 def test_discover_local_org_file_ambiguity(tmp_path: Path, monkeypatch) -> None:
@@ -211,6 +211,23 @@ def test_detect_repair_problems() -> None:
     assert any("doesn't match parent t0001" in desc for desc in descriptions)
     assert any("heading has TODO/DONE keyword but no valid task ID" in desc for desc in descriptions)
     assert any("duplicate ID t0001" in desc for desc in descriptions)
+
+
+def test_manager_choose_org_file_prefers_tasks_org(tmp_path: Path) -> None:
+    # Global project tools should use the same dedicated task-file priority.
+    project = tmp_path / "project"
+    write(project / "README.org", "* Tasks\n** TODO t0004 generic\n")
+    write(project / "castabout.task.org", "* Tasks\n** TODO t0003 named\n")
+    write(project / "task.org", "* Tasks\n** TODO t0002 singular\n")
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 plural\n")
+
+    assert manager.choose_org_file(project) == project / "tasks.org"
+    (project / "tasks.org").unlink()
+    assert manager.choose_org_file(project) == project / "task.org"
+    (project / "task.org").unlink()
+    assert manager.choose_org_file(project) == project / "castabout.task.org"
+    (project / "castabout.task.org").unlink()
+    assert manager.choose_org_file(project) == project / "README.org"
 
 
 def test_summarize_projects_for_orgmgr(tmp_path: Path, capsys) -> None:
@@ -485,6 +502,25 @@ def test_add_bootstraps_empty_dedicated_task_file(tmp_path: Path) -> None:
 
     lines = org_file.read_text(encoding="utf-8").splitlines()
     assert lines == ["* Tasks", "** TODO t0001 First task"]
+
+
+def test_cli_add_creates_tasks_org_when_no_task_file_exists(tmp_path: Path) -> None:
+    # t0002: real CLI add bootstraps tasks.org when discovery finds nothing.
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "ortask.py"), "add", "First task"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert "added t0001" in result.stdout
+    assert (tmp_path / "tasks.org").read_text(encoding="utf-8").splitlines() == [
+        "* Tasks",
+        "** TODO t0001 First task",
+    ]
 
 
 # --- orgmgr registry model: migrate + projadd ---------------------------------

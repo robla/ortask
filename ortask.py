@@ -43,15 +43,19 @@ from ortasklib.tasks import (  # noqa: F401 — re-exported for tooling/tests
 )
 
 
-BOOTSTRAP_TASK_FILE_NAMES = {"task.org", "todo.org", "tasks.org", "TODO.org"}
+DEFAULT_NEW_TASK_FILE = "tasks.org"
+BOOTSTRAP_TASK_FILE_NAMES = {"tasks.org", "task.org", "todo.org", "TODO.org"}
+
+
+def _is_dedicated_task_file(path: Path) -> bool:
+    """True for filenames ortask may initialize as task files."""
+    name = path.name
+    return name in BOOTSTRAP_TASK_FILE_NAMES or name.endswith(".task.org")
 
 
 def _can_create_tasks_section(path: Path, text: str) -> bool:
     """Only bootstrap empty files that are clearly intended to be task files."""
-    if text.strip():
-        return False
-    name = path.name
-    return name in BOOTSTRAP_TASK_FILE_NAMES or name.endswith(".task.org")
+    return not text.strip() and _is_dedicated_task_file(path)
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--file", type=Path, default=None,
-        help="org file to operate on (default: task.org, *.task.org, or legacy names)",
+        help="org file to operate on (default: tasks.org, task.org, *.task.org, or compatibility names)",
     )
     parser.add_argument(
         "-i", "--interactive", action="store_true",
@@ -297,6 +301,8 @@ def main() -> int:
         parser.print_help()
         return 0
 
+    cmd = args.command or "list"
+
     if args.file is None:
         try:
             resolved = resolve_org_file()
@@ -304,19 +310,29 @@ def main() -> int:
             print(exc, file=sys.stderr)
             return 1
         if resolved is None:
-            print("no org file found (create task.org or use --file)",
-                  file=sys.stderr)
-            return 1
-        args.file = resolved
+            if cmd == "add" and not args.interactive:
+                args.file = Path(DEFAULT_NEW_TASK_FILE)
+            else:
+                print("no org file found (create tasks.org or use --file)",
+                      file=sys.stderr)
+                return 1
+        else:
+            args.file = resolved
 
     if not args.file.exists():
-        print(f"file not found: {args.file}", file=sys.stderr)
-        return 1
+        if (
+            cmd == "add"
+            and not args.interactive
+            and _is_dedicated_task_file(args.file)
+            and args.file.parent.exists()
+        ):
+            args.file.write_text("", encoding="utf-8")
+        else:
+            print(f"file not found: {args.file}", file=sys.stderr)
+            return 1
 
     if args.interactive:
         return cmd_interactive(args)
-
-    cmd = args.command or "list"
 
     # For list, fill in defaults that argparse only sets when the
     # subcommand is explicitly given
