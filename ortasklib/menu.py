@@ -368,7 +368,7 @@ def select_project_menu(
 
 def count_statuses(rows: list[MenuRow]) -> tuple[int, int, int]:
     todo = sum(1 for row in rows if row.status == "TODO")
-    done = sum(1 for row in rows if row.status == "DONE")
+    done = sum(1 for row in rows if row.status in {"DONE", "SUPERSEDED"})
     total = todo + done
     return todo, done, total
 

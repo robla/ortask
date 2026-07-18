@@ -8,12 +8,14 @@ owns the CLI translation: file I/O, human-readable output, and exit codes.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, timedelta
 
 from .core import (
     BARE_HEADING_RE,
     HEADING_RE,
     NUMERIC_ID_RE,
+    TASK_STATES,
     WEEK_ID_PARTS_RE,
     TodoItem,
     build_org_heading,
@@ -45,6 +47,10 @@ class TemplateError(Exception):
     unparseable ``--week``/``--date`` input, mismatched week/date, and generated
     IDs that already exist under ``* Tasks``.
     """
+
+
+class TodoStateError(Exception):
+    """Raised when an Org TODO declaration cannot be updated safely."""
 
 
 # ---------------------------------------------------------------------------
@@ -216,12 +222,14 @@ def add_task(
 
 
 def change_state(text: str, task_id: str, target: str) -> list[str] | None:
-    """Switch a task's keyword to ``target`` (``"TODO"`` or ``"DONE"``).
+    """Switch a task's keyword to a supported ``target`` state.
 
     Returns the new line list, or ``None`` when the task is already in the
     target state (no write needed). Only the matched heading line changes.
     Raises ``TaskNotFound`` if ``task_id`` does not resolve.
     """
+    if target not in TASK_STATES:
+        raise ValueError(f"unsupported task state: {target}")
     lines = text.splitlines()
     items = parse_org(text)
     item = find_by_id(items, task_id)
@@ -229,9 +237,96 @@ def change_state(text: str, task_id: str, target: str) -> list[str] | None:
         raise TaskNotFound(task_id)
     if item.state == target:
         return None
-    keyword_from = "TODO" if target == "DONE" else "DONE"
-    lines[item.line_num] = lines[item.line_num].replace(keyword_from, target, 1)
+    lines[item.line_num] = re.sub(
+        rf"^(\*+\s+){re.escape(item.state)}\b",
+        rf"\1{target}",
+        lines[item.line_num],
+        count=1,
+    )
     return lines
+
+
+TODO_DIRECTIVE_RE = re.compile(r"^#\+TODO:\s*(.*?)\s*$", re.IGNORECASE)
+
+
+def _restore_final_newline(lines: list[str], original: str) -> str:
+    text = "\n".join(lines)
+    return text + "\n" if original.endswith("\n") else text
+
+
+def ensure_terminal_keyword(text: str, state: str = "SUPERSEDED") -> str:
+    """Return Org text whose TODO declaration includes terminal ``state``."""
+    if state not in TASK_STATES or state == "TODO":
+        raise ValueError(f"unsupported terminal state: {state}")
+
+    lines = text.splitlines()
+    matches = [(i, TODO_DIRECTIVE_RE.match(line)) for i, line in enumerate(lines)]
+    matches = [(i, match) for i, match in matches if match]
+    if len(matches) > 1:
+        raise TodoStateError("multiple #+TODO declarations; update them manually")
+    if matches:
+        index, match = matches[0]
+        assert match is not None
+        body = match.group(1)
+        if body.count("|") != 1:
+            raise TodoStateError("ambiguous #+TODO declaration; expected one '|' separator")
+        active, terminal = (part.strip() for part in body.split("|", 1))
+        active_words = active.split()
+        terminal_words = terminal.split()
+        if "TODO" not in active_words or "DONE" not in terminal_words:
+            raise TodoStateError("incompatible #+TODO declaration; expected TODO | DONE")
+        if state in active_words:
+            raise TodoStateError(f"{state} is configured as an active TODO state")
+        if state not in terminal_words:
+            terminal_words.append(state)
+            lines[index] = f"#+TODO: {' '.join(active_words)} | {' '.join(terminal_words)}"
+        return _restore_final_newline(lines, text)
+
+    tasks_start, _ = find_tasks_range(lines)
+    if tasks_start < 0:
+        raise TodoStateError("no '* Tasks' section found for #+TODO declaration")
+    lines.insert(tasks_start, f"#+TODO: TODO | DONE {state}")
+    return _restore_final_newline(lines, text)
+
+
+def change_subtree_state(
+    text: str,
+    task_id: str,
+    *,
+    source: str = "TODO",
+    target: str = "SUPERSEDED",
+    note: str = "",
+) -> tuple[str, int]:
+    """Change ``source`` headings in one task subtree and add one parent note."""
+    if target not in TASK_STATES:
+        raise ValueError(f"unsupported task state: {target}")
+    items = parse_org(text)
+    root = find_by_id(items, normalize_id(task_id))
+    if root is None:
+        raise TaskNotFound(task_id)
+
+    lines = text.splitlines()
+    subtree = [
+        item for item in items
+        if item is root or (item.line_num > root.line_num and item.id.startswith(root.id + "."))
+    ]
+    changed = 0
+    for item in subtree:
+        if item.state != source:
+            continue
+        lines[item.line_num] = re.sub(
+            rf"^(\*+\s+){re.escape(source)}\b",
+            rf"\1{target}",
+            lines[item.line_num],
+            count=1,
+        )
+        changed += 1
+
+    if note:
+        insert_at = root.line_num + 1 + len(root.body_lines)
+        if note not in root.body_lines:
+            lines.insert(insert_at, note)
+    return _restore_final_newline(lines, text), changed
 
 
 # Order of the keyword cycle, mirroring Emacs org-mode's TODO fast-cycling.
@@ -305,8 +400,8 @@ def find_repair_problems(text: str) -> list[tuple[int, str, str]]:
             bm = BARE_HEADING_RE.match(lines[i])
             if bm:
                 rest = bm.group("rest").strip()
-                if rest.startswith("TODO") or rest.startswith("DONE"):
-                    problems.append((i, f"heading has TODO/DONE keyword but no valid task ID", ""))
+                if any(rest.startswith(state) for state in TASK_STATES):
+                    problems.append((i, f"heading has task keyword but no valid task ID", ""))
 
     return problems
 

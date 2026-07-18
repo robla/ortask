@@ -62,7 +62,7 @@ Ambiguous same-tier matches are errors. Do not silently choose alphabetically.
 
 ## Current state vs. planned state
 
-- **`ortask.py`** (~640 lines) implements the TODO/DONE keyword parser and all
+- **`ortask.py`** implements TODO/DONE plus terminal SUPERSEDED parsing and all
   subcommands. `repair` *detects* problems (duplicate IDs, headings under
   `* Tasks` missing a valid ID, subtask IDs that don't match their parent's
   prefix) and reports them, but auto-fix — renumbering and ID assignment — is
@@ -110,7 +110,8 @@ Three layers, now housed in `ortasklib/` (see `docs/architecture.md`):
 Shared modules never parse CLI args or call `sys.exit`; the scripts own that.
 
 Write operations use atomic file replacement (write to a temp file, then
-rename). Edits touch only the `* Tasks` subtree and never reformat the file.
+rename), resolving task-file symlinks before replacement. Edits touch only the
+`* Tasks` subtree and never reformat the file.
 
 ## Task heading and ID format
 

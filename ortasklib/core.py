@@ -24,10 +24,13 @@ WEEK_ID_PARTS_RE = re.compile(
     r"^tw(?P<year>\d{2}|\d{4})[Ww](?P<week>\d{2})(?P<suffix>(?:\.\d+)*)$"
 )
 TASK_ID_PATTERN = r"t(?:\d{4}|w(?:\d{2}|\d{4})[Ww]\d{2})(?:\.\d+)*"
+TASK_STATES = ("TODO", "DONE", "SUPERSEDED")
+TERMINAL_STATES = frozenset({"DONE", "SUPERSEDED"})
+TASK_STATE_PATTERN = "|".join(TASK_STATES)
 
 HEADING_RE = re.compile(
     r"^(?P<stars>\*+)\s+"
-    r"(?P<state>TODO|DONE)\s+"
+    rf"(?P<state>{TASK_STATE_PATTERN})\s+"
     r"(?:\[#(?P<priority>[A-C])\]\s+)?"
     rf"(?P<id>{TASK_ID_PATTERN})\s+"
     r"(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$"
@@ -235,10 +238,10 @@ def _parse_task_headings(lines: list[str], start: int, end: int) -> list[TodoIte
 
 
 def parse_org(text: str) -> list[TodoItem]:
-    """Parse ortask-compatible TODO/DONE headings.
+    """Parse ortask-compatible task headings.
 
     If a top-level ``* Tasks`` section exists, parsing is scoped to that subtree.
-    Otherwise, parse valid TODO/DONE task headings from the whole file. This
+    Otherwise, parse valid task headings from the whole file. This
     lets ordinary Org files participate without requiring a dedicated section.
     """
     lines = text.splitlines()
@@ -293,7 +296,7 @@ def filter_items(
     if state == "todo":
         result = [t for t in result if t.state == "TODO"]
     elif state == "done":
-        result = [t for t in result if t.state == "DONE"]
+        result = [t for t in result if t.state in TERMINAL_STATES]
     if root_only:
         result = [t for t in result if t.level == root_level]
     if max_items is not None:
@@ -328,13 +331,17 @@ def build_org_heading(item: TodoItem) -> str:
 # ---------------------------------------------------------------------------
 
 def atomic_write(path: Path, content: str) -> None:
-    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    target = path.resolve() if path.is_symlink() else path
+    fd, tmp = tempfile.mkstemp(dir=target.parent, suffix=".tmp")
     try:
-        os.write(fd, content.encode("utf-8"))
-        os.close(fd)
-        os.replace(tmp, path)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.replace(tmp, target)
     except BaseException:
-        os.close(fd) if not os.get_inheritable(fd) else None
+        try:
+            os.close(fd)
+        except OSError:
+            pass
         try:
             os.unlink(tmp)
         except OSError:

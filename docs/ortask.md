@@ -20,15 +20,17 @@ ortask.py -i | --interactive [--file FILE]
 
 ## DESCRIPTION
 
-**ortask.py** reads and edits TODO/DONE task headings in a local org-mode file.
+**ortask.py** reads and edits Org task headings in a local org-mode file.
 If a top-level `* Tasks` section exists, parsing is scoped to that subtree;
 otherwise valid task headings are read from the whole file. By default it
 prefers dedicated task files such as `tasks.org`,
 `task.org`, or `NAME.task.org`, walking upward from the current directory before
 falling back to compatibility names and unambiguous local Org files.
-Tasks are org headings with TODO/DONE keywords and stable IDs such as
+Tasks are Org headings with stable IDs such as
 `t0001`, `t0001.1`, `tw26W24`, and `tw26W24.1`. See `--file` under
 GLOBAL OPTIONS for the file resolution order.
+The CLI creates and toggles `TODO`/`DONE`; shared workflow tools may also use
+terminal `SUPERSEDED`, which list/show parsing treats as completed work.
 
 When invoked with no subcommand, **list** is assumed.
 

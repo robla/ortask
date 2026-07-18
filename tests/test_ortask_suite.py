@@ -233,6 +233,73 @@ def test_toggle_task_state_in_place(tmp_path: Path) -> None:
     assert org_file.read_text(encoding="utf-8").splitlines() == original
 
 
+def test_superseded_is_a_terminal_parseable_state() -> None:
+    text = "* Tasks\n** SUPERSEDED tw26W27 Old week\n** DONE t0001 Done\n"
+
+    items = core.parse_org(text)
+
+    assert [item.state for item in items] == ["SUPERSEDED", "DONE"]
+    assert core.filter_items(items, state="todo") == []
+    assert [item.id for item in core.filter_items(items, state="done")] == [
+        "tw26W27", "t0001"
+    ]
+
+
+def test_ensure_terminal_keyword_and_supersede_subtree() -> None:
+    text = textwrap.dedent(
+        """
+        Intro
+        * Tasks
+        ** TODO tw26W27 Old week
+        Parent note
+        *** DONE tw26W27.0 Keep done
+        Done note
+        *** TODO tw26W27.1 Drop old work
+        URL stays
+        ** TODO tw26W29 Current week
+        """
+    ).lstrip()
+
+    with_keyword = tasks.ensure_terminal_keyword(text)
+    changed, count = tasks.change_subtree_state(
+        with_keyword,
+        "tw26W27",
+        note="Superseded by castabout.",
+    )
+
+    assert count == 2
+    assert changed.startswith("Intro\n#+TODO: TODO | DONE SUPERSEDED\n* Tasks\n")
+    assert "** SUPERSEDED tw26W27 Old week\nParent note\nSuperseded by castabout.\n" in changed
+    assert "*** DONE tw26W27.0 Keep done\nDone note\n" in changed
+    assert "*** SUPERSEDED tw26W27.1 Drop old work\nURL stays\n" in changed
+    assert "** TODO tw26W29 Current week" in changed
+    assert tasks.ensure_terminal_keyword(changed) == changed
+
+
+def test_ensure_terminal_keyword_merges_or_rejects_declarations() -> None:
+    merged = tasks.ensure_terminal_keyword(
+        "#+TODO: NEXT TODO | DONE CANCELED\n* Tasks\n"
+    )
+    assert merged.startswith("#+TODO: NEXT TODO | DONE CANCELED SUPERSEDED\n")
+
+    with pytest.raises(tasks.TodoStateError):
+        tasks.ensure_terminal_keyword(
+            "#+TODO: TODO | DONE\n#+TODO: NEXT | DONE\n* Tasks\n"
+        )
+
+
+def test_atomic_write_follows_symlink(tmp_path: Path) -> None:
+    target = write(tmp_path / "real" / "todo.org", "old\n")
+    link = tmp_path / "castabout.task.org"
+    link.symlink_to(target)
+
+    core.atomic_write(link, "new\n")
+
+    assert link.is_symlink()
+    assert link.resolve() == target.resolve()
+    assert target.read_text(encoding="utf-8") == "new\n"
+
+
 def test_list_and_done_without_tasks_section(tmp_path: Path, capsys) -> None:
     # t0003: list/done operate on valid task headings even without * Tasks.
     org_file = write(
@@ -285,7 +352,7 @@ def test_detect_repair_problems() -> None:
     descriptions = [problem[1] for problem in problems]
 
     assert any("doesn't match parent t0001" in desc for desc in descriptions)
-    assert any("heading has TODO/DONE keyword but no valid task ID" in desc for desc in descriptions)
+    assert any("heading has task keyword but no valid task ID" in desc for desc in descriptions)
     assert any("duplicate ID t0001" in desc for desc in descriptions)
 
 

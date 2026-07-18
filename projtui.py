@@ -157,7 +157,7 @@ def load_menu_items(
             raise ValueError(f"duplicate task IDs in {buf.path}: {dupes}")
         mode = _task_filter_mode(include_done, filter_mode)
         if mode == "done":
-            filtered = [task for task in task_items if task.state == "DONE"]
+            filtered = [task for task in task_items if task.state in core.TERMINAL_STATES]
         elif mode == "todo":
             filtered = [task for task in task_items if task.state == "TODO"]
         else:
