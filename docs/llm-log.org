@@ -113,3 +113,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-08-14 Fri 12:13 PDT]: made shared interactive task and project selectors scroll long row lists with the highlight while keeping their headers and key hints fixed, with bounded-terminal regression coverage.
 ** Codex [2026-08-14 Fri 13:07 PDT]: added modal =C-g= command help to shared interactive selectors and structured action metadata so future task commands appear automatically, with UI hints, documentation, and tests.
 ** Codex [2026-08-14 Fri 13:21 PDT]: unified =Esc=/=b=/=q= as one-level stack-pop commands across help, focus, task, and project menus, removing the multi-level quit path and adding nested-navigation regression coverage.
+** Codex [2026-08-14 Fri 14:11 PDT]: added buffered Org priority editing with Shift-Up/Down and an explicit picker, replaced the focus prompt with a highlight-bar task editor, and documented and tested the new workflow.

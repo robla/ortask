@@ -95,20 +95,22 @@ and return data or new line lists — they never read/write files, print, or cal
 - formatters: `format_plain()`, `format_org()`, `format_json()`
 - `show_lines()` — heading, body, and descendants for a selected task
 - ID allocation: `next_toplevel_id()`, `next_subtask_id()`
-- line-level edits: `add_task()`, `change_state()` (powers `done`/`open`);
-  `ensure_terminal_keyword()` and `change_subtree_state()` support workflow
-  tools that terminally supersede recurring task trees;
+- line-level edits: `add_task()`, `change_state()` (powers `done`/`open`), and
+  `change_priority()` plus `shift_priority()` for buffered interactive priority
+  editing; `ensure_terminal_keyword()` and `change_subtree_state()` support
+  workflow tools that terminally supersede recurring task trees;
   `add_task()` only creates `* Tasks` when the caller explicitly enables that
   bootstrap path
 - validation: `find_repair_problems()`
-- `TaskNotFound` — raised by `show_lines`/`add_task`/`change_state` when an ID
-  (or parent ID) does not resolve, so the helpers stay free of printing and exit
-  codes while `ortask.py` decides how to report the failure
+- `TaskNotFound` — raised by `show_lines()`, `add_task()`, `change_state()`, and
+  `change_priority()` when an ID (or parent ID) does not resolve, so the helpers
+  stay free of printing and exit codes while `ortask.py` decides how to report
+  the failure
 
 Write helpers return a new line list and let `ortask.py` perform the atomic
 write, preserving surrounding prose and avoiding whole-file reserialization.
-`change_state()` returns `None` when the task is already in the target state, so
-the caller can skip the write entirely.
+`change_state()` and `change_priority()` return `None` when the task is already
+in the target state, so the caller can skip the write entirely.
 
 ## `manager.py`
 

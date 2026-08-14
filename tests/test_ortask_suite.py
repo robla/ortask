@@ -1065,6 +1065,43 @@ def test_next_state_ring() -> None:
     assert tasks.next_state("WAITING") == "TODO"
 
 
+def test_change_priority_preserves_task_heading_and_body() -> None:
+    # Priority edits should touch only the cookie and round-trip back to the source.
+    original = (
+        "* Tasks\n"
+        "** TODO   t0001 Target  :tag:\n"
+        "Body line\n"
+        "** TODO t0002 Neighbor\n"
+    )
+
+    added = tasks.change_priority(original, "t0001", "A")
+    assert added is not None
+    assert added[1] == "** TODO   [#A] t0001 Target  :tag:"
+    assert added[2:] == original.splitlines()[2:]
+
+    changed = tasks.change_priority("\n".join(added) + "\n", "t0001", "B")
+    assert changed is not None
+    assert changed[1] == "** TODO   [#B] t0001 Target  :tag:"
+
+    cleared = tasks.change_priority("\n".join(changed) + "\n", "t0001", None)
+    assert cleared == original.splitlines()
+
+
+def test_priority_scale_clamps_and_rejects_invalid_values() -> None:
+    # Directional priority changes use none/C/B/A and stop at both boundaries.
+    assert tasks.shift_priority(None, 1) == "C"
+    assert tasks.shift_priority("C", 1) == "B"
+    assert tasks.shift_priority("B", 1) == "A"
+    assert tasks.shift_priority("A", 1) == "A"
+    assert tasks.shift_priority("A", -1) == "B"
+    assert tasks.shift_priority("C", -1) is None
+    assert tasks.shift_priority(None, -1) is None
+    with pytest.raises(ValueError):
+        tasks.shift_priority("Z", 1)
+    with pytest.raises(ValueError):
+        tasks.change_priority("* Tasks\n** TODO t0001 Task\n", "t0001", "Z")
+
+
 def test_toggle_state_buffers_change_until_save(tmp_path: Path) -> None:
     # t0006: projtui._toggle_state edits the in-memory buffer (and the auto-save
     # file), NOT the real file. The real file changes only on buf.save(), and
@@ -1101,6 +1138,23 @@ def test_toggle_state_buffers_change_until_save(tmp_path: Path) -> None:
     assert buf.dirty is False
 
 
+def test_priority_change_stays_buffered_until_save(tmp_path: Path) -> None:
+    # Interactive priority shortcuts should update auto-save but not the real file.
+    org_file = write(
+        tmp_path / "todo.org",
+        "* Tasks\n** TODO t0001 Target  :tag:\nBody line\n",
+    )
+    original = org_file.read_text(encoding="utf-8")
+    buf = projtui.OrgBuffer(org_file)
+    item = projtui.load_menu_items(buf)[0]
+
+    projtui._shift_priority(buf, item, 1)
+
+    assert "** TODO [#C] t0001 Target  :tag:" in buf.read()
+    assert org_file.read_text(encoding="utf-8") == original
+    assert buf.autosave_path.read_text(encoding="utf-8") == buf.read()
+
+
 def test_interactive_select_unavailable_without_tty() -> None:
     # Under pytest there is no TTY, so the selector must report unavailable and
     # callers fall back to the numbered menu (no interactive code runs in CI).
@@ -1121,11 +1175,15 @@ def test_select_menu_keybindings_headless() -> None:
         menu.MenuRow(3, "DONE", "t0003 third"),
     ]
     toggle = menu.MenuAction("toggle", "Shift+←/→", "Cycle task state")
+    raise_priority = menu.MenuAction("priority_up", "Shift+↑", "Raise priority")
+    lower_priority = menu.MenuAction("priority_down", "Shift+↓", "Lower priority")
     actions = {
         "e": menu.MenuAction("edit", "e", "Open in editor"),
         "c-t": menu.MenuAction("filter", "C-t", "Cycle task filter"),
         "s-left": toggle,
         "s-right": toggle,
+        "s-up": raise_priority,
+        "s-down": lower_priority,
     }
 
     def run(keys: str) -> menu.MenuResult:
@@ -1141,6 +1199,8 @@ def test_select_menu_keybindings_headless() -> None:
     assert run("j\x14") == menu.MenuResult("filter", 1)      # move then filter
     assert run("\x1b[1;2C") == menu.MenuResult("toggle", 0)  # Shift-Right
     assert run("\x1b[1;2D") == menu.MenuResult("toggle", 0)  # Shift-Left
+    assert run("\x1b[1;2A") == menu.MenuResult("priority_up", 0)  # Shift-Up
+    assert run("\x1b[1;2B") == menu.MenuResult("priority_down", 0)  # Shift-Down
     assert run("\x07\x07j\r") == menu.MenuResult("select", 1)  # C-g toggles help
     assert run("\x07e\x07e") == menu.MenuResult("edit", 0)  # actions pause in help
     assert run("\x07qj\r") == menu.MenuResult("select", 1)  # q only closes help
@@ -1163,7 +1223,74 @@ def test_selector_help_uses_action_metadata_once() -> None:
     assert "Open the highlighted task in the editor" in text
     assert "Cycle visibility through all, TODO, and DONE" in text
     assert text.count("Cycle the highlighted task's state") == 1
+    assert "Raise the highlighted task's priority" in text
+    assert "Choose the highlighted task's priority" in text
     assert "Esc/b/q" in text and "C-g/Esc/b/q/Enter closes it" in text
+
+
+def test_focus_editor_exposes_fields_and_subtasks(tmp_path: Path, monkeypatch) -> None:
+    # The interactive task editor should expose editable fields before child tasks.
+    org_file = write(
+        tmp_path / "tasks.org",
+        """
+        * Tasks
+        ** TODO [#B] t0001 Parent
+        Body line
+        *** TODO t0001.1 Child
+        """,
+    )
+    buf = projtui.OrgBuffer(org_file)
+    parent = projtui.load_menu_items(buf)[0]
+    calls = []
+
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
+    monkeypatch.setattr(
+        menu,
+        "select_menu",
+        lambda rows, **kwargs: calls.append((rows, kwargs))
+        or menu.MenuResult("back", None),
+    )
+
+    projtui.focus_menu(buf, parent)
+
+    rows, options = calls[0]
+    assert [row.status for row in rows] == ["STATE", "PRIOR", "EDIT", "TODO"]
+    assert [row.text for row in rows[:3]] == [
+        "TODO",
+        "B",
+        "Open task in external editor",
+    ]
+    assert "Body line" in options["preamble"]
+    assert "t0001.1 Child" in options["preamble"]
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_priority_picker_sets_and_cancels_buffered_priority(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The nested priority picker applies Enter and treats q as a non-mutating cancel.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 Target\n")
+    original = org_file.read_text(encoding="utf-8")
+    buf = projtui.OrgBuffer(org_file)
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
+
+    def run(keys: str) -> None:
+        item = projtui.load_menu_items(buf)[0]
+        with create_pipe_input() as pin:
+            with create_app_session(input=pin, output=DummyOutput()):
+                pin.send_text(keys)
+                projtui._priority_picker(buf, item)
+
+    run("\x1b[B\r")  # From none, Down wraps to A and Enter applies it.
+    assert "** TODO [#A] t0001 Target" in buf.read()
+    snapshot = buf.read()
+    run("q")
+    assert buf.read() == snapshot
+    assert org_file.read_text(encoding="utf-8") == original
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
@@ -1390,6 +1517,34 @@ def test_interactive_toggle_keeps_highlight_on_same_task(tmp_path: Path, monkeyp
     # Two toggles of the same task cancel out in the buffer (so the highlight
     # stayed put), and nothing was written to the real file (still buffered).
     assert buf.read() == original
+    assert org_file.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_interactive_priority_shortcuts_keep_selected_task(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Repeated Shift-Up edits should stay anchored and remain buffered.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(
+        tmp_path / "todo.org",
+        "* Tasks\n** TODO t0001 alpha\n** TODO t0002 beta\n",
+    )
+    original = org_file.read_text(encoding="utf-8")
+    project = manager.Project(name="demo", path=tmp_path, org_file=org_file)
+    buf = projtui.OrgBuffer(org_file)
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("\x1b[1;2A\x1b[1;2Aq")
+            projtui._interactive_task_menu(project, buf, include_done=True)
+
+    assert "** TODO [#B] t0001 alpha" in buf.read()
+    assert "** TODO t0002 beta" in buf.read()
     assert org_file.read_text(encoding="utf-8") == original
 
 

@@ -266,6 +266,7 @@ def _run_selector(
     *,
     title: str | None = None,
     summary: str | None = None,
+    preamble: str | None = None,
     instruction: str | None = None,
     actions: dict[str, str | MenuAction] | None = None,
     start_index: int = 0,
@@ -343,7 +344,12 @@ def _run_selector(
                 select_help=select_help,
                 back_help=back_help,
             )
-        return render(state["index"])
+        rows = render(state["index"])
+        if preamble:
+            return FormattedText(
+                [("", preamble.rstrip("\n") + "\n\n"), *list(rows)]
+            )
+        return rows
 
     body_control = FormattedTextControl(
         render_body, focusable=True, show_cursor=False
@@ -410,9 +416,11 @@ def select_menu(
     *,
     title: str | None = None,
     summary: str | None = None,
+    preamble: str | None = None,
     instruction: str | None = None,
     actions: dict[str, str | MenuAction] | None = None,
     start_index: int = 0,
+    select_help: str | None = None,
 ) -> MenuResult:
     """Run an inline highlight-bar selector and return a :class:`MenuResult`.
 
@@ -450,10 +458,11 @@ def select_menu(
         render,
         title=title,
         summary=summary,
+        preamble=preamble,
         instruction=instruction,
         actions=actions,
         start_index=start_index,
-        select_help="Open the highlighted task's details",
+        select_help=select_help or "Open the highlighted task's details",
         back_help="Back one level (exit at the top level)",
     )
 

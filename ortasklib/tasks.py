@@ -246,6 +246,65 @@ def change_state(text: str, task_id: str, target: str) -> list[str] | None:
     return lines
 
 
+PRIORITIES = ("A", "B", "C")
+PRIORITY_SCALE = (None, "C", "B", "A")
+
+
+def change_priority(
+    text: str, task_id: str, target: str | None
+) -> list[str] | None:
+    """Set or clear one task's Org priority cookie without reformatting it."""
+    if target is not None:
+        target = target.upper()
+        if target not in PRIORITIES:
+            raise ValueError(f"unsupported task priority: {target}")
+
+    lines = text.splitlines()
+    item = find_by_id(parse_org(text), task_id)
+    if item is None:
+        raise TaskNotFound(task_id)
+    if item.priority == target:
+        return None
+
+    line = lines[item.line_num]
+    if item.priority is not None:
+        cookie = f"[#{item.priority}]"
+        start = line.find(cookie)
+        if target is not None:
+            lines[item.line_num] = (
+                line[:start] + f"[#{target}]" + line[start + len(cookie):]
+            )
+        else:
+            end = start + len(cookie)
+            while end < len(line) and line[end] in " \t":
+                end += 1
+            lines[item.line_num] = line[:start] + line[end:]
+        return lines
+
+    match = re.match(
+        rf"^(?P<prefix>\*+\s+{re.escape(item.state)})(?P<spacing>\s+)",
+        line,
+    )
+    if match is None:  # pragma: no cover - parse_org already validated the line
+        raise ValueError(f"cannot locate task heading for priority edit: {task_id}")
+    insert_at = match.end()
+    lines[item.line_num] = line[:insert_at] + f"[#{target}] " + line[insert_at:]
+    return lines
+
+
+def shift_priority(priority: str | None, direction: int) -> str | None:
+    """Raise (``1``) or lower (``-1``) priority, clamping at A/none."""
+    if priority is not None:
+        priority = priority.upper()
+    if priority not in PRIORITY_SCALE:
+        raise ValueError(f"unsupported task priority: {priority}")
+    if direction not in {-1, 1}:
+        raise ValueError(f"priority direction must be -1 or 1: {direction}")
+    index = PRIORITY_SCALE.index(priority)
+    shifted = min(max(index + direction, 0), len(PRIORITY_SCALE) - 1)
+    return PRIORITY_SCALE[shifted]
+
+
 TODO_DIRECTIVE_RE = re.compile(r"^#\+TODO:\s*(.*?)\s*$", re.IGNORECASE)
 
 

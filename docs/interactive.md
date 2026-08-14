@@ -39,7 +39,8 @@ The task selector has two modes, chosen automatically by
 - **Highlight-bar mode** (interactive TTY with `prompt_toolkit`): an inline
   arrow-key selector via `menu.select_menu()`. Up/Down or `j`/`k` move the
   highlight (wrapping); `Enter` opens the focus view; Shift-Left/Right cycles
-  the highlighted task through the `TODO`/`DONE` ring; `C-t` cycles the
+  the highlighted task through the `TODO`/`DONE` ring; Shift-Up/Down raises or
+  lowers its priority; `p` opens an explicit priority picker; `C-t` cycles the
   visibility filter (`all -> TODO -> DONE`); `e` opens the editor at the
   highlighted task's line; `C-g` opens contextual command help; and `Esc`, `b`,
   or `q` goes back exactly one level. In `orgmgr.py -i`, leaving a task list
@@ -77,7 +78,7 @@ the label included, stays legible. The selected row marker is `▶`.
 Interactive edits do not touch the real Org file immediately. Each file's task
 menu runs against a `projtui.OrgBuffer`, modeled on Emacs (t0006):
 
-- Edits (Shift-Left/Right in the selector, a focus-view `mark DONE`) update an
+- Edits (state changes, priority changes, or a focus-view `mark DONE`) update an
   in-memory buffer and mirror it to an **auto-save sibling** named `#todo.org#`
   (Emacs convention) for crash recovery. The real file is untouched.
 - On leaving the file's editing context (`b`/`q`/Esc), if the buffer is dirty it
@@ -228,9 +229,10 @@ watch.
    collects choices only; it owns no task logic.
 3. **Done.** The selector is a non-full-screen `prompt_toolkit` application with
    keybindings for navigation (arrow keys / `j`/`k`), the `TODO`/`DONE` toggle
-   ring (Shift-Left/Right), task-state filtering (`C-t`), editor launching (`e`),
-   contextual help (`C-g`), and cancellation (`Esc` / `b`). The ring itself is
-   `tasks.next_state()`, a pure helper.
+   ring (Shift-Left/Right), priority changes (Shift-Up/Down and `p`), task-state
+   filtering (`C-t`), editor launching (`e`), contextual help (`C-g`), and
+   cancellation (`Esc` / `b` / `q`). The state and priority transitions live in
+   pure `ortasklib.tasks` helpers.
 4. Treat Textual as the *exit ramp*, not a competitor. The tripwire is concrete:
    the moment the selector wants a live detail-preview pane that re-renders as
    the highlight bar moves, multiple focusable regions, scrolling columns, or
@@ -261,6 +263,11 @@ Recommended task-list bindings:
   Shift-Left cycles backward. These should be documented as the primary state
   keys because they align with Org mode's `org-shiftright` / `org-shiftleft`
   behavior closely enough to transfer muscle memory.
+- Shift-Up raises priority through `none -> C -> B -> A`; Shift-Down lowers it
+  through the reverse sequence. The scale stops rather than wrapping at both
+  ends, and changing priority never reorders the task list.
+- `p` opens an explicit `A`/`B`/`C`/`none` picker. This is the discoverable path
+  for users who do not want to memorize directional shortcuts.
 - `e` opens the current Org file or selected task in the editor.
 - `C-t` cycles the task visibility filter: `all -> TODO -> DONE`. This is not
   an exact Emacs binding, but it keeps `C-c` and `C-x` open for future
@@ -331,24 +338,34 @@ across reloads, so a toggled task stays selected even if the list membership
 changes. Because the menu order is file order, toggling TODO/DONE never moves a
 row out from under the cursor.
 
-## Focus Prompt
+## Task Editor
 
-Selecting a task should show details immediately and then present actions:
+Selecting a task opens a highlight-bar editor over the same buffered Org file.
+It shows the task heading/body and descendants (capped at 20 lines), followed by
+selectable State, Priority, external-editor, and direct-subtask rows:
 
 ```text
-** TODO tw26W26.0.3 Post to reddit (/r/electorama)
+Edit tw26W26.0.3: Post to reddit (/r/electorama)
+State: TODO · Priority: B · Line: 18
+
+** TODO [#B] tw26W26.0.3 Post to reddit (/r/electorama)
 https://www.reddit.com/r/electorama/submit
 
-Actions:
-  d. mark DONE
-  e. open in editor
-  Esc/b/q. back one level
+  1  STATE   TODO
+  2  PRIOR   B
+  3  EDIT    Open task in external editor
 ```
 
-Display descendant subtasks, capped at 20 lines with a truncation note. Plain
-body URLs are important; workflow tools should display them before asking the
-user whether work is complete. Opening the editor for a selected task should
-jump to that task's line when the configured editor supports line arguments.
+Enter on State cycles the state; Enter on Priority opens the priority picker;
+Enter on EDIT launches the configured editor at the heading line; Enter on a
+subtask pushes its editor onto the menu stack. The same Shift-arrow, `p`, `e`,
+`C-g`, and back keys work without first moving to a field row. The numbered
+fallback keeps `d`, `p`, `e`, and numbered subtask selection. Plain body URLs
+remain visible before any action prompt.
+
+Title, tags, and body text remain external-editor operations for now. Internal
+edits are deliberately limited to fields that can be changed by a surgical
+heading rewrite without introducing a multiline text editor.
 
 Workflow-specific tools such as castabout may add domain actions such as "copy
 draft", "open destination", or "record result". Those actions should still use
@@ -365,6 +382,7 @@ Initial operations should map to existing or planned CLI behavior:
 | list tasks | `ortask.py list --todo --file FILE` |
 | show details | `ortask.py show ID --file FILE` |
 | mark done | `ortask.py done ID --file FILE` |
+| set priority | interactive buffered heading edit |
 | add child task | `ortask.py add TITLE --parent ID --file FILE` |
 | open editor | editor at or near task heading |
 
