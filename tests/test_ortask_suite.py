@@ -1114,6 +1114,51 @@ def test_select_menu_keybindings_headless() -> None:
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_select_menu_scrolls_to_selected_row(monkeypatch) -> None:
+    # Keep a selection below the first screen visible while header and hint stay fixed.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.data_structures import Size
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    class TinyOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=10, columns=80)
+
+        def get_rows_below_cursor_position(self) -> int:
+            return 10
+
+    windows = []
+    real_window = menu.Window
+
+    def tracked_window(*args, **kwargs):
+        window = real_window(*args, **kwargs)
+        windows.append(window)
+        return window
+
+    monkeypatch.setattr(menu, "Window", tracked_window)
+    rows = [
+        menu.MenuRow(i + 1, "TODO", f"t{i + 1:04} row")
+        for i in range(20)
+    ]
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=TinyOutput()):
+            pin.send_text("\r")
+            result = menu.select_menu(
+                rows,
+                title="Tasks",
+                summary="Open: 20  Done: 0  Total: 20",
+                instruction="Enter select",
+                start_index=12,
+            )
+
+    body = next(window for window in windows if window.content.is_focusable())
+    assert result == menu.MenuResult("select", 12)
+    assert body.render_info.window_height == 5
+    assert body.vertical_scroll <= 12 < body.vertical_scroll + 5
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_select_project_menu_keybindings_headless() -> None:
     # Project lists use the same highlight-bar navigation model as task lists.
     from prompt_toolkit.application import create_app_session

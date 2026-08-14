@@ -19,7 +19,13 @@ try:
     from prompt_toolkit.application import Application
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.layout import FormattedTextControl, Layout, Window
+    from prompt_toolkit.layout import (
+        FormattedTextControl,
+        HSplit,
+        Layout,
+        ScrollOffsets,
+        Window,
+    )
     from prompt_toolkit.output.defaults import create_output
     from prompt_toolkit.styles import Style
 except ImportError:  # pragma: no cover - optional interactive dependency
@@ -28,7 +34,9 @@ except ImportError:  # pragma: no cover - optional interactive dependency
     FormattedText = None
     KeyBindings = None
     FormattedTextControl = None
+    HSplit = None
     Layout = None
+    ScrollOffsets = None
     Window = None
     create_output = None
     Style = None
@@ -173,8 +181,10 @@ def interactive_select_available() -> bool:
         Application is not None
         and KeyBindings is not None
         and FormattedTextControl is not None
+        and HSplit is not None
         and Window is not None
         and Layout is not None
+        and ScrollOffsets is not None
         and sys.stdin.isatty()
         and sys.stdout.isatty()
     )
@@ -207,6 +217,9 @@ def _run_selector(
     row_count: int,
     render: Callable[[int], FormattedText],
     *,
+    title: str | None = None,
+    summary: str | None = None,
+    instruction: str | None = None,
     actions: dict[str, str] | None = None,
     start_index: int = 0,
 ) -> MenuResult:
@@ -257,11 +270,47 @@ def _run_selector(
     for key, action_name in actions.items():
         bindings.add(key)(_make_action(action_name))
 
-    control = FormattedTextControl(lambda: render(state["index"]), focusable=True,
-                                   show_cursor=False)
-    window = Window(control, always_hide_cursor=True, wrap_lines=False)
+    body_control = FormattedTextControl(
+        lambda: render(state["index"]), focusable=True, show_cursor=False
+    )
+    body_window = Window(
+        body_control,
+        always_hide_cursor=True,
+        scroll_offsets=ScrollOffsets(top=1, bottom=1),
+        wrap_lines=False,
+    )
+    containers = []
+    if title or summary:
+        header: list[tuple[str, str]] = []
+        header_height = 1  # Blank line between the heading and rows.
+        if title:
+            header.append(("class:title", title + "\n"))
+            header_height += 1
+        if summary:
+            header.append(("class:summary", summary + "\n"))
+            header_height += 1
+        header.append(("", "\n"))
+        containers.append(
+            Window(
+                FormattedTextControl(FormattedText(header)),
+                height=header_height,
+                always_hide_cursor=True,
+            )
+        )
+    containers.append(body_window)
+    if instruction:
+        footer = FormattedText(
+            [("", "\n"), ("class:hint", instruction)]
+        )
+        containers.append(
+            Window(
+                FormattedTextControl(footer),
+                height=2,
+                always_hide_cursor=True,
+            )
+        )
     app = Application(
-        layout=Layout(window),
+        layout=Layout(HSplit(containers), focused_element=body_control),
         key_bindings=bindings,
         style=SELECT_STYLE,
         full_screen=False,
@@ -300,12 +349,6 @@ def select_menu(
     """
     def render(selected_index: int) -> FormattedText:
         fragments: list[tuple[str, str]] = []
-        if title:
-            fragments.append(("class:title", title + "\n"))
-        if summary:
-            fragments.append(("class:summary", summary + "\n"))
-        if title or summary:
-            fragments.append(("", "\n"))
         if not rows:
             fragments.append(("class:dim", "  (no tasks)\n"))
         for i, row in enumerate(rows):
@@ -314,18 +357,22 @@ def select_menu(
             if selected:
                 bar = _selected_bar(row.status)
                 line = f"{cursor}{row.number:>2}  {row.status:<6}  {row.text}\n"
+                fragments.append(("[SetCursorPosition]", ""))
                 fragments.append((f"class:{bar}", line))
             else:
                 fragments.append(("", f"{cursor}{row.number:>2}  "))
                 fragments.append((_status_class(row.status), f"{row.status:<6}"))
                 fragments.append(("", f"  {row.text}\n"))
-        if instruction:
-            fragments.append(("", "\n"))
-            fragments.append(("class:hint", instruction))
         return FormattedText(fragments)
 
     return _run_selector(
-        len(rows), render, actions=actions, start_index=start_index
+        len(rows),
+        render,
+        title=title,
+        summary=summary,
+        instruction=instruction,
+        actions=actions,
+        start_index=start_index,
     )
 
 
@@ -340,12 +387,6 @@ def select_project_menu(
     """Run an inline highlight-bar selector for project rows."""
     def render(selected_index: int) -> FormattedText:
         fragments: list[tuple[str, str]] = []
-        if title:
-            fragments.append(("class:title", title + "\n"))
-        if summary:
-            fragments.append(("class:summary", summary + "\n"))
-        if title or summary:
-            fragments.append(("", "\n"))
         if not rows:
             fragments.append(("class:dim", "  (no projects)\n"))
         for i, row in enumerate(rows):
@@ -353,17 +394,22 @@ def select_project_menu(
             cursor = "▶ " if selected else "  "
             if selected:
                 line = f"{cursor}{row.number:>2}  {row.name:<12}  {row.org_file}\n"
+                fragments.append(("[SetCursorPosition]", ""))
                 fragments.append(("class:selected.project", line))
             else:
                 fragments.append(("", f"{cursor}{row.number:>2}  "))
                 fragments.append(("class:project.name", f"{row.name:<12}"))
                 fragments.append(("", f"  {row.org_file}\n"))
-        if instruction:
-            fragments.append(("", "\n"))
-            fragments.append(("class:hint", instruction))
         return FormattedText(fragments)
 
-    return _run_selector(len(rows), render, start_index=start_index)
+    return _run_selector(
+        len(rows),
+        render,
+        title=title,
+        summary=summary,
+        instruction=instruction,
+        start_index=start_index,
+    )
 
 
 def count_statuses(rows: list[MenuRow]) -> tuple[int, int, int]:

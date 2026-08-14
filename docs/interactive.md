@@ -44,7 +44,9 @@ The task selector has two modes, chosen automatically by
   highlighted task's line; `b`/`Esc` go back; `q` closes the current task-file
   context. In `orgmgr.py -i`, that returns to the project menu; in local
   `ortask.py -i`, it exits. The app renders inline (not full screen), so it
-  erases itself on exit and leaves scrollback intact.
+  erases itself on exit and leaves scrollback intact. Long lists scroll within
+  the row body while the title, summary, and key hint remain fixed; the selector
+  keeps one context row above and below the highlight when space permits.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved as the scriptable fallback with the
   same `C-t` visibility cycle.
