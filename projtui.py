@@ -210,8 +210,9 @@ def _prompt_choice(
     if allow_filter:
         suffix += ", C-t=filter"
     if allow_back:
-        suffix += ", b=back"
-    suffix += ", q=quit"
+        suffix += ", Esc/b/q=back"
+    else:
+        suffix += ", Esc/b/q=exit"
     return menu.prompt_text(suffix).lower()
 
 
@@ -337,7 +338,7 @@ def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
 def _task_menu_instruction(filter_mode: str) -> str:
     return (
         f"{_task_filter_label(filter_mode)} · ↑↓/jk · ↵ open · "
-        "C-g help · Shift+←/→ state · C-t filter · e edit · Esc/b back · q quit"
+        "C-g help · Shift+←/→ state · C-t filter · e edit · Esc/b/q back"
     )
 
 
@@ -354,19 +355,19 @@ TASK_MENU_ACTIONS = {
 }
 
 
-def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -> bool:
+def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -> None:
     org_file = canonical_org_file(project)
     buf = OrgBuffer(org_file)
     _maybe_recover(buf)
     while True:
         if menu.interactive_select_available():
-            result = _interactive_task_menu(project, buf, include_done)
+            _interactive_task_menu(project, buf, include_done)
         else:
-            result = _numbered_task_menu(project, buf, include_done, dashboard=dashboard)
+            _numbered_task_menu(project, buf, include_done, dashboard=dashboard)
         # The menu loop returned, so the user is leaving this file's context.
         # If they Esc the save prompt, stay and re-enter the menu unsaved.
         if _resolve_buffer(buf):
-            return result
+            return
 
 
 def _maybe_recover(buf: OrgBuffer) -> None:
@@ -459,7 +460,7 @@ def _anchor_index(items: list[MenuItem], selected_id: str | None, fallback: int)
     return min(max(fallback, 0), len(items) - 1)
 
 
-def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool) -> bool:
+def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool) -> None:
     selected_id: str | None = None
     fallback_index = 0
     filter_mode = _task_filter_mode(include_done)
@@ -470,7 +471,7 @@ def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool)
             )
         except ValueError as exc:
             print(exc)
-            return True
+            return
         rows = [_dashboard_row(i, item) for i, item in enumerate(items, start=1)]
         todo, done, total = menu.count_statuses(rows)
         summary = f"Open: {todo}  Done: {done}  Total: {total}"
@@ -486,10 +487,8 @@ def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool)
             fallback_index = result.index
             chosen = items[result.index]
             selected_id = chosen.task.id if chosen.task is not None else None
-        if result.action == "quit":
-            return False
         if result.action == "back":
-            return True
+            return
         if result.action == "edit":
             line = items[result.index].line_num if items and result.index is not None else None
             _open_editor(buf, line)
@@ -503,20 +502,19 @@ def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool)
         if result.action == "toggle":
             _toggle_state(buf, item)
         elif result.action == "select":
-            if not focus_menu(buf, item):
-                return False
+            focus_menu(buf, item)
 
 
 def _numbered_task_menu(
     project: Project, buf: OrgBuffer, include_done: bool, *, dashboard: bool = True
-) -> bool:
+) -> None:
     filter_mode = _task_filter_mode(include_done)
     while True:
         try:
             items = load_menu_items(buf, filter_mode=filter_mode)
         except ValueError as exc:
             print(exc)
-            return True
+            return
         if dashboard:
             _print_dashboard(f"{project.name} tasks", buf.path, items)
         else:
@@ -525,11 +523,9 @@ def _numbered_task_menu(
         try:
             choice = _prompt_choice(len(items), allow_editor=True, allow_filter=True)
         except menu.ContextCancelled:
-            return True
-        if choice == "q":
-            return False
-        if choice == "b":
-            return True
+            return
+        if choice in {"b", "q"}:
+            return
         if choice == "e":
             _open_editor(buf, None)
             continue
@@ -541,8 +537,7 @@ def _numbered_task_menu(
             continue
 
         item = items[int(choice) - 1]
-        if not focus_menu(buf, item):
-            return False
+        focus_menu(buf, item)
 
 
 def local_file_menu(org_file: Path, include_done: bool = True) -> int:
@@ -556,7 +551,7 @@ def local_file_menu(org_file: Path, include_done: bool = True) -> int:
     return 0
 
 
-def focus_menu(buf: OrgBuffer, item: MenuItem) -> bool:
+def focus_menu(buf: OrgBuffer, item: MenuItem) -> None:
     _show_context(buf, item)
     while True:
         subtasks = _direct_subtasks(buf, item)
@@ -569,19 +564,15 @@ def focus_menu(buf: OrgBuffer, item: MenuItem) -> bool:
         if item.task:
             print("  d. mark DONE")
         print("  e. open in editor")
-        print("  b. back to task menu")
-        print("  q. quit")
+        print("  Esc/b/q. back one level")
         try:
-            choice = menu.prompt_text("number, d/e/b/q").lower()
+            choice = menu.prompt_text("number, d/e, Esc/b/q").lower()
         except menu.ContextCancelled:
-            return True
-        if choice == "q":
-            return False
-        if choice == "b":
-            return True
+            return
+        if choice in {"b", "q"}:
+            return
         if choice.isdigit() and 1 <= int(choice) <= len(subtasks):
-            if not focus_menu(buf, subtasks[int(choice) - 1]):
-                return False
+            focus_menu(buf, subtasks[int(choice) - 1])
             _show_context(buf, item)
         elif choice == "d" and item.task:
             try:
@@ -597,14 +588,14 @@ def focus_menu(buf: OrgBuffer, item: MenuItem) -> bool:
                 if new_lines is not None:
                     buf.apply(new_lines)
                 print(f"marked {item.task.id} DONE")
-                return True
+                return
         elif choice == "e":
             _open_editor(buf, item.line_num)
         else:
             print("invalid choice")
 
 
-PROJECT_MENU_INSTRUCTION = "↑↓/jk · ↵ open · C-g help · Esc/q quit"
+PROJECT_MENU_INSTRUCTION = "↑↓/jk · ↵ open · C-g help · Esc/b/q exit"
 
 
 def project_menu(workspace: Path, include_done: bool) -> int:
@@ -618,7 +609,7 @@ def project_menu(workspace: Path, include_done: bool) -> int:
                 summary=f"Registry: {workspace}",
                 instruction=PROJECT_MENU_INSTRUCTION,
             )
-            if result.action in {"quit", "back"}:
+            if result.action == "back":
                 return 0
             if result.index is not None and projects:
                 task_menu(projects[result.index], include_done)
@@ -629,7 +620,7 @@ def project_menu(workspace: Path, include_done: bool) -> int:
             choice = _prompt_choice(len(projects), allow_back=False)
         except menu.ContextCancelled:
             return 0
-        if choice == "q":
+        if choice in {"b", "q"}:
             return 0
         if not choice.isdigit() or not 1 <= int(choice) <= len(projects):
             print("invalid choice")

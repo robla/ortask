@@ -60,10 +60,9 @@ class ProjectRow:
 class MenuResult:
     """Outcome of a :func:`select_menu` interaction.
 
-    ``action`` is one of ``"select"``, ``"quit"``, ``"back"``, or a custom
-    action name supplied by the caller (e.g. ``"edit"``, ``"toggle"``).
-    ``index`` is the 0-based highlighted row index, or ``None`` for
-    ``"quit"``/``"back"``.
+    ``action`` is ``"select"``, ``"back"``, or a custom action name supplied by
+    the caller (e.g. ``"edit"``, ``"toggle"``). ``index`` is the 0-based
+    highlighted row index, or ``None`` for ``"back"``.
     """
 
     action: str
@@ -229,7 +228,6 @@ def _selector_help(
     *,
     select_help: str,
     back_help: str,
-    quit_help: str,
 ) -> FormattedText:
     entries = [
         ("↑/↓, j/k", "Move the highlight"),
@@ -244,9 +242,7 @@ def _selector_help(
     entries.extend(
         [
             ("C-g", "Show or close this help"),
-            ("Esc/Enter", "Close help without changing the selection"),
-            ("b", back_help),
-            ("q", quit_help),
+            ("Esc/b/q", back_help),
         ]
     )
     key_width = max(len(key) for key, _ in entries)
@@ -258,6 +254,9 @@ def _selector_help(
     for key, description in entries:
         fragments.append(("class:help.key", f"  {key:<{key_width}}"))
         fragments.append(("", f"  {description}\n"))
+    fragments.append(
+        ("class:dim", "\n  While help is open, C-g/Esc/b/q/Enter closes it.\n")
+    )
     return FormattedText(fragments)
 
 
@@ -271,8 +270,7 @@ def _run_selector(
     actions: dict[str, str | MenuAction] | None = None,
     start_index: int = 0,
     select_help: str = "Open the highlighted item",
-    back_help: str = "Return to the previous menu",
-    quit_help: str = "Quit the current menu",
+    back_help: str = "Back one level (exit at the top level)",
 ) -> MenuResult:
     normalized_actions = {
         key: (
@@ -311,18 +309,12 @@ def _run_selector(
         if row_count:
             event.app.exit(result=MenuResult("select", state["index"]))
 
-    @bindings.add("q")
-    def _quit(event) -> None:
-        event.app.exit(result=MenuResult("quit", None))
-
     # ``escape`` is intentionally non-eager so arrow-key escape sequences are
     # not swallowed; prompt_toolkit disambiguates with its key timeout.
+    @bindings.add("q")
     @bindings.add("b")
-    def _back(event) -> None:
-        event.app.exit(result=MenuResult("back", None))
-
     @bindings.add("escape")
-    def _escape(event) -> None:
+    def _back(event) -> None:
         if help_state["visible"]:
             help_state["visible"] = False
             return
@@ -350,7 +342,6 @@ def _run_selector(
                 normalized_actions,
                 select_help=select_help,
                 back_help=back_help,
-                quit_help=quit_help,
             )
         return render(state["index"])
 
@@ -385,7 +376,7 @@ def _run_selector(
     if instruction:
         def render_footer() -> FormattedText:
             text = (
-                "C-g/Esc/Enter close help"
+                "C-g/Esc/b/q/Enter close help"
                 if help_state["visible"]
                 else instruction
             )
@@ -408,7 +399,7 @@ def _run_selector(
     try:
         result = app.run()
     except (KeyboardInterrupt, EOFError):
-        return MenuResult("quit", None)
+        return MenuResult("back", None)
     if result is None:
         return MenuResult("back", None)
     return result
@@ -426,11 +417,11 @@ def select_menu(
     """Run an inline highlight-bar selector and return a :class:`MenuResult`.
 
     Navigation is Up/Down or ``k``/``j`` (wrapping). ``Enter`` selects the
-    highlighted row (``"select"``); ``C-g`` toggles contextual help; ``q``
-    returns ``"quit"``; ``b`` or ``Esc`` return ``"back"``. Each key in
-    ``actions`` maps to a custom action. A :class:`MenuAction` supplies the key
-    label and description shown in help; bare action-name strings remain
-    supported. Reserved navigation, exit, and help keys should not be reused.
+    highlighted row (``"select"``); ``C-g`` toggles contextual help; and ``q``,
+    ``b``, or ``Esc`` return ``"back"``. Each key in ``actions`` maps to a custom
+    action. A :class:`MenuAction` supplies the key label and description shown in
+    help; bare action-name strings remain supported. Reserved navigation, back,
+    and help keys should not be reused.
 
     Assumes :func:`interactive_select_available` is true; callers use the plain
     numbered menu otherwise. The application renders inline (not full screen),
@@ -463,8 +454,7 @@ def select_menu(
         actions=actions,
         start_index=start_index,
         select_help="Open the highlighted task's details",
-        back_help="Return to the previous menu",
-        quit_help="Quit the current task view",
+        back_help="Back one level (exit at the top level)",
     )
 
 
@@ -502,8 +492,7 @@ def select_project_menu(
         instruction=instruction,
         start_index=start_index,
         select_help="Open the highlighted project",
-        back_help="Close the project browser",
-        quit_help="Close the project browser",
+        back_help="Back one level (exit at the top level)",
     )
 
 

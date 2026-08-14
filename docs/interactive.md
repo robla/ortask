@@ -41,10 +41,11 @@ The task selector has two modes, chosen automatically by
   highlight (wrapping); `Enter` opens the focus view; Shift-Left/Right cycles
   the highlighted task through the `TODO`/`DONE` ring; `C-t` cycles the
   visibility filter (`all -> TODO -> DONE`); `e` opens the editor at the
-  highlighted task's line; `C-g` opens contextual command help; `b`/`Esc` go
-  back; `q` closes the current task-file context. In `orgmgr.py -i`, that returns
-  to the project menu; in local `ortask.py -i`, it exits. The app renders inline
-  (not full screen), so it erases itself on exit and leaves scrollback intact.
+  highlighted task's line; `C-g` opens contextual command help; and `Esc`, `b`,
+  or `q` goes back exactly one level. In `orgmgr.py -i`, leaving a task list
+  returns to the project menu; in local `ortask.py -i`, that task list is the top
+  level, so leaving it exits. The app renders inline (not full screen), so it
+  erases itself on exit and leaves scrollback intact.
   Long lists scroll within the row body while the title, summary, and key hint
   remain fixed; the selector keeps one context row above and below the highlight
   when space permits.
@@ -55,9 +56,15 @@ The task selector has two modes, chosen automatically by
 The top-level project list uses the same shared selection model: highlight-bar
 mode on an interactive TTY, and the Rich/plain numbered dashboard as the
 non-interactive fallback. In highlight-bar mode, `C-g` replaces the rows with a
-modal help view; `C-g`, `Esc`, or `Enter` closes help and restores the same
-selection. Custom actions use `menu.MenuAction` metadata so adding a binding also
-adds its key and description to this help view.
+modal help view; `C-g`, `Esc`, `b`, `q`, or `Enter` closes help and restores the
+same selection. Custom actions use `menu.MenuAction` metadata so adding a binding
+also adds its key and description to this help view.
+
+Treat the interactive UI as a stack. `Esc`, `b`, and `q` are synonyms for
+popping its top layer: help returns to the underlying menu, a subtask returns to
+its parent task, a task focus view returns to its task list, and a project task
+list returns to the project list. Popping the root local-task or project-list
+layer exits the program; no key should skip intermediate layers.
 
 Unselected rows show task state through the label color (TODO yellow, DONE
 green). The highlighted row instead becomes a single continuous bar in the
@@ -141,7 +148,7 @@ Shared behavior should include:
 - status-first dashboards that render before prompting
 - a consistent row model: number, status, title, optional detail columns
 - the same prompt vocabulary: number/Enter to select, arrows to move, `e` to
-  edit/open, `b` or `Esc` back, `q` close the current context
+  edit/open, and `Esc`/`b`/`q` to pop one context
 - Org/Emacs-compatible task-state cycling with Shift-Right and Shift-Left as
   the primary keys
 - optional Rich rendering with a plain text fallback
@@ -217,7 +224,7 @@ watch.
    a non-interactive equivalent and automation never blocks on a picker.
 2. **Done.** `ortasklib.menu.select_menu()` is a narrow abstraction over rows
    that returns exactly one of: a selected row, an action token (`edit`,
-   `toggle`, …) bound to a row (`MenuResult`), or `back`/`quit`. It renders and
+   `toggle`, …) bound to a row (`MenuResult`), or `back`. It renders and
    collects choices only; it owns no task logic.
 3. **Done.** The selector is a non-full-screen `prompt_toolkit` application with
    keybindings for navigation (arrow keys / `j`/`k`), the `TODO`/`DONE` toggle
@@ -260,11 +267,10 @@ Recommended task-list bindings:
   multi-key command families while reserving `/` for search.
 - `C-g` opens contextual help. Although Emacs normally uses `C-g` to quit the
   current command, ortask uses it as the always-available command reference;
-  `C-g`, `Esc`, or `Enter` returns to the unchanged menu selection.
+  `C-g`, `Esc`, `b`, `q`, or `Enter` returns to the unchanged menu selection.
 - `/` should be reserved for search in the current list or backing Org file.
-- `b` and `Esc` go back one context without writing.
-- `q` closes the current context: local `ortask.py -i` exits, while project mode
-  returns from a project task view to the project list.
+- `Esc`, `b`, and `q` all pop exactly one context. Only popping the top-level
+  local task list or project list exits the program.
 
 Avoid making `t` a row-selector state toggle. It is not very mnemonic once the
 command grows beyond "toggle", and it competes with future meanings such as
@@ -306,8 +312,7 @@ elweek tasks:
   1. [TODO] tw26W26 Promote June 24 ElectoramaWeekly episode
   2. [TODO] tw26W26.1 Prepare next episode
   e. open this Org file in editor
-  b. back
-  q. close this task view
+  Esc/b/q. back one level
 ```
 
 The user chooses what to work on. The menu should support focus without hiding
@@ -337,7 +342,7 @@ https://www.reddit.com/r/electorama/submit
 Actions:
   d. mark DONE
   e. open in editor
-  b. back to task menu
+  Esc/b/q. back one level
 ```
 
 Display descendant subtasks, capped at 20 lines with a truncation note. Plain
