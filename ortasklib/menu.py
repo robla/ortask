@@ -70,6 +70,15 @@ class MenuResult:
     index: int | None
 
 
+@dataclass(frozen=True)
+class MenuAction:
+    """One selector action, including its discoverable help description."""
+
+    name: str
+    key_label: str
+    description: str
+
+
 class ContextCancelled(Exception):
     """Raised when Esc cancels the current menu context."""
 
@@ -105,6 +114,8 @@ SELECT_STYLE = (
             "status.done": "ansigreen",
             "status.other": "ansibrightblack",
             "project.name": "ansicyan",
+            "help.heading": "bold",
+            "help.key": "ansicyan bold",
             "hint": "ansibrightblack",
             "dim": "ansibrightblack",
         }
@@ -213,6 +224,43 @@ def _selected_bar(status: str) -> str:
     return "selected.other"
 
 
+def _selector_help(
+    actions: dict[str, MenuAction],
+    *,
+    select_help: str,
+    back_help: str,
+    quit_help: str,
+) -> FormattedText:
+    entries = [
+        ("↑/↓, j/k", "Move the highlight"),
+        ("Enter", select_help),
+    ]
+    seen_actions: set[tuple[str, str]] = set()
+    for action in actions.values():
+        entry = (action.key_label, action.description)
+        if entry not in seen_actions:
+            entries.append(entry)
+            seen_actions.add(entry)
+    entries.extend(
+        [
+            ("C-g", "Show or close this help"),
+            ("Esc/Enter", "Close help without changing the selection"),
+            ("b", back_help),
+            ("q", quit_help),
+        ]
+    )
+    key_width = max(len(key) for key, _ in entries)
+    fragments: list[tuple[str, str]] = [
+        ("[SetCursorPosition]", ""),
+        ("class:help.heading", "Interactive help\n"),
+        ("class:dim", "Commands available in this menu\n\n"),
+    ]
+    for key, description in entries:
+        fragments.append(("class:help.key", f"  {key:<{key_width}}"))
+        fragments.append(("", f"  {description}\n"))
+    return FormattedText(fragments)
+
+
 def _run_selector(
     row_count: int,
     render: Callable[[int], FormattedText],
@@ -220,18 +268,29 @@ def _run_selector(
     title: str | None = None,
     summary: str | None = None,
     instruction: str | None = None,
-    actions: dict[str, str] | None = None,
+    actions: dict[str, str | MenuAction] | None = None,
     start_index: int = 0,
+    select_help: str = "Open the highlighted item",
+    back_help: str = "Return to the previous menu",
+    quit_help: str = "Quit the current menu",
 ) -> MenuResult:
-    actions = actions or {}
+    normalized_actions = {
+        key: (
+            action
+            if isinstance(action, MenuAction)
+            else MenuAction(action, key, f"Run {action.replace('_', ' ')}")
+        )
+        for key, action in (actions or {}).items()
+    }
     state = {
         "index": min(max(start_index, 0), row_count - 1) if row_count else 0
     }
+    help_state = {"visible": False}
 
     bindings = KeyBindings()
 
     def _move(delta: int) -> None:
-        if row_count:
+        if row_count and not help_state["visible"]:
             state["index"] = (state["index"] + delta) % row_count
 
     @bindings.add("up")
@@ -246,6 +305,9 @@ def _run_selector(
 
     @bindings.add("enter")
     def _select(event) -> None:
+        if help_state["visible"]:
+            help_state["visible"] = False
+            return
         if row_count:
             event.app.exit(result=MenuResult("select", state["index"]))
 
@@ -256,22 +318,44 @@ def _run_selector(
     # ``escape`` is intentionally non-eager so arrow-key escape sequences are
     # not swallowed; prompt_toolkit disambiguates with its key timeout.
     @bindings.add("b")
-    @bindings.add("escape")
     def _back(event) -> None:
         event.app.exit(result=MenuResult("back", None))
 
+    @bindings.add("escape")
+    def _escape(event) -> None:
+        if help_state["visible"]:
+            help_state["visible"] = False
+            return
+        event.app.exit(result=MenuResult("back", None))
+
+    @bindings.add("c-g", eager=True)
+    def _help(event) -> None:
+        help_state["visible"] = not help_state["visible"]
+
     def _make_action(action_name: str):
         def handler(event) -> None:
+            if help_state["visible"]:
+                return
             event.app.exit(
                 result=MenuResult(action_name, state["index"] if row_count else None)
             )
         return handler
 
-    for key, action_name in actions.items():
-        bindings.add(key)(_make_action(action_name))
+    for key, action in normalized_actions.items():
+        bindings.add(key)(_make_action(action.name))
+
+    def render_body() -> FormattedText:
+        if help_state["visible"]:
+            return _selector_help(
+                normalized_actions,
+                select_help=select_help,
+                back_help=back_help,
+                quit_help=quit_help,
+            )
+        return render(state["index"])
 
     body_control = FormattedTextControl(
-        lambda: render(state["index"]), focusable=True, show_cursor=False
+        render_body, focusable=True, show_cursor=False
     )
     body_window = Window(
         body_control,
@@ -299,12 +383,17 @@ def _run_selector(
         )
     containers.append(body_window)
     if instruction:
-        footer = FormattedText(
-            [("", "\n"), ("class:hint", instruction)]
-        )
+        def render_footer() -> FormattedText:
+            text = (
+                "C-g/Esc/Enter close help"
+                if help_state["visible"]
+                else instruction
+            )
+            return FormattedText([("", "\n"), ("class:hint", text)])
+
         containers.append(
             Window(
-                FormattedTextControl(footer),
+                FormattedTextControl(render_footer),
                 height=2,
                 always_hide_cursor=True,
             )
@@ -331,17 +420,17 @@ def select_menu(
     title: str | None = None,
     summary: str | None = None,
     instruction: str | None = None,
-    actions: dict[str, str] | None = None,
+    actions: dict[str, str | MenuAction] | None = None,
     start_index: int = 0,
 ) -> MenuResult:
     """Run an inline highlight-bar selector and return a :class:`MenuResult`.
 
     Navigation is Up/Down or ``k``/``j`` (wrapping). ``Enter`` selects the
-    highlighted row (``"select"``); ``q`` returns ``"quit"``; ``b`` or ``Esc``
-    return ``"back"``. Each key in ``actions`` maps to a custom action name
-    returned for the highlighted row, e.g. ``{"e": "edit", "s-right": "toggle"}``.
-    Reserved keys (arrows, ``k``/``j``, ``Enter``, ``q``, ``b``, ``Esc``) should
-    not be reused as action keys.
+    highlighted row (``"select"``); ``C-g`` toggles contextual help; ``q``
+    returns ``"quit"``; ``b`` or ``Esc`` return ``"back"``. Each key in
+    ``actions`` maps to a custom action. A :class:`MenuAction` supplies the key
+    label and description shown in help; bare action-name strings remain
+    supported. Reserved navigation, exit, and help keys should not be reused.
 
     Assumes :func:`interactive_select_available` is true; callers use the plain
     numbered menu otherwise. The application renders inline (not full screen),
@@ -373,6 +462,9 @@ def select_menu(
         instruction=instruction,
         actions=actions,
         start_index=start_index,
+        select_help="Open the highlighted task's details",
+        back_help="Return to the previous menu",
+        quit_help="Quit the current task view",
     )
 
 
@@ -409,6 +501,9 @@ def select_project_menu(
         summary=summary,
         instruction=instruction,
         start_index=start_index,
+        select_help="Open the highlighted project",
+        back_help="Close the project browser",
+        quit_help="Close the project browser",
     )
 
 

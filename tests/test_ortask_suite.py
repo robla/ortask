@@ -1094,7 +1094,13 @@ def test_select_menu_keybindings_headless() -> None:
         menu.MenuRow(2, "TODO", "t0002 second"),
         menu.MenuRow(3, "DONE", "t0003 third"),
     ]
-    actions = {"e": "edit", "c-t": "filter", "s-left": "toggle", "s-right": "toggle"}
+    toggle = menu.MenuAction("toggle", "Shift+←/→", "Cycle task state")
+    actions = {
+        "e": menu.MenuAction("edit", "e", "Open in editor"),
+        "c-t": menu.MenuAction("filter", "C-t", "Cycle task filter"),
+        "s-left": toggle,
+        "s-right": toggle,
+    }
 
     def run(keys: str) -> menu.MenuResult:
         with create_pipe_input() as pin:
@@ -1109,8 +1115,29 @@ def test_select_menu_keybindings_headless() -> None:
     assert run("j\x14") == menu.MenuResult("filter", 1)      # move then filter
     assert run("\x1b[1;2C") == menu.MenuResult("toggle", 0)  # Shift-Right
     assert run("\x1b[1;2D") == menu.MenuResult("toggle", 0)  # Shift-Left
+    assert run("\x07\x07j\r") == menu.MenuResult("select", 1)  # C-g toggles help
+    assert run("\x07e\x07e") == menu.MenuResult("edit", 0)  # actions pause in help
+    assert run("\x07q") == menu.MenuResult("quit", None)  # q remains active in help
+    assert run("\x07b") == menu.MenuResult("back", None)  # b remains active in help
     assert run("q") == menu.MenuResult("quit", None)
     assert run("b") == menu.MenuResult("back", None)
+
+
+@pytest.mark.skipif(menu.FormattedText is None, reason="prompt_toolkit not installed")
+def test_selector_help_uses_action_metadata_once() -> None:
+    # Help should discover custom commands without listing aliases as duplicates.
+    help_view = menu._selector_help(
+        projtui.TASK_MENU_ACTIONS,
+        select_help="Open task details",
+        back_help="Return to tasks",
+        quit_help="Quit task view",
+    )
+    text = "".join(fragment[1] for fragment in help_view)
+
+    assert "C-g" in text and "Show or close this help" in text
+    assert "Open the highlighted task in the editor" in text
+    assert "Cycle visibility through all, TODO, and DONE" in text
+    assert text.count("Cycle the highlighted task's state") == 1
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")

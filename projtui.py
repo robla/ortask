@@ -337,8 +337,21 @@ def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
 def _task_menu_instruction(filter_mode: str) -> str:
     return (
         f"{_task_filter_label(filter_mode)} · ↑↓/jk · ↵ open · "
-        "Shift+←/→ state · C-t filter · e edit · Esc/b back · q quit"
+        "C-g help · Shift+←/→ state · C-t filter · e edit · Esc/b back · q quit"
     )
+
+
+_TOGGLE_MENU_ACTION = menu.MenuAction(
+    "toggle", "Shift+←/→", "Cycle the highlighted task's state"
+)
+TASK_MENU_ACTIONS = {
+    "e": menu.MenuAction("edit", "e", "Open the highlighted task in the editor"),
+    "c-t": menu.MenuAction(
+        "filter", "C-t", "Cycle visibility through all, TODO, and DONE"
+    ),
+    "s-left": _TOGGLE_MENU_ACTION,
+    "s-right": _TOGGLE_MENU_ACTION,
+}
 
 
 def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -> bool:
@@ -466,12 +479,7 @@ def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool)
             title=f"{project.name} tasks",
             summary=summary,
             instruction=_task_menu_instruction(filter_mode),
-            actions={
-                "e": "edit",
-                "c-t": "filter",
-                "s-left": "toggle",
-                "s-right": "toggle",
-            },
+            actions=TASK_MENU_ACTIONS,
             start_index=_anchor_index(items, selected_id, fallback_index),
         )
         if result.index is not None and items:
@@ -596,7 +604,7 @@ def focus_menu(buf: OrgBuffer, item: MenuItem) -> bool:
             print("invalid choice")
 
 
-PROJECT_MENU_INSTRUCTION = "↑↓/jk · ↵ open · Esc/q quit"
+PROJECT_MENU_INSTRUCTION = "↑↓/jk · ↵ open · C-g help · Esc/q quit"
 
 
 def project_menu(workspace: Path, include_done: bool) -> int:

@@ -41,19 +41,23 @@ The task selector has two modes, chosen automatically by
   highlight (wrapping); `Enter` opens the focus view; Shift-Left/Right cycles
   the highlighted task through the `TODO`/`DONE` ring; `C-t` cycles the
   visibility filter (`all -> TODO -> DONE`); `e` opens the editor at the
-  highlighted task's line; `b`/`Esc` go back; `q` closes the current task-file
-  context. In `orgmgr.py -i`, that returns to the project menu; in local
-  `ortask.py -i`, it exits. The app renders inline (not full screen), so it
-  erases itself on exit and leaves scrollback intact. Long lists scroll within
-  the row body while the title, summary, and key hint remain fixed; the selector
-  keeps one context row above and below the highlight when space permits.
+  highlighted task's line; `C-g` opens contextual command help; `b`/`Esc` go
+  back; `q` closes the current task-file context. In `orgmgr.py -i`, that returns
+  to the project menu; in local `ortask.py -i`, it exits. The app renders inline
+  (not full screen), so it erases itself on exit and leaves scrollback intact.
+  Long lists scroll within the row body while the title, summary, and key hint
+  remain fixed; the selector keeps one context row above and below the highlight
+  when space permits.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved as the scriptable fallback with the
   same `C-t` visibility cycle.
 
 The top-level project list uses the same shared selection model: highlight-bar
 mode on an interactive TTY, and the Rich/plain numbered dashboard as the
-non-interactive fallback.
+non-interactive fallback. In highlight-bar mode, `C-g` replaces the rows with a
+modal help view; `C-g`, `Esc`, or `Enter` closes help and restores the same
+selection. Custom actions use `menu.MenuAction` metadata so adding a binding also
+adds its key and description to this help view.
 
 Unselected rows show task state through the label color (TODO yellow, DONE
 green). The highlighted row instead becomes a single continuous bar in the
@@ -218,8 +222,8 @@ watch.
 3. **Done.** The selector is a non-full-screen `prompt_toolkit` application with
    keybindings for navigation (arrow keys / `j`/`k`), the `TODO`/`DONE` toggle
    ring (Shift-Left/Right), task-state filtering (`C-t`), editor launching (`e`),
-   and cancellation (`Esc` / `b`). The ring itself is `tasks.next_state()`, a
-   pure helper.
+   contextual help (`C-g`), and cancellation (`Esc` / `b`). The ring itself is
+   `tasks.next_state()`, a pure helper.
 4. Treat Textual as the *exit ramp*, not a competitor. The tripwire is concrete:
    the moment the selector wants a live detail-preview pane that re-renders as
    the highlight bar moves, multiple focusable regions, scrolling columns, or
@@ -254,6 +258,9 @@ Recommended task-list bindings:
 - `C-t` cycles the task visibility filter: `all -> TODO -> DONE`. This is not
   an exact Emacs binding, but it keeps `C-c` and `C-x` open for future
   multi-key command families while reserving `/` for search.
+- `C-g` opens contextual help. Although Emacs normally uses `C-g` to quit the
+  current command, ortask uses it as the always-available command reference;
+  `C-g`, `Esc`, or `Enter` returns to the unchanged menu selection.
 - `/` should be reserved for search in the current list or backing Org file.
 - `b` and `Esc` go back one context without writing.
 - `q` closes the current context: local `ortask.py -i` exits, while project mode
