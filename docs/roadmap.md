@@ -1,6 +1,12 @@
-# Interactive UI Roadmap
+# ortask Roadmap
 
-## Goal
+This document holds design context for multi-step work that is too detailed for
+`todo.org`. The task list remains the source of execution status and links to
+the corresponding roadmap area by task ID.
+
+## Interactive UI
+
+### Goal
 
 `ortask.py -i` should behave as one compact terminal mini app. By default it
 should occupy a 20-row region at the bottom of the terminal, preserve the shell
@@ -18,9 +24,10 @@ and resumes that application. Dirty task sessions resolve Save,
 Discard, or Continue Editing inside the bounded view stack, and task sessions
 with recovery data begin with bounded Keep, Recover, and Discard choices. The
 `orgmgr.py -i` project list now serves as the root of that same view stack. The
-final outcome policy and PTY cleanup coverage remain.
+normal final-frame policy and PTY contract are covered; explicit cleanup and
+PTY coverage for abnormal exits remain.
 
-## Original Cause
+### Original Cause
 
 The original production selector was inline but not a persistent application.
 `ortasklib.menu._run_selector()` constructs a new
@@ -40,10 +47,10 @@ interactions.
 
 Help already demonstrates the desired behavior within one selector. `Ctrl-G`
 changes selector state and invalidates the existing application, so Help
-replaces the rows and then restores them in place. The rest of the interactive
-workflow should use that model.
+replaces the rows and then restores them in place. That behavior established
+the model now used by the rest of the interactive workflow.
 
-## Bounded Inline Contract
+### Bounded Inline Contract
 
 The ortask interaction should follow these rules:
 
@@ -76,7 +83,7 @@ bounded viewport. A later `--height` option or environment setting can be
 added if a real workflow needs it; configuration is not required for the first
 migration.
 
-## Proposed Application Shape
+### Application Shape
 
 The implementation now provides a session-oriented API alongside the one-shot
 selector:
@@ -89,21 +96,19 @@ selector:
 - `projtui.InteractiveTaskController` constructs task-specific views and owns
   Org parsing, `OrgBuffer` edits, stable task selection, and task actions.
 
-The layout can follow inedit's proven structure: an `HSplit` with dynamic
-header, one body window, and a fixed footer, all constrained by a callable
-height. A `DynamicContainer` or equivalent state-driven control should swap
-the body when a view needs a different focusable control. Ordinary menu views
-can share one `FormattedTextControl`; text entry and confirmation views may use
-a focused `BufferControl` or `TextArea` without starting another application.
+The implemented layout follows inedit's proven structure: an `HSplit` with a
+dynamic header, one scrolling body window, and a fixed footer, all constrained
+by a callable height. Menu, detail, Help, picker, and confirmation views share
+one `FormattedTextControl`. Future text-entry views may introduce a focused
+`BufferControl` or `TextArea` without starting another application.
 
-Command metadata should remain the source for bindings, footer hints, and
-`Ctrl-G` Help. The current `MenuAction` is a useful starting point, but the
-session needs context-sensitive availability and handlers that transition
-state rather than return to an outer Python loop.
+Command metadata remains the source for bindings, footer hints, and `Ctrl-G`
+Help. New `MenuAction` handlers should transition session state rather than
+return to an outer Python loop.
 
-## Migration Stages
+### Migration Stages
 
-### 1. Characterize the terminal contract
+#### 1. Characterize the terminal contract
 
 **Implemented for normal operation.** Pipe-input tests cover task/subtask/Help/
 picker transitions in one application, bounded scrolling, effective-height
@@ -113,47 +118,34 @@ termios restoration, absence of common alternate-screen entry sequences, and
 placement of the next prompt. Abnormal signal and exception cases remain in
 Stage 6.
 
-Add prompt_toolkit pipe-input tests and PTY-level tests before changing the
-lifecycle. Cover a long task list, task-detail entry and return, Help, a nested
-picker, and final exit. Tests should distinguish repaint control sequences from
-new retained frames, verify that no alternate-screen entry sequence is emitted,
-and confirm that the cursor and next shell prompt end below the application.
+The tests distinguish repaint control sequences from retained frames, verify
+that no common alternate-screen entry sequence is emitted, and confirm that
+the cursor and next shell prompt end below the application.
 
-### 2. Add the persistent bounded shell
+#### 2. Add the persistent bounded shell
 
 **Implemented.** `InlineMenuSession` supplies the 20-row dynamic
 header/body/footer layout and resize clamping for local task sessions and the
 registry-scoped project/task stack. Compatibility one-shot selectors remain
 available but are no longer used by production interactive paths.
 
-Build a single 20-row application containing a dynamic header, scrolling body,
-and command footer. Port task-list navigation first while keeping selection
-anchored by task ID. Add `before_render` resize handling so shrinking the
-terminal adjusts the effective height without replacing the application.
-
 The existing `select_menu()` API remains for compatibility and focused legacy
 tests, but production interactive paths no longer use repeated one-shot
 applications. The obsolete API is now eligible for separate cleanup.
 
-### 3. Move contexts onto a view stack
+#### 3. Move contexts onto a view stack
 
 **Implemented.** Local task details, nested subtasks, Help, task confirmation,
 priority selection, and the `orgmgr.py -i` project list now push, pop, or
 replace `MenuView` instances without ending the application. Returning from a
 task context refreshes the project list and restores selection by project name.
 
-Represent task details, subtasks, project selection, priority selection, and
-Help as push/pop transitions. Replace recursive `focus_menu()` calls and outer
-`while` loops with controller transitions. Each view should preserve its
-stable selection key so returning to a parent restores the prior highlight and
-scroll position.
-
 Help can be either a modal flag over the current view or an explicit stack
 entry, but it must use the same command metadata and close back to the exact
 selection. A picker cancellation must similarly restore the parent without
 changing data.
 
-### 4. Bring prompts inside the application
+#### 4. Bring prompts inside the application
 
 **Implemented for interactive task sessions.** Leaving a dirty task session
 pushes a bounded Save/Discard/Continue Editing view. Entering with distinct
@@ -166,21 +158,20 @@ Keep the existing `OrgBuffer` safety contract: navigation is read-only, edits
 remain buffered and mirrored to the auto-save file, and the real Org file is
 written only through an explicit save path.
 
-### 5. Suspend for the external editor
+#### 5. Suspend for the external editor
 
 **Implemented for the task session.** `InlineMenuSession.suspend()` uses
 prompt_toolkit terminal handoff, and the task controller reloads and replaces
 the active view after `_open_editor()` returns.
 
-Replace direct `subprocess.run()` from a completed selector with
-prompt_toolkit's `run_in_terminal()` or an equivalent suspend/resume helper.
-Before suspension, resolve pending buffered edits according to an explicit
-policy. After the editor returns, reload the file, reparse tasks, restore the
-closest stable selection, and repaint the bounded application. Editor launch
-errors should become status messages rather than raw output interleaved with
-the UI.
+Before suspension, the controller resolves pending buffered edits according to
+an explicit policy. After the editor returns, it reloads the file, reparses
+tasks, restores the closest stable selection, and repaints the bounded
+application. Editor-launch failures still need to become bounded status
+messages rather than raw output interleaved with the UI; Stage 6 tracks that
+work.
 
-### 6. Finish lifecycle and final display
+#### 6. Finish lifecycle and final display
 
 **Partially implemented.** `InlineMenuSession` starts with
 `erase_when_done=True`. A controlled root pop records the latest factual
@@ -194,7 +185,7 @@ Signal handling, unexpected exceptions, editor failures, and terminal resize
 below the minimum still need explicit failure outcomes and PTY coverage. Those
 paths must leave erasure enabled and restore the terminal before diagnostics.
 
-## Relationship to Handrail
+### Relationship to Handrail
 
 This work should establish the bounded-inline behavior before ortask depends on
 a new shared library. The reusable concepts are the persistent inline shell,
@@ -206,7 +197,7 @@ If inedit and ortask converge on the same semantics after this migration, those
 proven pieces become candidates for a future common package. Avoid designing a
 backend-neutral SDK first and then forcing both applications through it.
 
-## Risks Observed So Far
+### Risks Observed So Far
 
 A brief external read of `ortasklib/menu.py`, `projtui.py`, and their git
 history against inedit's `_inedit/` split, for context ahead of any shared
@@ -237,9 +228,9 @@ extraction:
   are still two paths in one application, not independent consumers; shared
   extraction should continue to wait for matching evidence from another app.
 
-## Completion Criteria
+### Completion Criteria
 
-The roadmap is complete when:
+The interactive UI work is complete when:
 
 - `ort -i` and `orgm -i` each run one prompt_toolkit application per session;
 - the live interface stays within its effective 20-row region through lists,
@@ -248,49 +239,59 @@ The roadmap is complete when:
 - long lists scroll without losing the selected row;
 - external editor handoff resumes the same session cleanly;
 - save, discard, cancellation, and recovery remain safe and visible;
-- non-TTY numbered behavior remains usable; and
+- non-TTY numbered behavior remains usable;
 - pipe-input and PTY tests defend repainting, resize, terminal restoration, and
-  absence of alternate-screen switching.
+  absence of alternate-screen switching; and
+- signals, unexpected exceptions, editor failures, and undersized terminals
+  restore terminal state before reporting a clear failure.
 
-# Task Archiving
+## Task Archiving
 
 Tracked as `t0010`. This is a separate area from the interactive-UI work above.
 
-## Goal
+**Status:** Specified; implementation has not started.
+
+### Goal
 
 Move completed tasks out of the working task file without inventing an ortask
 convention. An Emacs org user who already archives with `C-c C-x C-a` should
 find ortask's archive file unremarkable, and should be able to keep archiving
 from Emacs afterward with no ortask involvement.
 
-## Stock Emacs Behavior to Match
+### Stock Emacs Behavior to Match
 
-`org-archive-subtree` writes to `org-archive-location`, whose default is:
+[Org's archive-file documentation](https://orgmode.org/manual/Moving-subtrees.html)
+describes `org-archive-subtree` and `org-archive-location`, whose stock value
+is:
 
 ```
-"%s_archive::* Archived Tasks"
+"%s_archive::"
 ```
 
-`%s` expands to the current file's full name including its extension, so
-`todo.org` archives to `todo.org_archive` — the extension lands mid-filename,
-which looks wrong but is what an unconfigured Emacs produces. Entries append
-under a top-level `* Archived Tasks` heading, promoted to that level rather
-than re-nested under copies of their original parents. Original position is
-recorded in a property drawer on the archived heading: `ARCHIVE_TIME`,
-`ARCHIVE_FILE`, `ARCHIVE_OLPATH` (the outline path of the former parents),
-`ARCHIVE_CATEGORY`, and `ARCHIVE_TODO` (the state at archive time).
+`%s` expands to the source file's basename including its extension, so
+`todo.org` archives to `todo.org_archive`. The empty location after `::` does
+not specify a container heading. `* Archived Tasks` is a common customization,
+not stock behavior, and ortask should not create it unless the effective
+archive location requests it.
 
-Two variations are common enough to accommodate but not to default to: users
-who override the location to `%s_archive.org` so the file ends in `.org`, and
-users who tag entries `:ARCHIVE:` in place instead of moving them at all.
-Archiving in org is not exclusively a file move.
+Org records source context in a property drawer on the archived heading. The
+fields are controlled by `org-archive-save-context-info`; its stock settings
+include archive time, source file, former outline path, category, TODO state,
+and inherited tags. Ortask should define and test its compatibility baseline
+explicitly rather than assuming every Emacs configuration writes identical
+metadata.
 
-## Direction for ortask
+Common customizations include overriding the destination filename, adding a
+target such as `* Archived Tasks`, or tagging entries `:ARCHIVE:` in place
+instead of moving them. Archiving in Org is not exclusively a file move.
+
+### Direction for ortask
 
 Add an `archive` verb to `ortask.py` that moves one or more DONE subtrees to
-the archive file and writes the same property drawer Emacs would. The archive
-target derives from the task file's own name, so `tasks.org` archives to
-`tasks.org_archive`; a later config key or `--to` option can override it.
+the archive file and writes the documented stock-compatible context
+properties. The archive target derives from the task file's own name, so
+`tasks.org` archives to `tasks.org_archive`; a later config key or `--to`
+option can override it.
 
 Constraints that follow from existing project rules:
 
@@ -302,10 +303,12 @@ Constraints that follow from existing project rules:
   by `ortask.py`'s discovery order, and it must not appear as a project's task
   file in `orgmgr.py`. Reading it — `ort list --archived` or similar — is a
   reasonable later addition, but the default views should stay quiet.
-- Writes stay atomic and symlink-resolving on both files, and a failure must
-  not leave a subtree in neither file or in both.
+- Writes stay atomic and symlink-resolving for both files. Because two file
+  replacements are not one atomic transaction, the operation needs rollback
+  or recoverable transaction state so a failure does not lose or duplicate the
+  subtree.
 
-## Open Questions
+### Open Questions
 
 - Whether `archive` takes explicit IDs, a `--done` sweep, or both.
 - Whether SUPERSEDED (terminal but not DONE) subtrees are eligible.
