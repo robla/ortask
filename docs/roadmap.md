@@ -285,6 +285,14 @@ Common customizations include overriding the destination filename, adding a
 target such as `* Archived Tasks`, or tagging entries `:ARCHIVE:` in place
 instead of moving them. Archiving in Org is not exclusively a file move.
 
+Stock archiving does not copy the source file's in-buffer keyword settings, and
+`.org_archive` is not in `auto-mode-alist`, so a newly created archive gets a
+`-*- mode: org -*-` line but no `#+TODO:` declaration. Any custom terminal
+keyword in the moved subtrees then stops parsing as a state: Org folds the word
+into the heading title instead. Archiving ElectoramaWeekly's four terminal
+weeks produced an archive in which only 23 of 64 headings still read as
+complete, until the declaration was added by hand.
+
 ### Direction for ortask
 
 Add an `archive` verb to `ortask.py` that moves one or more DONE subtrees to
@@ -307,6 +315,14 @@ Constraints that follow from existing project rules:
   replacements are not one atomic transaction, the operation needs rollback
   or recoverable transaction state so a failure does not lose or duplicate the
   subtree.
+- A newly created archive file should carry the source file's `#+TODO:`
+  declaration, so custom terminal keywords keep parsing as states rather than
+  decaying into heading text. This is a deliberate deviation from stock
+  behavior; see castabout's `docs/roadmap.md` "Archive Declaration". When the
+  archive already exists, merge into its declaration rather than adding a
+  second one, and keep keywords that earlier entries were archived under — an
+  archive accumulates across renames, so its declaration is the union over
+  time, not a snapshot of current vocabulary.
 
 ### Open Questions
 
