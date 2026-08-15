@@ -19,6 +19,8 @@ terminal-aware effective height.
 Preserve stable selection and scroll state when pushing and popping views.
 *** TODO [#A] t0009.4 Move recovery and save/discard prompts into the bounded application
 Show confirmations and outcomes in the active region without appending output.
+**** DONE [#A] t0009.4.1 Move local save/discard confirmation into the bounded task session
+Keep recovery and the shared project/task session for separate reviewable changes.
 *** DONE [#A] t0009.5 Suspend and resume the session around the external editor
 Use prompt_toolkit terminal handoff, then reload data and repaint the same view.
 *** TODO [#B] t0009.6 Define and test controlled final-frame and failure behavior

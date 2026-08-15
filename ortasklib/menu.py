@@ -94,6 +94,7 @@ class MenuView:
     back_help: str = "Back one level (exit at the top level)"
     selected_index: int = 0
     on_resume: Callable[["InlineMenuSession"], None] | None = None
+    on_back: Callable[["InlineMenuSession"], bool] | None = None
 
     def clamp_selection(self) -> None:
         if not self.rows:
@@ -451,16 +452,22 @@ class InlineMenuSession:
         self.help_visible = False
         self.application.invalidate()
 
-    def pop_view(self) -> None:
+    def pop_view(self, *, message: str | None = None) -> None:
         self.help_visible = False
         self.message = None
+        active = self.current_view
+        if active.on_back is not None and not active.on_back(self):
+            self.application.invalidate()
+            return
         if len(self.views) == 1:
+            self.message = message
             self.application.exit(result=MenuResult("back", None))
             return
         self.views.pop()
         resumed = self.current_view
         if resumed.on_resume is not None:
             resumed.on_resume(self)
+        self.message = message
         self.application.invalidate()
 
     def set_message(self, message: str | None) -> None:

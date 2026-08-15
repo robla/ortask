@@ -1258,8 +1258,8 @@ def test_inline_task_contexts_share_one_bounded_application(
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            # Include a canceled picker before applying priority C.
-            pin.send_text("\rjjj\rq\x07qpqpk\rqq")
+            # Include a canceled picker, then discard the buffered priority edit.
+            pin.send_text("\rjjj\rq\x07qpqpk\rqqj\r")
             controller.run()
 
     assert len(applications) == 1
@@ -1268,7 +1268,7 @@ def test_inline_task_contexts_share_one_bounded_application(
     assert controller.session.effective_height == 20
     assert applications[0].full_screen is False
     assert applications[0].erase_when_done is False
-    assert "** TODO [#C] t0001 Parent" in buf.read()
+    assert buf.read() == original
     assert org_file.read_text(encoding="utf-8") == original
 
 
@@ -1671,7 +1671,7 @@ def test_interactive_toggle_keeps_highlight_on_same_task(tmp_path: Path, monkeyp
 def test_interactive_priority_shortcuts_keep_selected_task(
     tmp_path: Path, monkeypatch
 ) -> None:
-    # Repeated Shift-Up edits should stay anchored and remain buffered.
+    # Repeated Shift-Up edits should stay anchored through the bounded save view.
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
@@ -1687,12 +1687,64 @@ def test_interactive_priority_shortcuts_keep_selected_task(
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            pin.send_text("\x1b[1;2A\x1b[1;2Aq")
+            pin.send_text("\x1b[1;2A\x1b[1;2Aq\r")
             projtui._interactive_task_menu(project, buf, include_done=True)
 
     assert "** TODO [#B] t0001 alpha" in buf.read()
     assert "** TODO t0002 beta" in buf.read()
+    assert org_file.read_text(encoding="utf-8") == buf.read()
+    assert org_file.read_text(encoding="utf-8") != original
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_interactive_save_view_saves_by_default(tmp_path: Path) -> None:
+    # Leaving a dirty task view should save on the confirmation's default row.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 alpha\n")
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("\x1b[1;2Cq\r")
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == "* Tasks\n** DONE t0001 alpha\n"
+    assert buf.dirty is False
+    assert not buf.autosave_path.exists()
+    assert controller.session is not None
+    assert controller.session.message == "Saved changes to tasks.org"
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_interactive_save_view_cancel_then_discard(tmp_path: Path) -> None:
+    # Back should cancel the first exit, while a later Discard leaves disk unchanged.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 alpha\n")
+    original = org_file.read_text(encoding="utf-8")
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Open, cancel, reopen, move to Discard, and confirm.
+            pin.send_text("\x1b[1;2Cqqqj\r")
+            controller.run()
+
     assert org_file.read_text(encoding="utf-8") == original
+    assert buf.read() == original
+    assert buf.dirty is False
+    assert not buf.autosave_path.exists()
+    assert controller.session is not None
+    assert controller.session.message == "Discarded changes to tasks.org"
 
 
 # ---------------------------------------------------------------------------

@@ -408,11 +408,12 @@ def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -
     org_file = canonical_org_file(project)
     buf = OrgBuffer(org_file)
     _maybe_recover(buf)
+    if menu.interactive_select_available():
+        _interactive_task_menu(project, buf, include_done)
+        return
+
     while True:
-        if menu.interactive_select_available():
-            _interactive_task_menu(project, buf, include_done)
-        else:
-            _numbered_task_menu(project, buf, include_done, dashboard=dashboard)
+        _numbered_task_menu(project, buf, include_done, dashboard=dashboard)
         # The menu loop returned, so the user is leaving this file's context.
         # If they Esc the save prompt, stay and re-enter the menu unsaved.
         if _resolve_buffer(buf):
@@ -665,6 +666,49 @@ class InteractiveTaskController:
             select_help="Open the highlighted task's details",
             selected_index=start_index,
             on_resume=resume,
+            on_back=self._handle_task_back,
+        )
+
+    def _handle_task_back(self, session: menu.InlineMenuSession) -> bool:
+        if not self.buf.dirty:
+            return True
+        session.push_view(self._save_view())
+        return False
+
+    def _save_view(self) -> menu.MenuView:
+        name = self.buf.path.name
+        rows = [
+            menu.MenuRow(1, "SAVE", f"Write pending edits to {name}"),
+            menu.MenuRow(2, "DISCARD", "Revert edits and remove the auto-save"),
+            menu.MenuRow(3, "CONTINUE", "Return to the task list without leaving"),
+        ]
+
+        def handle(
+            session: menu.InlineMenuSession,
+            result: menu.MenuResult,
+        ) -> None:
+            if result.action != "select" or result.index is None:
+                return
+            if result.index == 2:
+                session.pop_view()
+                return
+            if result.index == 0:
+                self.buf.save()
+                message = f"Saved changes to {name}"
+            else:
+                self.buf.discard()
+                message = f"Discarded changes to {name}"
+            session.pop_view()
+            session.pop_view(message=message)
+
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title=f"Save changes to {name}?",
+            summary="The Org file has buffered edits",
+            instruction="↑↓/jk · ↵ choose · Esc/b/q continue editing",
+            select_help="Choose how to resolve the buffered edits",
+            back_help="Continue editing without saving or discarding",
         )
 
     @staticmethod
