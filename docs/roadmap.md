@@ -316,3 +316,81 @@ Constraints that follow from existing project rules:
   given that archiving is reversible only by editing two files.
 - Whether ortask should recognize an existing `#+ARCHIVE:` keyword or an
   `:ARCHIVE:` property in the task file and honor it over the default.
+
+## In-App Task Editing
+
+Tracked as `t0014` (heading text) and `t0015` (state and priority). Both build
+on the bounded inline contract above rather than extending it.
+
+**Status:** Priority editing from the list view is already implemented. State
+editing is implemented as a two-entry ring. Heading-text editing does not exist
+in any form.
+
+### Goal
+
+A user should be able to make the ordinary small edits — fix a typo in a task
+title, set a state, set a priority — without leaving the bounded session for an
+external editor. `e` should remain the escape hatch for real restructuring, not
+the only way to correct a word.
+
+### What the List View Already Does
+
+`TASK_MENU_ACTIONS` in `projtui.py` binds, for the highlighted row:
+
+- `Shift+←`/`Shift+→` — cycle state via `_toggle_state()`
+- `Shift+↑`/`Shift+↓` — raise/lower priority via `_shift_priority()`
+- `p` — push the bounded `_priority_view()` picker (A/B/C/none)
+- `C-t` — cycle the all/TODO/DONE filter
+- `e` — suspend and open the external editor
+
+All of these already route through `OrgBuffer`, so they are buffered, mirrored
+to the auto-save file, and written only by an explicit save. The remaining work
+is narrower than it first appears.
+
+### Heading Text (`t0014`)
+
+Nothing supports this yet, at either layer:
+
+- `ortasklib/tasks.py` has `change_state()` and `change_priority()` but no
+  function that rewrites a heading's text. One is needed, following the same
+  shape: take file text plus a task ID, return new lines or `None`.
+- Every view in the bounded session shares one `FormattedTextControl`. Text
+  entry needs the focused `BufferControl` or `TextArea` that the Application
+  Shape section above already anticipates — introduced as another view, not as
+  another `Application`.
+
+Constraints:
+
+- The edit rewrites only the text field. The stars, state keyword, priority
+  cookie, ID, and trailing tags are reassembled by the writer from parsed
+  values, so a user cannot break the ID or state by typing into the field.
+- The field must consume `Esc` to cancel the edit and pop back with data
+  unchanged, which conflicts with the session-wide `Esc` pop. That binding
+  precedence has to be explicit, not incidental.
+- Cancel restores the parent view and selection exactly, matching the existing
+  picker-cancellation rule.
+
+### State and Priority (`t0015`)
+
+Priority is done. The gaps are on the state side:
+
+- `tasks.next_state()` cycles a two-entry `STATE_RING` (`TODO` → `DONE`), so
+  `SUPERSEDED` is unreachable from the interactive UI even though
+  `core.TASK_STATES` includes it and `tasks.change_subtree_state()` can set it.
+  A bounded state picker, symmetric with `_priority_view()`, is the natural fix.
+- State and priority editing are reachable only through `Shift`+arrow chords.
+  Terminals vary in whether they deliver those, and the ring toggle has no
+  plain-key alternative the way priority has `p`.
+
+### Open Questions
+
+- Whether text editing covers the heading only, or eventually the task's body
+  lines too. Body editing is closer to what `e` already provides, and is the
+  point where reusing inedit rather than reimplementing it becomes the
+  question.
+- Whether a state picker replaces the ring toggle or coexists with it.
+- Whether `SUPERSEDED` should be offered in the UI at all, given that it is
+  terminal and the roadmap treats it as a parsing concern more than an editing
+  one.
+- Whether an in-app rename should be undoable within the session, or whether
+  discard-on-exit is a sufficient answer.
