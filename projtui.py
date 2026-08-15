@@ -407,11 +407,11 @@ FOCUS_MENU_ACTIONS = {
 def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -> None:
     org_file = canonical_org_file(project)
     buf = OrgBuffer(org_file)
-    _maybe_recover(buf)
     if menu.interactive_select_available():
         _interactive_task_menu(project, buf, include_done)
         return
 
+    _maybe_recover(buf)
     while True:
         _numbered_task_menu(project, buf, include_done, dashboard=dashboard)
         # The menu loop returned, so the user is leaving this file's context.
@@ -420,22 +420,24 @@ def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -
             return
 
 
-def _maybe_recover(buf: OrgBuffer) -> None:
-    """Offer to recover auto-save data left over from a previous session.
-
-    Three outcomes: recover (load it into the buffer), discard (delete the
-    auto-save), or keep for later (leave the ``#name#`` file untouched and decide
-    next time). Both ``Esc`` and the default keep it, since only an explicit
-    ``n``/``no`` should throw away leftover recovery data.
-    """
+def _recovery_text(buf: OrgBuffer) -> str | None:
+    """Return distinct auto-save content and clean up an identical stale copy."""
     if not buf.autosave_path.exists():
-        return
+        return None
     try:
         recovered = buf.autosave_path.read_text(encoding="utf-8")
     except OSError:
-        return
+        return None
     if recovered == buf.read():
         buf.discard()  # stale but identical -> nothing to recover, clean it up
+        return None
+    return recovered
+
+
+def _maybe_recover(buf: OrgBuffer) -> None:
+    """Offer plain-mode recovery while preserving the safe three-way choice."""
+    recovered = _recovery_text(buf)
+    if recovered is None:
         return
     name = buf.path.name
     auto = buf.autosave_path.name
@@ -614,13 +616,65 @@ class InteractiveTaskController:
             dict.fromkeys([*TASK_MENU_ACTIONS, *FOCUS_MENU_ACTIONS])
         )
         session = menu.InlineMenuSession(
-            self._task_view(),
+            self._initial_view(),
             action_keys=action_keys,
         )
         self.session = session
         session.run()
         if session.error:
             print(session.error, file=sys.stderr)
+
+    def _initial_view(self) -> menu.MenuView:
+        recovered = _recovery_text(self.buf)
+        if recovered is None:
+            return self._task_view()
+        return self._recovery_view(recovered)
+
+    def _recovery_view(self, recovered: str) -> menu.MenuView:
+        name = self.buf.path.name
+        auto = self.buf.autosave_path.name
+        rows = [
+            menu.MenuRow(1, "KEEP", f"Open {name} and preserve {auto} for later"),
+            menu.MenuRow(2, "RECOVER", f"Load {auto} into the editing buffer"),
+            menu.MenuRow(3, "DISCARD", f"Delete {auto} and open the saved file"),
+        ]
+
+        def finish(session: menu.InlineMenuSession, message: str) -> None:
+            session.replace_view(self._task_view())
+            session.set_message(message)
+
+        def keep(session: menu.InlineMenuSession) -> None:
+            finish(session, f"Keeping {auto} for later")
+
+        def handle(
+            session: menu.InlineMenuSession,
+            result: menu.MenuResult,
+        ) -> None:
+            if result.action != "select" or result.index is None:
+                return
+            if result.index == 1:
+                self.buf.recover(recovered)
+                finish(session, f"Recovered {auto} into the buffer (not yet saved)")
+            elif result.index == 2:
+                self.buf.discard()
+                finish(session, f"Discarded recovery data in {auto}")
+            else:
+                keep(session)
+
+        def back(session: menu.InlineMenuSession) -> bool:
+            keep(session)
+            return False
+
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title=f"Unsaved changes found for {name}",
+            summary=f"Recovery file: {auto}",
+            instruction="↑↓/jk · ↵ choose · Esc/b/q keep for later",
+            select_help="Choose how to handle the recovery data",
+            back_help="Keep recovery data and open the saved task list",
+            on_back=back,
+        )
 
     def _task_view(
         self,

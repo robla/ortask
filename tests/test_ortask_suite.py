@@ -1747,6 +1747,94 @@ def test_interactive_save_view_cancel_then_discard(tmp_path: Path) -> None:
     assert controller.session.message == "Discarded changes to tasks.org"
 
 
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+@pytest.mark.parametrize("keep_keys", ["\rq", "qq"])
+def test_interactive_recovery_view_keeps_data_by_default(
+    tmp_path: Path,
+    keep_keys: str,
+    monkeypatch,
+) -> None:
+    # Enter and Back should both preserve recovery data and open the saved tasks.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    original = "* Tasks\n** TODO t0001 alpha\n"
+    recovered = "* Tasks\n** DONE t0001 alpha\n"
+    org_file = write(tmp_path / "tasks.org", original)
+    autosave = projtui.autosave_path_for(org_file)
+    autosave.write_text(recovered, encoding="utf-8")
+    project = manager.Project("demo", tmp_path, org_file)
+
+    def unexpected_prompt(_label):
+        raise AssertionError("interactive recovery must not start a separate prompt")
+
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
+    monkeypatch.setattr(menu, "prompt_text", unexpected_prompt)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text(keep_keys)
+            projtui.task_menu(project, include_done=True)
+
+    assert org_file.read_text(encoding="utf-8") == original
+    assert autosave.read_text(encoding="utf-8") == recovered
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_interactive_recovery_view_recovers_then_saves(tmp_path: Path) -> None:
+    # Recover should load the auto-save as dirty data for the bounded save flow.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    original = "* Tasks\n** TODO t0001 alpha\n"
+    recovered = "* Tasks\n** DONE t0001 alpha\n"
+    org_file = write(tmp_path / "tasks.org", original)
+    autosave = projtui.autosave_path_for(org_file)
+    autosave.write_text(recovered, encoding="utf-8")
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Select Recover, leave the dirty task view, then accept Save.
+            pin.send_text("j\rq\r")
+            controller.run()
+
+    assert buf.read() == recovered
+    assert org_file.read_text(encoding="utf-8") == recovered
+    assert buf.dirty is False
+    assert not autosave.exists()
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_interactive_recovery_view_discards_explicitly(tmp_path: Path) -> None:
+    # Only selecting Discard should delete recovery data without changing disk.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    original = "* Tasks\n** TODO t0001 alpha\n"
+    recovered = "* Tasks\n** DONE t0001 alpha\n"
+    org_file = write(tmp_path / "tasks.org", original)
+    autosave = projtui.autosave_path_for(org_file)
+    autosave.write_text(recovered, encoding="utf-8")
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("jj\rq")
+            controller.run()
+
+    assert buf.read() == original
+    assert org_file.read_text(encoding="utf-8") == original
+    assert not autosave.exists()
+
+
 # ---------------------------------------------------------------------------
 # OrgBuffer auto-save / save-on-exit (t0006)
 # ---------------------------------------------------------------------------

@@ -93,10 +93,12 @@ menu runs against a `projtui.OrgBuffer`, modeled on Emacs (t0006):
   its `[Y/n]` prompt and uses `Esc` to continue editing.
 - Saving never reformats the file; it commits only the same surgical line edits
   the CLI would make.
-- On entering a context where a `#todo.org#` already exists (e.g. after a crash),
-  it offers a three-way choice: `y` recovers those unsaved changes into the
-  buffer, `n` discards the recovery file, and `Enter`/`Esc` keep it untouched to
-  decide later. Only an explicit `n`/`no` deletes leftover recovery data.
+- On entering a highlight-bar context with distinct `#todo.org#` recovery data,
+  the same bounded session starts with Keep for Later, Recover, and Discard
+  choices. Keep is selected by default, and `Esc`/`b`/`q` also keeps the
+  recovery file before opening the saved task list. Only selecting Discard
+  deletes recovery data. The numbered fallback retains the equivalent
+  `y`/`n`/`Enter` prompt.
 - Opening the external editor (`e`) first flushes any pending buffer to the real
   file, then re-reads it afterward, so the editor and the buffer never disagree.
 

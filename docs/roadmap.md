@@ -15,10 +15,11 @@ change.
 **Status:** The first local-task slice is implemented. `ort -i` now keeps its
 task list, task details, nested subtasks, Help, task confirmation, and priority
 picker inside one bounded `InlineMenuSession`. External-editor launch suspends
-and resumes that application. Dirty local task sessions now resolve Save,
-Discard, or Continue Editing inside the bounded view stack. The `orgmgr.py -i`
-project list, recovery prompt, shared project/task session, final outcome
-policy, and PTY cleanup coverage remain.
+and resumes that application. Dirty task sessions now resolve Save,
+Discard, or Continue Editing inside the bounded view stack, and task sessions
+with recovery data begin with bounded Keep, Recover, and Discard choices. The
+`orgmgr.py -i` project list, shared project/task session, final outcome policy,
+and PTY cleanup coverage remain.
 
 ## Original Cause
 
@@ -152,18 +153,12 @@ changing data.
 
 ### 4. Bring prompts inside the application
 
-**Partially implemented.** Leaving a dirty local task session now pushes a
-bounded Save/Discard/Continue Editing view. Save and discard pop the task
-context with a factual footer outcome; Back returns to the live task list with
-the buffer and auto-save intact. Recovery still uses a separate prompt, and
-the bounded task flow does not yet share an application with the project
-browser.
-
-Move the remaining recovery and registry-scoped save/discard decisions out of
-separate `PromptSession` calls and status prints. Canceling an exit must return
-to the still-live task view with edits intact. Save, discard, recovery, and
-error outcomes should appear as transient or final status, not as lines
-inserted between menu frames.
+**Implemented for interactive task sessions.** Leaving a dirty task session
+pushes a bounded Save/Discard/Continue Editing view. Entering with distinct
+auto-save data starts with a bounded Keep/Recover/Discard view, with Keep as the
+safe default for both Enter and Back. Outcomes appear in the footer, and
+canceling an exit returns to the live task list with edits intact. The numbered
+fallback deliberately retains its plain prompts.
 
 Keep the existing `OrgBuffer` safety contract: navigation is read-only, edits
 remain buffered and mirrored to the auto-save file, and the real Org file is

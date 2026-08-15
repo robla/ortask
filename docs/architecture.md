@@ -155,9 +155,10 @@ Small shared rendering primitives for interactive tools:
 
 The shared layer owns presentation and interaction mechanics, not workflow
 behavior. `projtui.InteractiveTaskController` decides which rows to show, what
-each action does, and whether Back should push its bounded save/discard view.
-The project selector and recovery prompt still use the older one-shot path;
-their migration is tracked in `docs/roadmap.md`.
+each action does, whether recovery data requires an initial choice view, and
+whether Back should push its bounded save/discard view. The project selector
+still uses the older one-shot path; its migration is tracked in
+`docs/roadmap.md`. Numbered fallbacks retain their plain prompts by policy.
 
 ## Test compatibility
 
