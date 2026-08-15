@@ -920,6 +920,8 @@ class InteractiveTaskController:
             session.replace_view(self._focus_view(item, result.index))
         elif action == "priority":
             session.push_view(self._priority_view(item))
+        elif action == "text":
+            session.push_view(self._text_input_view(item))
         elif action == "edit":
             self._suspend_for_editor(
                 session,
@@ -930,6 +932,39 @@ class InteractiveTaskController:
             )
         elif action == "subtask" and target is not None:
             session.push_view(self._focus_view(target))
+
+    def _text_input_view(self, item: MenuItem) -> menu.TextInputView:
+        item = _refresh_item(self.buf, item)
+        assert item.task is not None
+        task_id = item.task.id
+
+        def accept(session: menu.InlineMenuSession, text: str) -> None:
+            try:
+                new_lines = tasks.change_text(self.buf.read(), task_id, text)
+            except tasks.TaskNotFound:
+                session.set_message(f"task {task_id} no longer exists")
+                return
+            except ValueError as exc:
+                session.set_message(str(exc))
+                return
+
+            if new_lines is None:
+                message = f"No text change for {task_id}"
+            else:
+                self.buf.apply(new_lines)
+                message = f"Updated text for {task_id}"
+            session.pop_view()
+            session.set_message(message)
+
+        return menu.TextInputView(
+            text=item.task.text,
+            on_accept=accept,
+            title=f"Edit task text: {task_id}",
+            summary="Only the heading text will change",
+            prompt="Task text> ",
+            accept_help="Apply the heading-text edit",
+            cancel_help="Return to task details without changing text",
+        )
 
     def _priority_view(self, item: MenuItem) -> menu.MenuView:
         assert item.task is not None
@@ -1082,6 +1117,7 @@ def _focus_rows(
     if item.task is not None:
         add("STATE", item.task.state, "state")
         add("PRIOR", item.task.priority or "none", "priority")
+        add("TEXT", item.task.text, "text")
     add("EDIT", "Open task in external editor", "edit")
     for subtask in subtasks:
         assert subtask.task is not None

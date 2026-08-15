@@ -17,9 +17,12 @@ except ImportError:  # pragma: no cover - optional interactive dependency
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.application import Application, run_in_terminal
+    from prompt_toolkit.document import Document
+    from prompt_toolkit.filters import Condition
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.layout import (
+        DynamicContainer,
         FormattedTextControl,
         HSplit,
         Layout,
@@ -28,12 +31,16 @@ try:
     )
     from prompt_toolkit.output.defaults import create_output
     from prompt_toolkit.styles import Style
+    from prompt_toolkit.widgets import TextArea
 except ImportError:  # pragma: no cover - optional interactive dependency
     PromptSession = None
     Application = None
     run_in_terminal = None
+    Document = None
+    Condition = None
     FormattedText = None
     KeyBindings = None
+    DynamicContainer = None
     FormattedTextControl = None
     HSplit = None
     Layout = None
@@ -41,6 +48,7 @@ except ImportError:  # pragma: no cover - optional interactive dependency
     Window = None
     create_output = None
     Style = None
+    TextArea = None
 
 
 @dataclass(frozen=True)
@@ -104,6 +112,23 @@ class MenuView:
         self.selected_index = min(max(self.selected_index, 0), len(self.rows) - 1)
 
 
+@dataclass
+class TextInputView:
+    """One focused single-line input view in an :class:`InlineMenuSession`."""
+
+    text: str
+    on_accept: Callable[["InlineMenuSession", str], None]
+    title: str = ""
+    summary: str = ""
+    prompt: str = "Text> "
+    instruction: str = "Enter accept · Esc cancel · C-g help"
+    accept_help: str = "Accept the edited text"
+    cancel_help: str = "Cancel without changing the task"
+
+
+InlineView = MenuView | TextInputView
+
+
 class ContextCancelled(Exception):
     """Raised when Esc cancels the current menu context."""
 
@@ -141,6 +166,7 @@ SELECT_STYLE = (
             "project.name": "ansicyan",
             "help.heading": "bold",
             "help.key": "ansicyan bold",
+            "input.prompt": "ansicyan bold",
             "hint": "ansibrightblack",
             "dim": "ansibrightblack",
         }
@@ -217,10 +243,13 @@ def interactive_select_available() -> bool:
         Application is not None
         and KeyBindings is not None
         and FormattedTextControl is not None
+        and DynamicContainer is not None
         and HSplit is not None
         and Window is not None
         and Layout is not None
         and ScrollOffsets is not None
+        and Condition is not None
+        and TextArea is not None
         and sys.stdin.isatty()
         and sys.stdout.isatty()
     )
@@ -275,6 +304,21 @@ def _selector_help(
             ("Esc/b/q", back_help),
         ]
     )
+    return _command_help(entries)
+
+
+def _text_input_help(view: TextInputView) -> FormattedText:
+    return _command_help(
+        [
+            ("Typing", "Edit the field"),
+            ("Enter", view.accept_help),
+            ("Esc", view.cancel_help),
+            ("C-g", "Show or close this help"),
+        ]
+    )
+
+
+def _command_help(entries: list[tuple[str, str]]) -> FormattedText:
     key_width = max(len(key) for key, _ in entries)
     fragments: list[tuple[str, str]] = [
         ("[SetCursorPosition]", ""),
@@ -323,7 +367,7 @@ class InlineMenuSession:
 
     def __init__(
         self,
-        initial_view: MenuView,
+        initial_view: InlineView,
         *,
         action_keys: Iterable[str] = (),
         height: int = DEFAULT_HEIGHT,
@@ -334,8 +378,9 @@ class InlineMenuSession:
         if Application is None:
             raise RuntimeError("prompt_toolkit is required for interactive menus")
 
-        initial_view.clamp_selection()
-        self.views = [initial_view]
+        if isinstance(initial_view, MenuView):
+            initial_view.clamp_selection()
+        self.views: list[InlineView] = [initial_view]
         self.requested_height = max(height, self.MINIMUM_HEIGHT)
         self.effective_height = self.requested_height
         self.help_visible = False
@@ -344,57 +389,82 @@ class InlineMenuSession:
         self.error: str | None = None
 
         bindings = KeyBindings()
+        menu_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, MenuView)
+        )
+        input_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, TextInputView)
+        )
+        help_active = Condition(lambda: self.help_visible)
 
         def move(delta: int) -> None:
-            if self.help_visible:
-                return
             view = self.current_view
+            assert isinstance(view, MenuView)
             if view.rows:
                 view.selected_index = (
                     view.selected_index + delta
                 ) % len(view.rows)
 
-        @bindings.add("up")
-        @bindings.add("k")
+        @bindings.add("up", filter=menu_active)
+        @bindings.add("k", filter=menu_active)
         def move_up(_event) -> None:
             move(-1)
 
-        @bindings.add("down")
-        @bindings.add("j")
+        @bindings.add("down", filter=menu_active)
+        @bindings.add("j", filter=menu_active)
         def move_down(_event) -> None:
             move(1)
 
-        @bindings.add("enter")
+        @bindings.add("enter", filter=menu_active)
         def select(_event) -> None:
-            if self.help_visible:
-                self.help_visible = False
-                return
-            index = self.current_view.selected_index if self.current_view.rows else None
+            view = self.current_view
+            assert isinstance(view, MenuView)
+            index = view.selected_index if view.rows else None
             self._dispatch(MenuResult("select", index))
 
-        @bindings.add("q")
-        @bindings.add("b")
-        @bindings.add("escape")
+        @bindings.add("q", filter=menu_active)
+        @bindings.add("b", filter=menu_active)
+        @bindings.add("escape", filter=menu_active, eager=True)
         def back(_event) -> None:
-            if self.help_visible:
-                self.help_visible = False
-                return
             self.pop_view()
+
+        @bindings.add("enter", filter=input_active, eager=True)
+        def accept_text(_event) -> None:
+            view = self.current_view
+            assert isinstance(view, TextInputView)
+            view.on_accept(self, self.text_area.text)
+
+        @bindings.add("escape", filter=input_active, eager=True)
+        def cancel_text(_event) -> None:
+            self.pop_view()
+
+        @bindings.add("q", filter=help_active, eager=True)
+        @bindings.add("b", filter=help_active, eager=True)
+        @bindings.add("escape", filter=help_active, eager=True)
+        @bindings.add("enter", filter=help_active, eager=True)
+        def close_help(_event) -> None:
+            self.help_visible = False
+            self._focus_current_view()
+            self.application.invalidate()
 
         @bindings.add("c-g", eager=True)
         def help_view(_event) -> None:
             self.help_visible = not self.help_visible
+            self._focus_current_view()
+            self.application.invalidate()
 
         def make_action(key: str):
             def handler(_event) -> None:
-                if self.help_visible:
-                    return
-                action = self.current_view.actions.get(key)
+                view = self.current_view
+                assert isinstance(view, MenuView)
+                action = view.actions.get(key)
                 if action is None:
                     return
                 index = (
-                    self.current_view.selected_index
-                    if self.current_view.rows
+                    view.selected_index
+                    if view.rows
                     else None
                 )
                 self._dispatch(MenuResult(action.name, index))
@@ -402,7 +472,7 @@ class InlineMenuSession:
             return handler
 
         for key in dict.fromkeys(action_keys):
-            bindings.add(key)(make_action(key))
+            bindings.add(key, filter=menu_active)(make_action(key))
 
         body_control = FormattedTextControl(
             self._render_body,
@@ -415,7 +485,17 @@ class InlineMenuSession:
             scroll_offsets=ScrollOffsets(top=1, bottom=1),
             wrap_lines=False,
         )
+        self.body_control = body_control
         self.body_window = body_window
+        self.text_area = TextArea(
+            multiline=False,
+            wrap_lines=False,
+            prompt=self._render_input_prompt,
+        )
+        self.text_area.buffer.on_text_changed += self._input_changed
+        if isinstance(initial_view, TextInputView):
+            self._load_input(initial_view)
+        body = DynamicContainer(self._active_body)
         root = HSplit(
             [
                 Window(
@@ -424,7 +504,7 @@ class InlineMenuSession:
                     always_hide_cursor=True,
                     wrap_lines=False,
                 ),
-                body_window,
+                body,
                 Window(
                     FormattedTextControl(self._render_footer),
                     height=2,
@@ -434,8 +514,13 @@ class InlineMenuSession:
             ],
             height=lambda: self.effective_height,
         )
+        focused_element = (
+            self.text_area
+            if isinstance(initial_view, TextInputView)
+            else body_control
+        )
         self.application = Application(
-            layout=Layout(root, focused_element=body_control),
+            layout=Layout(root, focused_element=focused_element),
             key_bindings=bindings,
             style=SELECT_STYLE,
             full_screen=False,
@@ -448,27 +533,35 @@ class InlineMenuSession:
         )
 
     @property
-    def current_view(self) -> MenuView:
+    def current_view(self) -> InlineView:
         return self.views[-1]
 
-    def push_view(self, view: MenuView) -> None:
-        view.clamp_selection()
+    def push_view(self, view: InlineView) -> None:
+        if isinstance(view, MenuView):
+            view.clamp_selection()
         self.views.append(view)
         self.help_visible = False
         self.message = None
+        self._activate_current_view()
         self.application.invalidate()
 
-    def replace_view(self, view: MenuView) -> None:
-        view.clamp_selection()
+    def replace_view(self, view: InlineView) -> None:
+        if isinstance(view, MenuView):
+            view.clamp_selection()
         self.views[-1] = view
         self.help_visible = False
+        self._activate_current_view()
         self.application.invalidate()
 
     def pop_view(self, *, message: str | None = None) -> None:
         self.help_visible = False
         self.message = None
         active = self.current_view
-        if active.on_back is not None and not active.on_back(self):
+        if (
+            isinstance(active, MenuView)
+            and active.on_back is not None
+            and not active.on_back(self)
+        ):
             self.application.invalidate()
             return
         if message is not None:
@@ -480,9 +573,10 @@ class InlineMenuSession:
             return
         self.views.pop()
         resumed = self.current_view
-        if resumed.on_resume is not None:
+        if isinstance(resumed, MenuView) and resumed.on_resume is not None:
             resumed.on_resume(self)
         self.message = message
+        self._activate_current_view()
         self.application.invalidate()
 
     def set_message(self, message: str | None) -> None:
@@ -525,8 +619,10 @@ class InlineMenuSession:
         return result or MenuResult("back", None)
 
     def _dispatch(self, result: MenuResult) -> None:
-        self.current_view.on_result(self, result)
-        if self.views:
+        view = self.current_view
+        assert isinstance(view, MenuView)
+        view.on_result(self, result)
+        if self.views and isinstance(self.current_view, MenuView):
             self.current_view.clamp_selection()
         if not self.application.is_done:
             self.application.invalidate()
@@ -544,11 +640,14 @@ class InlineMenuSession:
     def _render_body(self) -> FormattedText:
         view = self.current_view
         if self.help_visible:
+            if isinstance(view, TextInputView):
+                return _text_input_help(view)
             return _selector_help(
                 view.actions,
                 select_help=view.select_help,
                 back_help=view.back_help,
             )
+        assert isinstance(view, MenuView)
         rows = _render_menu_rows(
             view.rows,
             view.selected_index,
@@ -560,12 +659,46 @@ class InlineMenuSession:
             [("", view.preamble.rstrip("\n") + "\n\n"), *list(rows)]
         )
 
+    def _render_input_prompt(self) -> FormattedText:
+        view = self.current_view
+        prompt = view.prompt if isinstance(view, TextInputView) else ""
+        return FormattedText([("class:input.prompt", prompt)])
+
     def _render_footer(self) -> FormattedText:
         if self.help_visible:
             instruction = "C-g/Esc/b/q/Enter close help"
         else:
             instruction = self.message or self.current_view.instruction
         return FormattedText([("", "\n"), ("class:hint", instruction)])
+
+    def _active_body(self):
+        if self.help_visible or isinstance(self.current_view, MenuView):
+            return self.body_window
+        return self.text_area
+
+    def _input_changed(self, buffer) -> None:
+        view = self.current_view
+        if isinstance(view, TextInputView):
+            view.text = buffer.text
+            self.message = None
+
+    def _load_input(self, view: TextInputView) -> None:
+        self.text_area.buffer.set_document(
+            Document(view.text, cursor_position=len(view.text)),
+            bypass_readonly=True,
+        )
+
+    def _activate_current_view(self) -> None:
+        view = self.current_view
+        if isinstance(view, TextInputView):
+            self._load_input(view)
+        self._focus_current_view()
+
+    def _focus_current_view(self) -> None:
+        if self.help_visible or isinstance(self.current_view, MenuView):
+            self.application.layout.focus(self.body_control)
+        else:
+            self.application.layout.focus(self.text_area)
 
     def _before_render(self, application) -> None:
         if application.is_done:

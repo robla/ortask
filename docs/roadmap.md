@@ -97,10 +97,10 @@ selector:
   Org parsing, `OrgBuffer` edits, stable task selection, and task actions.
 
 The implemented layout follows inedit's proven structure: an `HSplit` with a
-dynamic header, one scrolling body window, and a fixed footer, all constrained
-by a callable height. Menu, detail, Help, picker, and confirmation views share
-one `FormattedTextControl`. Future text-entry views may introduce a focused
-`BufferControl` or `TextArea` without starting another application.
+dynamic header, one body region, and a fixed footer, all constrained by a
+callable height. Menu, detail, Help, picker, and confirmation views share one
+`FormattedTextControl`; heading-text editing switches that body to a focused
+single-line `TextArea` without starting another application.
 
 Command metadata remains the source for bindings, footer hints, and `Ctrl-G`
 Help. New `MenuAction` handlers should transition session state rather than
@@ -322,9 +322,9 @@ Constraints that follow from existing project rules:
 Tracked as `t0014` (heading text) and `t0015` (state and priority). Both build
 on the bounded inline contract above rather than extending it.
 
-**Status:** Priority editing from the list view is already implemented. State
-editing is implemented as a two-entry ring. The heading-text rewrite helper is
-implemented; the focused text-entry view remains.
+**Status:** Heading-text and priority editing are implemented in the bounded
+session. State editing remains a two-entry ring; `t0015` tracks its picker and
+plain-key gaps.
 
 ### Goal
 
@@ -349,26 +349,25 @@ is narrower than it first appears.
 
 ### Heading Text (`t0014`)
 
-The domain layer is implemented; the interactive layer remains:
+The domain and interactive layers are implemented:
 
 - `ortasklib/tasks.py` now has `change_text()`, following `change_state()` and
   `change_priority()`: it takes file text plus a task ID and replacement text,
   then returns new lines or `None`.
-- Every view in the bounded session shares one `FormattedTextControl`. Text
-  entry needs the focused `BufferControl` or `TextArea` that the Application
-  Shape section above already anticipates — introduced as another view, not as
-  another `Application`.
+- `menu.TextInputView` switches the existing session body to one focused
+  single-line `TextArea`. The task detail's `TEXT` row pushes that view, and
+  accepted text passes through `OrgBuffer` without starting another
+  `Application`.
 
 Constraints:
 
 - The edit replaces only the parsed text span. The stars, state keyword,
   priority cookie, ID, trailing tags, and original spacing remain untouched;
   input that would be reinterpreted as Org syntax is rejected.
-- The field must consume `Esc` to cancel the edit and pop back with data
-  unchanged, which conflicts with the session-wide `Esc` pop. That binding
-  precedence has to be explicit, not incidental.
+- Context filters make `Enter` accept and `Esc` cancel while ordinary menu keys
+  such as `b`, `q`, `j`, `k`, `e`, and `p` insert text in the field.
 - Cancel restores the parent view and selection exactly, matching the existing
-  picker-cancellation rule.
+  picker-cancellation rule; contextual Help preserves the unfinished input.
 
 ### State and Priority (`t0015`)
 
@@ -392,5 +391,3 @@ Priority is done. The gaps are on the state side:
 - Whether `SUPERSEDED` should be offered in the UI at all, given that it is
   terminal and the roadmap treats it as a parsing concern more than an editing
   one.
-- Whether an in-app rename should be undoable within the session, or whether
-  discard-on-exit is a sufficient answer.

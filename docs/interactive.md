@@ -54,6 +54,10 @@ The task selector has two modes, chosen automatically by
   Long lists scroll within the row body while the title, summary, and key hint
   remain fixed; the selector keeps one context row above and below the highlight
   when space permits.
+  The task detail view includes a `TEXT` row for editing only the heading text.
+  Its focused field uses normal prompt_toolkit editing: ordinary menu shortcut
+  letters type normally, `Enter` accepts, `Esc` cancels, and `C-g` opens Help
+  without losing unfinished input.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved as the scriptable fallback with the
   same `C-t` visibility cycle.
@@ -66,11 +70,12 @@ In highlight-bar mode, `C-g` replaces the rows with a modal help view; `C-g`,
 actions use `menu.MenuAction` metadata so adding a binding also adds its key and
 description to this help view.
 
-Treat the interactive UI as a stack. `Esc`, `b`, and `q` are synonyms for
-popping its top layer: help returns to the underlying menu, a subtask returns to
-its parent task, a task focus view returns to its task list, and a project task
-list returns to the project list. Popping the root local-task or project-list
-layer exits the program; no key should skip intermediate layers.
+Treat the interactive UI as a stack. Outside a focused text field, `Esc`, `b`,
+and `q` are synonyms for popping its top layer: help returns to the underlying
+menu, a subtask returns to its parent task, a task focus view returns to its
+task list, and a project task list returns to the project list. In a text field,
+only `Esc` pops; `b` and `q` insert text. Popping the root local-task or
+project-list layer exits the program; no key should skip intermediate layers.
 
 Unselected rows show task state through the label color (TODO yellow, DONE
 green). The highlighted row instead becomes a single continuous bar in the
@@ -83,7 +88,7 @@ the label included, stays legible. The selected row marker is `▶`.
 Interactive edits do not touch the real Org file immediately. Each file's task
 menu runs against a `projtui.OrgBuffer`, modeled on Emacs (t0006):
 
-- Edits (state changes, priority changes, or a focus-view `mark DONE`) update an
+- Edits (heading text, state, priority, or a focus-view `mark DONE`) update an
   in-memory buffer and mirror it to an **auto-save sibling** named `#todo.org#`
   (Emacs convention) for crash recovery. The real file is untouched.
 - On leaving the file's editing context (`b`/`q`/Esc), a dirty highlight-bar

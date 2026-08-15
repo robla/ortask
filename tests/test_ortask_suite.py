@@ -1438,7 +1438,7 @@ def test_inline_task_contexts_share_one_bounded_application(
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Include a canceled picker, then discard the buffered priority edit.
-            pin.send_text("\rjjj\rq\x07qpqpk\rqqj\r")
+            pin.send_text("\rjjjj\rq\x07qpqpk\rqqj\r")
             controller.run()
 
     assert len(applications) == 1
@@ -1550,6 +1550,100 @@ def test_inline_menu_session_never_enters_alternate_screen() -> None:
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_text_input_preserves_shortcut_letters_and_help() -> None:
+    # Text focus should type menu shortcut letters and survive a Help round trip.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    accepted: list[str] = []
+    resumed: list[int] = []
+
+    def accept(session: menu.InlineMenuSession, text: str) -> None:
+        accepted.append(text)
+        session.pop_view()
+
+    def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+        if result.action == "select":
+            session.push_view(menu.TextInputView("", accept))
+
+    def resume(session: menu.InlineMenuSession) -> None:
+        assert isinstance(session.current_view, menu.MenuView)
+        resumed.append(session.current_view.selected_index)
+
+    parent = menu.MenuView(
+        [menu.MenuRow(1, "TEXT", "Edit text")],
+        handle,
+        on_resume=resume,
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("\rbqjk\x07\x07ped\rq")
+            session = menu.InlineMenuSession(parent, action_keys=("e", "p"))
+            session.run()
+
+    assert accepted == ["bqjkped"]
+    assert resumed == [0]
+    assert session.application.erase_when_done is False
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_text_input_escape_restores_parent_without_accepting() -> None:
+    # Standalone Esc should discard field edits and restore the exact parent row.
+    import threading
+    import time
+
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    accepted: list[str] = []
+    resumed: list[int] = []
+
+    def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+        if result.action == "select":
+            session.push_view(
+                menu.TextInputView(
+                    "Original",
+                    lambda _session, text: accepted.append(text),
+                )
+            )
+
+    def resume(session: menu.InlineMenuSession) -> None:
+        assert isinstance(session.current_view, menu.MenuView)
+        resumed.append(session.current_view.selected_index)
+
+    parent = menu.MenuView(
+        [
+            menu.MenuRow(1, "ONE", "First"),
+            menu.MenuRow(2, "TWO", "Second"),
+        ],
+        handle,
+        selected_index=1,
+        on_resume=resume,
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            session = menu.InlineMenuSession(parent)
+            session.application.ttimeoutlen = 0.01
+
+            def drive() -> None:
+                pin.send_text("\r changed\x1b")
+                time.sleep(0.05)
+                pin.send_text("q")
+
+            driver = threading.Thread(target=drive)
+            driver.start()
+            session.run()
+            driver.join()
+
+    assert accepted == []
+    assert resumed == [1]
+    assert session.current_view is parent
+    assert parent.selected_index == 1
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_inline_menu_session_suspends_external_command(monkeypatch) -> None:
     # External commands should run through terminal handoff and resume one app.
     from prompt_toolkit.application import create_app_session
@@ -1609,14 +1703,54 @@ def test_focus_editor_exposes_fields_and_subtasks(tmp_path: Path) -> None:
 
     view = controller._focus_view(parent)
 
-    assert [row.status for row in view.rows] == ["STATE", "PRIOR", "EDIT", "TODO"]
-    assert [row.text for row in view.rows[:3]] == [
+    assert [row.status for row in view.rows] == [
+        "STATE",
+        "PRIOR",
+        "TEXT",
+        "EDIT",
+        "TODO",
+    ]
+    assert [row.text for row in view.rows[:4]] == [
         "TODO",
         "B",
+        "Parent",
         "Open task in external editor",
     ]
     assert "Body line" in view.preamble
     assert "t0001.1 Child" in view.preamble
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_bounded_task_text_edit_validates_buffers_and_saves(tmp_path: Path) -> None:
+    # A task rename should stay in one app, reject empty text, and save explicitly.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n** TODO [#B] t0001 Original  :work:\nBody line\n",
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Open details/Text, reject an empty value, type shortcut letters,
+            # accept, leave details/tasks, then accept the default Save choice.
+            pin.send_text("\rjj\r\x15\rbqjkped renamed\rqq\r")
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == (
+        "* Tasks\n"
+        "** TODO [#B] t0001 bqjkped renamed  :work:\n"
+        "Body line\n"
+    )
+    assert buf.dirty is False
+    assert not buf.autosave_path.exists()
+    assert controller.session is not None
+    assert controller.session.final_message == "Saved changes to tasks.org"
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")

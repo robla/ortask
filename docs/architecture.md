@@ -103,15 +103,16 @@ and return data or new line lists — they never read/write files, print, or cal
   `add_task()` only creates `* Tasks` when the caller explicitly enables that
   bootstrap path
 - validation: `find_repair_problems()`
-- `TaskNotFound` — raised by `show_lines()`, `add_task()`, `change_state()`, and
-  `change_priority()` when an ID (or parent ID) does not resolve, so the helpers
-  stay free of printing and exit codes while `ortask.py` decides how to report
-  the failure
+- `TaskNotFound` — raised by `show_lines()`, `add_task()`, `change_state()`,
+  `change_text()`, and `change_priority()` when an ID (or parent ID) does not
+  resolve, so the helpers stay free of printing and exit codes while
+  `ortask.py` decides how to report the failure
 
 Write helpers return a new line list and let `ortask.py` perform the atomic
 write, preserving surrounding prose and avoiding whole-file reserialization.
-`change_state()` and `change_priority()` return `None` when the task is already
-in the target state, so the caller can skip the write entirely.
+`change_state()`, `change_text()`, and `change_priority()` return `None` when
+the requested value is already present, so the caller can skip the write
+entirely.
 
 ## `manager.py`
 
@@ -138,7 +139,7 @@ on the same project list.
 
 ## `menu.py`
 
-Small shared rendering primitives for interactive tools:
+Shared rendering and bounded-interaction primitives for interactive tools:
 
 - `MenuRow` — stable row shape for numbered dashboard/menu displays
 - `ProjectRow` — stable row shape for registry project displays
@@ -147,17 +148,18 @@ Small shared rendering primitives for interactive tools:
 - `print_project_dashboard()` — shared project-list rendering for `projtui.py`
 - `select_menu()` / `select_project_menu()` — inline prompt_toolkit
   one-shot highlight-bar selectors retained for compatibility
-- `MenuView` / `InlineMenuSession` — a persistent, bounded 20-row application
-  shell with scrolling, command dispatch, contextual Help, view-stack
-  transitions, resize clamping, factual final outcomes, and external-command
-  suspension
+- `MenuView` / `TextInputView` / `InlineMenuSession` — a persistent, bounded
+  20-row application shell with scrolling menus, focused single-line input,
+  context-filtered bindings, contextual Help, view-stack transitions, resize
+  clamping, factual final outcomes, and external-command suspension
 - `prompt_text()` / `ContextCancelled` — prompt_toolkit Esc cancellation with
   plain `input()` fallback
 
 The shared layer owns presentation and interaction mechanics, not workflow
 behavior. `projtui.InteractiveTaskController` decides which task rows to show,
 what each action does, whether recovery data requires an initial choice view,
-and whether Back should push its bounded save/discard view.
+whether Back should push its bounded save/discard view, and how accepted task
+text is validated and buffered.
 `projtui.InteractiveProjectController` supplies the project root, attaches task
 controllers beneath it, and restores stable project selection on return.
 Numbered fallbacks retain their plain prompts by policy.
