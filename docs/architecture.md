@@ -99,7 +99,8 @@ and return data or new line lists — they never read/write files, print, or cal
   `change_text()`, and `change_priority()` plus `shift_priority()` for buffered
   interactive editing; `ensure_terminal_keyword()` and
   `change_subtree_state()` support
-  workflow tools that terminally supersede recurring task trees;
+  workflow tools that mark recurring task trees terminally `MOOT` while still
+  accepting `SUPERSEDED` as a compatibility alias;
   `add_task()` only creates `* Tasks` when the caller explicitly enables that
   bootstrap path
 - validation: `find_repair_problems()`

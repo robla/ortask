@@ -24,8 +24,8 @@ WEEK_ID_PARTS_RE = re.compile(
     r"^tw(?P<year>\d{2}|\d{4})[Ww](?P<week>\d{2})(?P<suffix>(?:\.\d+)*)$"
 )
 TASK_ID_PATTERN = r"t(?:\d{4}|w(?:\d{2}|\d{4})[Ww]\d{2})(?:\.\d+)*"
-TASK_STATES = ("TODO", "DONE", "SUPERSEDED")
-TERMINAL_STATES = frozenset({"DONE", "SUPERSEDED"})
+TASK_STATES = ("TODO", "DONE", "MOOT", "SUPERSEDED")
+TERMINAL_STATES = frozenset({"DONE", "MOOT", "SUPERSEDED"})
 TASK_STATE_PATTERN = "|".join(TASK_STATES)
 
 HEADING_RE = re.compile(

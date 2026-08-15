@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from .core import TERMINAL_STATES
+
 try:
     from rich.console import Console
     from rich.table import Table
@@ -951,7 +953,7 @@ def select_project_menu(
 
 def count_statuses(rows: list[MenuRow]) -> tuple[int, int, int]:
     todo = sum(1 for row in rows if row.status == "TODO")
-    done = sum(1 for row in rows if row.status in {"DONE", "SUPERSEDED"})
+    done = sum(1 for row in rows if row.status in TERMINAL_STATES)
     total = todo + done
     return todo, done, total
 

@@ -62,8 +62,9 @@ Ambiguous same-tier matches are errors. Do not silently choose alphabetically.
 
 ## Current state vs. planned state
 
-- **`ortask.py`** implements TODO/DONE plus terminal SUPERSEDED parsing and all
-  subcommands. `repair` *detects* problems (duplicate IDs, headings under
+- **`ortask.py`** implements TODO/DONE plus terminal MOOT parsing, retains
+  SUPERSEDED as a compatibility alias, and supports all subcommands. `repair`
+  *detects* problems (duplicate IDs, headings under
   `* Tasks` missing a valid ID, subtask IDs that don't match their parent's
   prefix) and reports them, but auto-fix — renumbering and ID assignment — is
   deferred. `repair --dry-run` exits 2 if problems are found; `repair` without

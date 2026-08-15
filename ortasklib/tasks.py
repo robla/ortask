@@ -350,7 +350,7 @@ def _restore_final_newline(lines: list[str], original: str) -> str:
     return text + "\n" if original.endswith("\n") else text
 
 
-def ensure_terminal_keyword(text: str, state: str = "SUPERSEDED") -> str:
+def ensure_terminal_keyword(text: str, state: str = "MOOT") -> str:
     """Return Org text whose TODO declaration includes terminal ``state``."""
     if state not in TASK_STATES or state == "TODO":
         raise ValueError(f"unsupported terminal state: {state}")
@@ -390,7 +390,7 @@ def change_subtree_state(
     task_id: str,
     *,
     source: str = "TODO",
-    target: str = "SUPERSEDED",
+    target: str = "MOOT",
     note: str = "",
 ) -> tuple[str, int]:
     """Change ``source`` headings in one task subtree and add one parent note."""

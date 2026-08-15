@@ -311,7 +311,7 @@ Constraints that follow from existing project rules:
 ### Open Questions
 
 - Whether `archive` takes explicit IDs, a `--done` sweep, or both.
-- Whether SUPERSEDED (terminal but not DONE) subtrees are eligible.
+- Whether MOOT and compatibility-alias SUPERSEDED subtrees are eligible.
 - Whether the TUI gets an archive action, and whether it needs confirmation
   given that archiving is reversible only by editing two files.
 - Whether ortask should recognize an existing `#+ARCHIVE:` keyword or an

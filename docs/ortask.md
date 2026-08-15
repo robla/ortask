@@ -30,7 +30,8 @@ Tasks are Org headings with stable IDs such as
 `t0001`, `t0001.1`, `tw26W24`, and `tw26W24.1`. See `--file` under
 GLOBAL OPTIONS for the file resolution order.
 The CLI creates and toggles `TODO`/`DONE`; shared workflow tools may also use
-terminal `SUPERSEDED`, which list/show parsing treats as completed work.
+terminal `MOOT`, which list/show parsing treats as completed work. The former
+`SUPERSEDED` spelling remains a terminal compatibility alias.
 
 When invoked with no subcommand, **list** is assumed.
 

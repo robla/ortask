@@ -233,19 +233,29 @@ def test_toggle_task_state_in_place(tmp_path: Path) -> None:
     assert org_file.read_text(encoding="utf-8").splitlines() == original
 
 
-def test_superseded_is_a_terminal_parseable_state() -> None:
-    text = "* Tasks\n** SUPERSEDED tw26W27 Old week\n** DONE t0001 Done\n"
+def test_moot_and_superseded_are_terminal_parseable_states() -> None:
+    # MOOT is preferred, while SUPERSEDED remains a completed-state alias.
+    text = textwrap.dedent(
+        """
+        * Tasks
+        ** MOOT tw26W27 Old week
+        ** SUPERSEDED tw26W28 Older spelling
+        ** DONE t0001 Done
+        ** TODO t0002 Open
+        """
+    ).lstrip()
 
     items = core.parse_org(text)
 
-    assert [item.state for item in items] == ["SUPERSEDED", "DONE"]
-    assert core.filter_items(items, state="todo") == []
+    assert [item.state for item in items] == ["MOOT", "SUPERSEDED", "DONE", "TODO"]
+    assert [item.id for item in core.filter_items(items, state="todo")] == ["t0002"]
     assert [item.id for item in core.filter_items(items, state="done")] == [
-        "tw26W27", "t0001"
+        "tw26W27", "tw26W28", "t0001"
     ]
 
 
-def test_ensure_terminal_keyword_and_supersede_subtree() -> None:
+def test_ensure_terminal_keyword_and_mark_subtree_moot() -> None:
+    # Shared workflow helpers should write MOOT while preserving completed children.
     text = textwrap.dedent(
         """
         Intro
@@ -268,24 +278,45 @@ def test_ensure_terminal_keyword_and_supersede_subtree() -> None:
     )
 
     assert count == 2
-    assert changed.startswith("Intro\n#+TODO: TODO | DONE SUPERSEDED\n* Tasks\n")
-    assert "** SUPERSEDED tw26W27 Old week\nParent note\nSuperseded by castabout.\n" in changed
+    assert changed.startswith("Intro\n#+TODO: TODO | DONE MOOT\n* Tasks\n")
+    assert "** MOOT tw26W27 Old week\nParent note\nSuperseded by castabout.\n" in changed
     assert "*** DONE tw26W27.0 Keep done\nDone note\n" in changed
-    assert "*** SUPERSEDED tw26W27.1 Drop old work\nURL stays\n" in changed
+    assert "*** MOOT tw26W27.1 Drop old work\nURL stays\n" in changed
     assert "** TODO tw26W29 Current week" in changed
     assert tasks.ensure_terminal_keyword(changed) == changed
 
 
 def test_ensure_terminal_keyword_merges_or_rejects_declarations() -> None:
+    # Declaration updates should prefer MOOT and safely coexist with the old alias.
     merged = tasks.ensure_terminal_keyword(
         "#+TODO: NEXT TODO | DONE CANCELED\n* Tasks\n"
     )
-    assert merged.startswith("#+TODO: NEXT TODO | DONE CANCELED SUPERSEDED\n")
+    assert merged.startswith("#+TODO: NEXT TODO | DONE CANCELED MOOT\n")
+
+    legacy = tasks.ensure_terminal_keyword(
+        "#+TODO: TODO | DONE SUPERSEDED\n* Tasks\n"
+    )
+    assert legacy.startswith("#+TODO: TODO | DONE SUPERSEDED MOOT\n")
+    assert tasks.ensure_terminal_keyword(
+        "* Tasks\n", state="SUPERSEDED"
+    ).startswith("#+TODO: TODO | DONE SUPERSEDED\n")
 
     with pytest.raises(tasks.TodoStateError):
         tasks.ensure_terminal_keyword(
             "#+TODO: TODO | DONE\n#+TODO: NEXT | DONE\n* Tasks\n"
         )
+
+
+def test_menu_counts_moot_and_superseded_as_done() -> None:
+    # Dashboard totals should use the shared terminal-state vocabulary.
+    rows = [
+        menu.MenuRow(1, "TODO", "Open"),
+        menu.MenuRow(2, "DONE", "Done"),
+        menu.MenuRow(3, "MOOT", "Moot"),
+        menu.MenuRow(4, "SUPERSEDED", "Compatibility alias"),
+    ]
+
+    assert menu.count_statuses(rows) == (1, 3, 4)
 
 
 def test_atomic_write_follows_symlink(tmp_path: Path) -> None:
