@@ -95,9 +95,10 @@ and return data or new line lists — they never read/write files, print, or cal
 - formatters: `format_plain()`, `format_org()`, `format_json()`
 - `show_lines()` — heading, body, and descendants for a selected task
 - ID allocation: `next_toplevel_id()`, `next_subtask_id()`
-- line-level edits: `add_task()`, `change_state()` (powers `done`/`open`), and
-  `change_priority()` plus `shift_priority()` for buffered interactive priority
-  editing; `ensure_terminal_keyword()` and `change_subtree_state()` support
+- line-level edits: `add_task()`, `change_state()` (powers `done`/`open`),
+  `change_text()`, and `change_priority()` plus `shift_priority()` for buffered
+  interactive editing; `ensure_terminal_keyword()` and
+  `change_subtree_state()` support
   workflow tools that terminally supersede recurring task trees;
   `add_task()` only creates `* Tasks` when the caller explicitly enables that
   bootstrap path

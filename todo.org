@@ -49,6 +49,10 @@ or slower terminal connections.
 ** TODO t0014 Edit task text from within the bounded session
 Add a heading-text edit path as described in =docs/roadmap.md=: a
 =tasks.py= text-rewrite helper plus a focused text-entry view.
+*** DONE t0014.1 Add a surgical heading-text rewrite helper
+Preserve the rest of the Org heading and reject text that would alter its
+structure when reparsed.
+*** TODO t0014.2 Add focused text entry to the bounded task-detail workflow
 ** TODO t0015 Complete state and priority editing in the list view
 Priority editing already works. Add the bounded state picker and plain-key
 bindings described in =docs/roadmap.md=.

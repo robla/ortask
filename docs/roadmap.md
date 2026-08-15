@@ -323,8 +323,8 @@ Tracked as `t0014` (heading text) and `t0015` (state and priority). Both build
 on the bounded inline contract above rather than extending it.
 
 **Status:** Priority editing from the list view is already implemented. State
-editing is implemented as a two-entry ring. Heading-text editing does not exist
-in any form.
+editing is implemented as a two-entry ring. The heading-text rewrite helper is
+implemented; the focused text-entry view remains.
 
 ### Goal
 
@@ -349,11 +349,11 @@ is narrower than it first appears.
 
 ### Heading Text (`t0014`)
 
-Nothing supports this yet, at either layer:
+The domain layer is implemented; the interactive layer remains:
 
-- `ortasklib/tasks.py` has `change_state()` and `change_priority()` but no
-  function that rewrites a heading's text. One is needed, following the same
-  shape: take file text plus a task ID, return new lines or `None`.
+- `ortasklib/tasks.py` now has `change_text()`, following `change_state()` and
+  `change_priority()`: it takes file text plus a task ID and replacement text,
+  then returns new lines or `None`.
 - Every view in the bounded session shares one `FormattedTextControl`. Text
   entry needs the focused `BufferControl` or `TextArea` that the Application
   Shape section above already anticipates — introduced as another view, not as
@@ -361,9 +361,9 @@ Nothing supports this yet, at either layer:
 
 Constraints:
 
-- The edit rewrites only the text field. The stars, state keyword, priority
-  cookie, ID, and trailing tags are reassembled by the writer from parsed
-  values, so a user cannot break the ID or state by typing into the field.
+- The edit replaces only the parsed text span. The stars, state keyword,
+  priority cookie, ID, trailing tags, and original spacing remain untouched;
+  input that would be reinterpreted as Org syntax is rejected.
 - The field must consume `Esc` to cancel the edit and pop back with data
   unchanged, which conflicts with the session-wide `Esc` pop. That binding
   precedence has to be explicit, not incidental.

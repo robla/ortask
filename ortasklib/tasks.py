@@ -246,6 +246,43 @@ def change_state(text: str, task_id: str, target: str) -> list[str] | None:
     return lines
 
 
+def change_text(text: str, task_id: str, target: str) -> list[str] | None:
+    """Replace only one task heading's text while preserving its structure."""
+    if "\n" in target or "\r" in target:
+        raise ValueError("task text must be a single line")
+    target = target.strip()
+    if not target:
+        raise ValueError("task text must not be empty")
+
+    lines = text.splitlines()
+    item = find_by_id(parse_org(text), task_id)
+    if item is None:
+        raise TaskNotFound(task_id)
+    if item.text == target:
+        return None
+
+    line = lines[item.line_num]
+    match = HEADING_RE.fullmatch(line)
+    if match is None:  # Defensive: parse_org() found this same heading.
+        raise ValueError("task heading cannot be rewritten safely")
+    start, end = match.span("text")
+    updated = line[:start] + target + line[end:]
+    updated_match = HEADING_RE.fullmatch(updated)
+    preserved_groups = ("stars", "state", "priority", "id", "tags")
+    if (
+        updated_match is None
+        or updated_match.group("text") != target
+        or any(
+            updated_match.group(name) != match.group(name)
+            for name in preserved_groups
+        )
+    ):
+        raise ValueError("task text conflicts with Org heading syntax")
+
+    lines[item.line_num] = updated
+    return lines
+
+
 PRIORITIES = ("A", "B", "C")
 PRIORITY_SCALE = (None, "C", "B", "A")
 

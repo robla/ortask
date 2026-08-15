@@ -1065,6 +1065,47 @@ def test_next_state_ring() -> None:
     assert tasks.next_state("WAITING") == "TODO"
 
 
+def test_change_text_preserves_task_heading_structure_and_body() -> None:
+    # Heading-text edits should preserve syntax, spacing, tags, and nearby lines.
+    original = (
+        "* Tasks\n"
+        "**  TODO   [#A]  t0001   Old title  :work:home:\n"
+        "Body line\n"
+        "** TODO t0002 Neighbor\n"
+    )
+
+    changed = tasks.change_text(original, "t0001", "New title with  spacing")
+    assert changed is not None
+    assert changed[1] == (
+        "**  TODO   [#A]  t0001   New title with  spacing  :work:home:"
+    )
+    assert changed[2:] == original.splitlines()[2:]
+
+    reparsed = core.find_by_id(core.parse_org("\n".join(changed)), "t0001")
+    assert reparsed is not None
+    assert reparsed.text == "New title with  spacing"
+    assert reparsed.priority == "A"
+    assert reparsed.tags == "work:home"
+    assert (
+        tasks.change_text("\n".join(changed), "t0001", " New title with  spacing ")
+        is None
+    )
+
+
+def test_change_text_rejects_invalid_or_ambiguous_titles() -> None:
+    # Invalid input must not create empty, multiline, or accidentally tagged tasks.
+    original = "* Tasks\n** TODO t0001 Original\n"
+
+    with pytest.raises(ValueError, match="must not be empty"):
+        tasks.change_text(original, "t0001", "   ")
+    with pytest.raises(ValueError, match="single line"):
+        tasks.change_text(original, "t0001", "First\nSecond")
+    with pytest.raises(ValueError, match="Org heading syntax"):
+        tasks.change_text(original, "t0001", "Accidental :newtag:")
+    with pytest.raises(tasks.TaskNotFound):
+        tasks.change_text(original, "t9999", "Missing")
+
+
 def test_change_priority_preserves_task_heading_and_body() -> None:
     # Priority edits should touch only the cookie and round-trip back to the source.
     original = (
