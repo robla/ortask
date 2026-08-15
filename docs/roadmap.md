@@ -1,0 +1,189 @@
+# Interactive UI Roadmap
+
+## Goal
+
+`ortask.py -i` should behave as one compact terminal mini app. By default it
+should occupy a 20-row region at the bottom of the terminal, preserve the shell
+output above it, and repaint that same region when the user opens a task, Help,
+a priority picker, or another context. It should not leave every prior menu in
+scrollback while the session is still running.
+
+The same application shell should eventually serve `orgmgr.py -i`. The plain
+numbered menus remain the non-TTY fallback and are not part of this rendering
+change.
+
+## Current Cause
+
+The current selector is inline but not a persistent application.
+`ortasklib.menu._run_selector()` constructs a new
+`prompt_toolkit.Application`, calls `Application.run()`, and exits that
+application for every selection or action. Its callers then loop and call
+`select_menu()` again. Opening a task creates another selector, returning from
+that task creates another task-list selector, and project navigation repeats
+the same pattern.
+
+The applications use `full_screen=False`, which correctly avoids the alternate
+screen, but leave `erase_when_done` at prompt_toolkit's `False` default. Each
+completed application therefore contributes a retained frame to terminal
+history. Setting `erase_when_done=True` would hide some duplication, but it
+would not solve the underlying lifecycle: nested views, text prompts, save
+questions, and external-editor transitions would still be separate terminal
+interactions.
+
+Help already demonstrates the desired behavior within one selector. `Ctrl-G`
+changes selector state and invalidates the existing application, so Help
+replaces the rows and then restores them in place. The rest of the interactive
+workflow should use that model.
+
+## Bounded Inline Contract
+
+The ortask interaction should follow these rules:
+
+- One invocation owns one prompt_toolkit application until the user leaves its
+  top-level interactive context.
+- The application uses `full_screen=False` and never enters the alternate
+  screen.
+- The requested total height defaults to 20 rows. The effective height is at
+  most `terminal_rows - 1`, leaving one row outside the application, and the
+  application reports a clean error if its minimum layout cannot fit.
+- A fixed header and command footer surround one scrolling body. Long task
+  lists scroll inside the body while the selected row remains visible.
+- Project lists, task lists, task details, Help, priority selection, recovery,
+  and save/discard confirmation are views in the same bounded region.
+- Enter or another action pushes a child view when appropriate. `Esc`, `b`, or
+  `q` pops one view; only popping the top-level view exits the application.
+- State and priority edits update the in-memory `OrgBuffer`, refresh affected
+  rows, and invalidate the application without ending it.
+- Running an external editor temporarily suspends the application, restores
+  normal terminal operation, and repaints the same region after the editor
+  exits.
+- A controlled final exit may retain one final frame or concise summary. It
+  must not retain a historical copy of every visited view. Failures should
+  favor erasing a possibly misleading partial frame after restoring terminal
+  modes.
+
+Twenty rows is a default, not a feature limit. Search, scrolling, nested views,
+contextual commands, editing, and Help should remain available within the
+bounded viewport. A later `--height` option or environment setting can be
+added if a real workflow needs it; configuration is not required for the first
+migration.
+
+## Proposed Application Shape
+
+Introduce a session-oriented API alongside the current one-shot selector.
+Names are provisional, but the responsibilities should be explicit:
+
+- `InteractiveState` owns requested/effective height, the active view stack,
+  transient messages, and selection anchors. Application data such as
+  `OrgBuffer` remains supplied by `projtui.py`.
+- `MenuView` describes a title, summary, rows, selected stable key, available
+  commands, optional detail text, and Enter behavior. Project, task, detail,
+  and priority views can use the same shape without sharing domain logic.
+- `MenuController` handles movement, command dispatch, Help, push/pop, terminal
+  resize, and application invalidation. It should not parse Org or write files.
+- `build_inline_application()` constructs one persistent layout and bindings.
+  `run_inline_session()` is the only normal call to `Application.run()`.
+
+The layout can follow inedit's proven structure: an `HSplit` with dynamic
+header, one body window, and a fixed footer, all constrained by a callable
+height. A `DynamicContainer` or equivalent state-driven control should swap
+the body when a view needs a different focusable control. Ordinary menu views
+can share one `FormattedTextControl`; text entry and confirmation views may use
+a focused `BufferControl` or `TextArea` without starting another application.
+
+Command metadata should remain the source for bindings, footer hints, and
+`Ctrl-G` Help. The current `MenuAction` is a useful starting point, but the
+session needs context-sensitive availability and handlers that transition
+state rather than return to an outer Python loop.
+
+## Migration Stages
+
+### 1. Characterize the terminal contract
+
+Add prompt_toolkit pipe-input tests and PTY-level tests before changing the
+lifecycle. Cover a long task list, task-detail entry and return, Help, a nested
+picker, and final exit. Tests should distinguish repaint control sequences from
+new retained frames, verify that no alternate-screen entry sequence is emitted,
+and confirm that the cursor and next shell prompt end below the application.
+
+### 2. Add the persistent bounded shell
+
+Build a single 20-row application containing a dynamic header, scrolling body,
+and command footer. Port task-list navigation first while keeping selection
+anchored by task ID. Add `before_render` resize handling so shrinking the
+terminal adjusts the effective height without replacing the application.
+
+During migration, the existing `select_menu()` API may remain for tests or
+other callers, but the `ort -i` path must stop using repeated one-shot
+applications. Remove the obsolete path after all interactive views have moved.
+
+### 3. Move contexts onto a view stack
+
+Represent task details, subtasks, project selection, priority selection, and
+Help as push/pop transitions. Replace recursive `focus_menu()` calls and outer
+`while` loops with controller transitions. Each view should preserve its
+stable selection key so returning to a parent restores the prior highlight and
+scroll position.
+
+Help can be either a modal flag over the current view or an explicit stack
+entry, but it must use the same command metadata and close back to the exact
+selection. A picker cancellation must similarly restore the parent without
+changing data.
+
+### 4. Bring prompts inside the application
+
+Recovery and save/discard decisions currently use a separate `PromptSession`
+and print status lines. Replace them with bounded confirmation views or a
+one-line footer prompt. Canceling an exit returns to the still-live task view
+with edits intact. Save, discard, recovery, and error outcomes should appear as
+transient or final status, not as lines inserted between menu frames.
+
+Keep the existing `OrgBuffer` safety contract: navigation is read-only, edits
+remain buffered and mirrored to the auto-save file, and the real Org file is
+written only through an explicit save path.
+
+### 5. Suspend for the external editor
+
+Replace direct `subprocess.run()` from a completed selector with
+prompt_toolkit's `run_in_terminal()` or an equivalent suspend/resume helper.
+Before suspension, resolve pending buffered edits according to an explicit
+policy. After the editor returns, reload the file, reparse tasks, restore the
+closest stable selection, and repaint the bounded application. Editor launch
+errors should become status messages rather than raw output interleaved with
+the UI.
+
+### 6. Finish lifecycle and final display
+
+Decide and test the controlled-exit frame. The inedit precedent is to retain
+one final bounded frame with factual outcome text while erasing on abnormal
+failure. Ortask should at minimum report whether changes were saved,
+discarded, or left unchanged. Terminal restoration, signal handling, resize
+failure, and exception cleanup need PTY coverage before the old loop is
+removed.
+
+## Relationship to Handrail
+
+This work should establish the bounded-inline behavior before ortask depends on
+a new shared library. The reusable concepts are the persistent inline shell,
+viewport policy, command metadata and Help, view-stack transitions, stable-row
+selection, suspend/resume, and terminal test harness. Org parsing, task
+mutation, project discovery, and `OrgBuffer` remain ortask responsibilities.
+
+If inedit and ortask converge on the same semantics after this migration, those
+proven pieces become candidates for a future common package. Avoid designing a
+backend-neutral SDK first and then forcing both applications through it.
+
+## Completion Criteria
+
+The roadmap is complete when:
+
+- `ort -i` and `orgm -i` each run one prompt_toolkit application per session;
+- the live interface stays within its effective 20-row region through lists,
+  details, Help, pickers, prompts, and back navigation;
+- returning from task details does not append another full task list;
+- long lists scroll without losing the selected row;
+- external editor handoff resumes the same session cleanly;
+- save, discard, cancellation, and recovery remain safe and visible;
+- non-TTY numbered behavior remains usable; and
+- pipe-input and PTY tests defend repainting, resize, terminal restoration, and
+  absence of alternate-screen switching.
