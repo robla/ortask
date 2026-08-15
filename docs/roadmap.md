@@ -317,77 +317,108 @@ Constraints that follow from existing project rules:
 - Whether ortask should recognize an existing `#+ARCHIVE:` keyword or an
   `:ARCHIVE:` property in the task file and honor it over the default.
 
-## In-App Task Editing
+## Orti Issue-Editing Workspace
 
-Tracked as `t0014` (heading text) and `t0015` (state and priority). Both build
-on the bounded inline contract above rather than extending it.
+Tracked as `t0014` (initial title-editing foundation), `t0015` (direct state
+and priority actions), and `t0016` (the full workspace). `orti` is the user's
+shell alias for `ortask.py -i`; it is not a separate executable or data format.
 
-**Status:** Heading-text and priority editing are implemented in the bounded
-session. State editing remains a two-entry ring; `t0015` tracks its picker and
-plain-key gaps.
+### Product Direction
 
-### Goal
+Orti should become a compact TUI editor for an Org-backed bug and task
+database. Its interaction model should resemble a small issue tracker: users
+can browse, inspect, and edit an issue without routinely leaving the
+application. The Org file remains the authoritative, human-editable backend.
 
-A user should be able to make the ordinary small edits — fix a typo in a task
-title, set a state, set a priority — without leaving the bounded session for an
-external editor. `e` should remain the escape hatch for real restructuring, not
-the only way to correct a word.
+The external editor is still important for arbitrary Org restructuring, but
+it is an escape hatch rather than a peer of every in-app edit. The task view
+must therefore stop presenting synthetic `TEXT`, `EDIT`, `STATE`, or `PRIOR`
+rows. `e` should remain a documented command that suspends the bounded session
+and opens the current task at its source line.
 
-### What the List View Already Does
+### Org Issue Boundary
 
-`TASK_MENU_ACTIONS` in `projtui.py` binds, for the highlighted row:
+For the first full editor, an issue consists of:
 
-- `Shift+←`/`Shift+→` — cycle state via `_toggle_state()`
-- `Shift+↑`/`Shift+↓` — raise/lower priority via `_shift_priority()`
-- `p` — push the bounded `_priority_view()` picker (A/B/C/none)
-- `C-t` — cycle the all/TODO/DONE filter
-- `e` — suspend and open the external editor
+- its heading title, TODO state, priority, identifier, and tags;
+- its own body between the heading and its first descendant heading, including
+  prose, planning lines, and property drawers; and
+- its descendant task headings, displayed as related subtasks but excluded
+  from the parent's body editor.
 
-All of these already route through `OrgBuffer`, so they are buffered, mirrored
-to the auto-save file, and written only by an explicit save. The remaining work
-is narrower than it first appears.
+This definition keeps ordinary Org files valid and prevents a multiline edit
+from accidentally consuming or rewriting child and sibling subtrees. Orti
+should not introduce a private issue syntax merely to imitate JIRA fields.
 
-### Heading Text (`t0014`)
+### Interaction Model
 
-The domain and interactive layers are implemented:
+The task-list view remains the fast triage surface. State, priority, filtering,
+Help, and other common commands operate directly on the highlighted task.
+`Enter` opens an issue workspace rather than a menu of actions.
 
-- `ortasklib/tasks.py` now has `change_text()`, following `change_state()` and
-  `change_priority()`: it takes file text plus a task ID and replacement text,
-  then returns new lines or `None`.
-- `menu.TextInputView` switches the existing session body to one focused
-  single-line `TextArea`. The task detail's `TEXT` row pushes that view, and
-  accepted text passes through `OrgBuffer` without starting another
-  `Application`.
+The issue workspace should keep these regions visible together when terminal
+space permits:
 
-Constraints:
+- the actual title and compact state, priority, identifier, and tag metadata;
+- a multiline description/body editor; and
+- an embedded subtask list.
 
-- The edit replaces only the parsed text span. The stars, state keyword,
-  priority cookie, ID, trailing tags, and original spacing remain untouched;
-  input that would be reinterpreted as Org syntax is rejected.
-- Context filters make `Enter` accept and `Esc` cancel while ordinary menu keys
-  such as `b`, `q`, `j`, `k`, `e`, and `p` insert text in the field.
-- Cancel restores the parent view and selection exactly, matching the existing
-  picker-cancellation rule; contextual Help preserves the unfinished input.
+Focus moves among editable regions without pushing a new view for each field.
+Finite choices such as a state picker, Help, or destructive confirmation may
+still use bounded overlays or child views. The workspace must adapt to the
+20-row default, scroll long content, and give the body more room when no
+subtasks exist.
 
-### State and Priority (`t0015`)
+The subtask region shows all descendant tasks in source order, indented by Org
+depth, with its own highlight and scrolling. State and priority commands apply
+to the highlighted subtask while that region has focus. `Enter` may navigate
+to the child's issue workspace; Back returns to the parent with its prior
+selection intact. This is navigation between issues, not a substitute for
+showing the parent and its subtasks together.
 
-Priority is done. The gaps are on the state side:
+### Editing and Safety
 
-- `tasks.next_state()` cycles a two-entry `STATE_RING` (`TODO` → `DONE`), so
-  `SUPERSEDED` is unreachable from the interactive UI even though
-  `core.TASK_STATES` includes it and `tasks.change_subtree_state()` can set it.
-  A bounded state picker, symmetric with `_priority_view()`, is the natural fix.
-- State and priority editing are reachable only through `Shift`+arrow chords.
-  Terminals vary in whether they deliver those, and the ring toggle has no
-  plain-key alternative the way priority has `p`.
+All in-app mutations continue through `OrgBuffer`: edits remain buffered,
+auto-save recovery remains available, and the source file changes only after
+the existing save flow. Body mutation needs a pure, surgical helper with tests
+covering drawers, planning lines, blank lines, nested tasks, sibling tasks, and
+unrelated prose. Title editing from `t0014` remains useful groundwork, but its
+current `TEXT` action row is transitional UI.
 
-### Open Questions
+### Architecture Direction
 
-- Whether text editing covers the heading only, or eventually the task's body
-  lines too. Body editing is closer to what `e` already provides, and is the
-  point where reusing inedit rather than reimplementing it becomes the
-  question.
-- Whether a state picker replaces the ring toggle or coexists with it.
-- Whether `SUPERSEDED` should be offered in the UI at all, given that it is
-  terminal and the roadmap treats it as a parsing concern more than an editing
-  one.
+Build an application-specific `TaskWorkspaceView` and controller in the
+ortask codebase on top of `InlineMenuSession`. Reuse the existing focused input
+and prompt_toolkit controls, extending the one bounded `Application` to host
+multiple focusable regions and a multiline text area. Do not start a second
+prompt_toolkit application for editing.
+
+This is proto-Handrail work, but extracting a shared package is premature.
+Keep reusable seams clear and compare them with inedit; extract only after a
+second adopter exposes stable shared behavior or duplicated bugs.
+
+### Implementation Order
+
+1. Finish abnormal terminal cleanup (`t0009.6.2`), remove obsolete selectors
+   (`t0011`), and diagnose the standalone Escape delay (`t0013.1`).
+2. Define and test the task-own-body boundary and surgical mutation helper.
+3. Replace the action-row detail menu with a persistent issue-workspace shell.
+4. Add multiline body editing within the existing buffer and save contract.
+5. Complete direct state and priority actions in both list and workspace views.
+6. Add the hierarchical, independently scrollable subtask region.
+7. Add tag editing and terminal, recovery, resize, and performance coverage.
+
+### Completion Criteria
+
+- Title, own-body text, state, priority, and tags can be edited without an
+  external editor.
+- The selected issue and its subtasks can be read and acted on in one bounded
+  workspace, including with long bodies and subtask lists.
+- Action-like pseudo-rows are gone; external editing is an optional `e`
+  command.
+- Save, discard, recovery, terminal cleanup, and source-structure preservation
+  retain their current safety guarantees.
+
+Comments/activity feeds, attachments, custom workflow fields, and general Org
+tree restructuring are outside the first workspace milestone. They can be
+considered after the core issue-editing model proves useful.

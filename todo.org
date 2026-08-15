@@ -46,13 +46,39 @@ repeatable bottlenecks rather than relying only on subjective timing.
 Compare =Esc= with =b=/=q= to confirm prompt_toolkit's escape-sequence timeout
 is responsible, then reduce the delay without breaking arrow keys, Meta keys,
 or slower terminal connections.
-** DONE t0014 Edit task text from within the bounded session
-Add a heading-text edit path as described in =docs/roadmap.md=: a
-=tasks.py= text-rewrite helper plus a focused text-entry view.
+** DONE t0014 Add initial bounded task-title editing
+Establish a surgical heading rewrite and focused single-line input as
+groundwork for the full issue workspace in =t0016=.
 *** DONE t0014.1 Add a surgical heading-text rewrite helper
 Preserve the rest of the Org heading and reject text that would alter its
 structure when reparsed.
 *** DONE t0014.2 Add focused text entry to the bounded task-detail workflow
-** TODO t0015 Complete state and priority editing in the list view
-Priority editing already works. Add the bounded state picker and plain-key
-bindings described in =docs/roadmap.md=.
+** TODO [#A] t0015 Expose state and priority as direct context actions
+Keep state and priority available on highlighted tasks in both the list and
+issue workspace rather than representing them as pseudo-field rows.
+*** TODO [#A] t0015.1 Add a bounded picker for supported task states
+*** TODO [#A] t0015.2 Add plain-key state and priority commands
+Keep Shift-arrow aligned with Org while providing discoverable alternatives
+for terminals that do not reliably report those chords.
+** TODO [#A] t0016 Build the full orti issue-editing workspace
+Turn =ortask.py -i= into the compact Org-backed issue editor described in
+=docs/roadmap.md=, with the external editor retained as a secondary escape
+hatch.
+*** TODO [#A] t0016.1 Define and test task-own-body mutation boundaries
+Add a surgical helper for replacing a task's own body without crossing into
+its heading, descendant or sibling subtrees, or unrelated prose. Cover bodies
+that contain drawers, planning lines, and blank lines.
+*** TODO [#A] t0016.2 Replace the action-row detail menu with a persistent workspace
+Show title, compact metadata, body, and subtask regions together; remove the
+synthetic =TEXT=, =EDIT=, =STATE=, and =PRIOR= rows while retaining =e=.
+*** TODO [#A] t0016.3 Add multiline task-body editing
+Edit the task's own body inside the existing bounded application and route
+changes through =OrgBuffer=, auto-save recovery, and save/discard handling.
+*** TODO [#A] t0016.4 Add a hierarchical subtask mini-list
+Show all descendants in Org source order with indentation, independent
+highlight and scrolling, direct actions, and child-workspace navigation.
+*** TODO [#B] t0016.5 Add direct tag and standard metadata editing
+Support useful Org-native issue metadata without inventing a private schema.
+*** TODO [#B] t0016.6 Add workspace terminal, safety, and performance coverage
+Cover long bodies and subtask lists, narrow and resized terminals, focus,
+Help, cancellation, save/discard/recovery, and PTY lifecycle behavior.
