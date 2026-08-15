@@ -195,6 +195,38 @@ If inedit and ortask converge on the same semantics after this migration, those
 proven pieces become candidates for a future common package. Avoid designing a
 backend-neutral SDK first and then forcing both applications through it.
 
+## Risks Observed So Far
+
+A brief external read of `ortasklib/menu.py`, `projtui.py`, and their git
+history against inedit's `_inedit/` split, for context ahead of any shared
+extraction:
+
+- **Two selectors are coexisting, not converging yet.** `_run_selector`,
+  `select_menu`, and `select_project_menu` remain in `menu.py` alongside the
+  new `InlineMenuSession`/`MenuView` stack, which is most of why the file is
+  now 846 lines. This roadmap already calls that transitional; the risk is
+  that `orgmgr.py -i` stays on the old path long enough for "transitional" to
+  become permanent.
+- **One ortask module is doing what inedit splits three ways.** inedit
+  separates presentation, application lifecycle, and terminal handling into
+  distinct modules with an enforced acyclic dependency graph
+  (`inedit/AGENTS.md`). ortask's equivalent surface — rendering, session
+  lifecycle, dashboards, and plain-text printing — is still one `menu.py`.
+  Splitting that locally (this roadmap's own Migration Stage 2/3 territory)
+  seems worth doing before treating `menu.py` as a stable extraction source.
+- **Cosmetic churn has already cost real coordination overhead.** The
+  highlight-bar color/continuity logic went through four consecutive commits
+  by three different agents (Codex, Gemini, Gemini, Claude) on 2026-06-28
+  before it settled. A shared style-token layer, of the kind
+  `handrail-plan.md` proposes, would likely have turned that into a one-line
+  change instead of a rewrite-review-rewrite cycle.
+- **`InlineMenuSession` is good evidence for a shared vocabulary, not proof of
+  it yet.** Its view/session shape already lines up well with
+  `handrail-plan.md`'s `InlineApp`/`View`/`ViewStack`/`SelectionResult`
+  sketch, which is encouraging. But only the local-task path has moved onto
+  it — the project-list path is still the old one-shot pattern. One migrated
+  call site isn't the two independent consumers extraction should wait for.
+
 ## Completion Criteria
 
 The roadmap is complete when:
