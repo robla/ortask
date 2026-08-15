@@ -82,3 +82,11 @@ Support useful Org-native issue metadata without inventing a private schema.
 *** TODO [#B] t0016.6 Add workspace terminal, safety, and performance coverage
 Cover long bodies and subtask lists, narrow and resized terminals, focus,
 Help, cancellation, save/discard/recovery, and PTY lifecycle behavior.
+** TODO t0017 Accept MOOT as a terminal state, aliasing SUPERSEDED
+Groundwork for the castabout rename; ortasklib lands first. Touches
+=TASK_STATES=/=TERMINAL_STATES= in =ortasklib/core.py=,
+=ensure_terminal_keyword= and the subtree-state defaults in =tasks.py=, and the
+terminal-state set in =menu.py=. Keep parsing =SUPERSEDED= as a terminal alias
+so mixed tool versions cannot silently degrade the keyword into headline prose.
+Rationale and phasing in =castabout/docs/roadmap.md=; archive-history handling
+overlaps =t0010=.
