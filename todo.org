@@ -9,7 +9,7 @@
 ** TODO t0008 Make ortask.py work with .org files with tasks that don't have ids on them
 ** TODO [#A] t0009 Keep interactive sessions inside one bounded application
 Implement the persistent 20-row inline application described in =docs/roadmap.md=.
-*** TODO [#A] t0009.1 Add regression coverage for bounded repainting and terminal cleanup
+*** DONE [#A] t0009.1 Add regression coverage for bounded repainting and terminal cleanup
 Use pipe-input and PTY tests to cover context changes, long lists, final exit,
 resize, and the absence of alternate-screen switching.
 *** DONE [#A] t0009.2 Add one persistent 20-row prompt_toolkit application shell
@@ -26,3 +26,5 @@ Use prompt_toolkit terminal handoff, then reload data and repaint the same view.
 *** TODO [#B] t0009.6 Define and test controlled final-frame and failure behavior
 Retain at most one factual final frame, erase misleading failure output, and
 restore the terminal after signals, exceptions, and resize failures.
+**** DONE [#B] t0009.6.1 Define and test controlled normal-exit retention
+**** TODO [#B] t0009.6.2 Harden signal, exception, and terminal-failure cleanup

@@ -96,3 +96,16 @@ python3 -m pytest -q
 
 The first seven tests should pass before moving code out of `ortask.py`; the
 manager and smoke tests should pass before removing script-to-script imports.
+
+## Interactive PTY Gate
+
+Interactive rendering also has a POSIX PTY regression using only temporary Org
+files. It drives a long task list through scrolling, live terminal resize,
+Help, and controlled exit, then verifies the retained factual footer, restored
+terminal attributes, absence of alternate-screen entry, and placement of the
+next prompt. Pipe-input tests remain the faster layer for detailed view-stack
+and persistence transitions. Run both layers with the normal suite:
+
+```sh
+python3 -m pytest -q
+```

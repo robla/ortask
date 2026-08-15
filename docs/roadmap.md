@@ -65,10 +65,10 @@ The ortask interaction should follow these rules:
 - Running an external editor temporarily suspends the application, restores
   normal terminal operation, and repaints the same region after the editor
   exits.
-- A controlled final exit may retain one final frame or concise summary. It
-  must not retain a historical copy of every visited view. Failures should
-  favor erasing a possibly misleading partial frame after restoring terminal
-  modes.
+- A controlled final exit retains one bounded final frame whose footer reports
+  the latest factual outcome: saved, discarded, recovered/kept, or unchanged.
+  It must not retain a historical copy of every visited view. Failures erase a
+  possibly misleading partial frame after restoring terminal modes.
 
 Twenty rows is a default, not a feature limit. Search, scrolling, nested views,
 contextual commands, editing, and Help should remain available within the
@@ -105,11 +105,13 @@ state rather than return to an outer Python loop.
 
 ### 1. Characterize the terminal contract
 
-**Partially implemented.** Pipe-input tests now cover task/subtask/Help/picker
-transitions in one application, bounded scrolling, effective-height clamping,
-buffered edits, terminal handoff, and the absence of common alternate-screen
-entry sequences in captured VT output. Real PTY cleanup and next-prompt tests
-remain.
+**Implemented for normal operation.** Pipe-input tests cover task/subtask/Help/
+picker transitions in one application, bounded scrolling, effective-height
+clamping, buffered edits, terminal handoff, and captured VT output. A real PTY
+test covers a 55-task scroll, live resize repaint, Help, final retained outcome,
+termios restoration, absence of common alternate-screen entry sequences, and
+placement of the next prompt. Abnormal signal and exception cases remain in
+Stage 6.
 
 Add prompt_toolkit pipe-input tests and PTY-level tests before changing the
 lifecycle. Cover a long task list, task-detail entry and return, Help, a nested
@@ -180,12 +182,17 @@ the UI.
 
 ### 6. Finish lifecycle and final display
 
-Decide and test the controlled-exit frame. The inedit precedent is to retain
-one final bounded frame with factual outcome text while erasing on abnormal
-failure. Ortask should at minimum report whether changes were saved,
-discarded, or left unchanged. Terminal restoration, signal handling, resize
-failure, and exception cleanup need PTY coverage before the old loop is
-removed.
+**Partially implemented.** `InlineMenuSession` starts with
+`erase_when_done=True`. A controlled root pop records the latest factual
+outcome, renders it in the final footer, switches erasure off, and lets
+prompt_toolkit place the cursor below the retained frame. Save/discard outcomes
+survive a return to the project root; otherwise the controller reports no
+changes. Real PTY coverage verifies the normal retained frame and terminal
+restoration.
+
+Signal handling, unexpected exceptions, editor failures, and terminal resize
+below the minimum still need explicit failure outcomes and PTY coverage. Those
+paths must leave erasure enabled and restore the terminal before diagnostics.
 
 ## Relationship to Handrail
 

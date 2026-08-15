@@ -47,9 +47,10 @@ The task selector has two modes, chosen automatically by
   leaving a task list returns to the project menu; in local `ortask.py -i`, that
   task list is the top level, so leaving it exits. The application renders
   inline (not full screen), defaults to 20 rows, and repaints that region as
-  contexts change.
-  It retains at most its final frame instead of appending each visited task
-  view.
+  contexts change. On a controlled exit it retains one final bounded frame with
+  a factual footer such as `No changes to tasks.org`, `Saved changes to
+  tasks.org`, or `Discarded changes to tasks.org`; it does not append each
+  visited view.
   Long lists scroll within the row body while the title, summary, and key hint
   remain fixed; the selector keeps one context row above and below the highlight
   when space permits.

@@ -327,6 +327,7 @@ class InlineMenuSession:
         *,
         action_keys: Iterable[str] = (),
         height: int = DEFAULT_HEIGHT,
+        final_message: str = "Session closed",
         input: Any = None,
         output: Any = None,
     ) -> None:
@@ -339,6 +340,7 @@ class InlineMenuSession:
         self.effective_height = self.requested_height
         self.help_visible = False
         self.message: str | None = None
+        self.final_message = final_message
         self.error: str | None = None
 
         bindings = KeyBindings()
@@ -437,7 +439,7 @@ class InlineMenuSession:
             key_bindings=bindings,
             style=SELECT_STYLE,
             full_screen=False,
-            erase_when_done=False,
+            erase_when_done=True,
             mouse_support=False,
             terminal_size_polling_interval=0.5,
             before_render=self._before_render,
@@ -469,8 +471,11 @@ class InlineMenuSession:
         if active.on_back is not None and not active.on_back(self):
             self.application.invalidate()
             return
+        if message is not None:
+            self.final_message = message
         if len(self.views) == 1:
-            self.message = message
+            self.message = self.final_message
+            self.application.erase_when_done = False
             self.application.exit(result=MenuResult("back", None))
             return
         self.views.pop()
@@ -483,6 +488,11 @@ class InlineMenuSession:
     def set_message(self, message: str | None) -> None:
         self.message = message
         self.application.invalidate()
+
+    def set_outcome(self, message: str) -> None:
+        """Record a factual final outcome and show it in the active footer."""
+        self.final_message = message
+        self.set_message(message)
 
     def suspend(
         self,

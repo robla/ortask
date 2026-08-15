@@ -621,6 +621,7 @@ class InteractiveTaskController:
         session = menu.InlineMenuSession(
             self.initial_view(),
             action_keys=self.action_keys(),
+            final_message=f"No changes to {self.buf.path.name}",
         )
         self.session = session
         session.run()
@@ -649,7 +650,7 @@ class InteractiveTaskController:
 
         def finish(session: menu.InlineMenuSession, message: str) -> None:
             session.replace_view(self._task_view())
-            session.set_message(message)
+            session.set_outcome(message)
 
         def keep(session: menu.InlineMenuSession) -> None:
             finish(session, f"Keeping {auto} for later")
@@ -1150,6 +1151,7 @@ class InteractiveProjectController:
         session = menu.InlineMenuSession(
             self._project_view(),
             action_keys=InteractiveTaskController.action_keys(),
+            final_message="No task changes",
         )
         self.session = session
         session.run()

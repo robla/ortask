@@ -148,7 +148,8 @@ Small shared rendering primitives for interactive tools:
   one-shot highlight-bar selectors retained for compatibility
 - `MenuView` / `InlineMenuSession` — a persistent, bounded 20-row application
   shell with scrolling, command dispatch, contextual Help, view-stack
-  transitions, resize clamping, and external-command suspension
+  transitions, resize clamping, factual final outcomes, and external-command
+  suspension
 - `prompt_text()` / `ContextCancelled` — prompt_toolkit Esc cancellation with
   plain `input()` fallback
 
@@ -159,6 +160,12 @@ and whether Back should push its bounded save/discard view.
 `projtui.InteractiveProjectController` supplies the project root, attaches task
 controllers beneath it, and restores stable project selection on return.
 Numbered fallbacks retain their plain prompts by policy.
+
+`InlineMenuSession` initializes prompt_toolkit with `erase_when_done=True` so
+uncontrolled exits do not retain a misleading frame. Only a controlled root
+pop switches erasure off after placing the latest save/discard/recovery/no-op
+outcome in the footer. Prompt_toolkit's final render restores terminal modes
+and leaves the next shell prompt below that one retained bounded frame.
 
 ## Test compatibility
 

@@ -1228,6 +1228,144 @@ def test_selector_help_uses_action_metadata_once() -> None:
     assert "Esc/b/q" in text and "C-g/Esc/b/q/Enter closes it" in text
 
 
+def _run_local_task_pty(
+    directory: Path,
+    *,
+    initial_rows: int = 24,
+    resized_rows: int = 12,
+) -> tuple[int, bytes, bool]:
+    """Run ``ortask.py -i`` in a real PTY and capture its terminal stream."""
+    import fcntl
+    import os
+    import pty
+    import select
+    import signal
+    import struct
+    import termios
+    import time
+
+    master, slave = pty.openpty()
+    fcntl.ioctl(
+        slave,
+        termios.TIOCSWINSZ,
+        struct.pack("HHHH", initial_rows, 80, 0, 0),
+    )
+    attributes_before = termios.tcgetattr(slave)
+    os.write(slave, b"SENTINEL-ABOVE\r\n")
+    environment = dict(os.environ)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    environment["TERM"] = "xterm-256color"
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            str(ROOT / "ortask.py"),
+            "-i",
+        ],
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        cwd=directory,
+        env=environment,
+        close_fds=True,
+    )
+    captured = bytearray()
+    cursor_requests_answered = 0
+
+    def read_chunk() -> bool:
+        nonlocal cursor_requests_answered
+        try:
+            captured.extend(os.read(master, 65536))
+        except OSError:
+            return False
+        requests = bytes(captured).count(b"\x1b[6n")
+        while cursor_requests_answered < requests:
+            os.write(master, b"\x1b[2;1R")
+            cursor_requests_answered += 1
+        return True
+
+    def read_until(marker: bytes, timeout: float = 5.0) -> None:
+        deadline = time.monotonic() + timeout
+        while marker not in captured and time.monotonic() < deadline:
+            readable, _, _ = select.select([master], [], [], 0.1)
+            if not readable:
+                continue
+            if not read_chunk():
+                break
+        assert marker in captured, f"{marker!r} not rendered in {captured!r}"
+
+    def read_for(duration: float) -> None:
+        deadline = time.monotonic() + duration
+        while time.monotonic() < deadline:
+            readable, _, _ = select.select([master], [], [], 0.05)
+            if readable and not read_chunk():
+                return
+
+    try:
+        read_until(b"Open: 55")
+        os.write(master, b"j" * 50)
+        read_until(b"t0051")
+        read_for(0.1)
+        fcntl.ioctl(
+            slave,
+            termios.TIOCSWINSZ,
+            struct.pack("HHHH", resized_rows, 80, 0, 0),
+        )
+        before_resize = len(captured)
+        process.send_signal(signal.SIGWINCH)
+        read_for(0.2)
+        assert len(captured) > before_resize, "terminal resize did not repaint"
+        os.write(master, b"\x07")
+        read_until(b"Interactive help")
+        os.write(master, b"qq")
+        returncode = process.wait(timeout=5)
+        read_for(0.1)
+        attributes_after = termios.tcgetattr(slave)
+        os.write(slave, b"NEXT-PROMPT> ")
+        read_until(b"NEXT-PROMPT>")
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        os.close(master)
+        os.close(slave)
+
+    return returncode, bytes(captured), attributes_before == attributes_after
+
+
+@pytest.mark.skipif(
+    menu.Application is None or sys.platform == "win32",
+    reason="PTY integration requires prompt_toolkit on POSIX",
+)
+def test_local_task_normal_exit_contract_in_real_pty(tmp_path: Path) -> None:
+    # A long, resized session should retain one outcome and restore the next prompt.
+    import re
+
+    tasks_text = "* Tasks\n" + "".join(
+        f"** TODO t{index:04} Task {index}\n"
+        for index in range(1, 56)
+    )
+    write(tmp_path / "tasks.org", tasks_text)
+
+    returncode, output, restored = _run_local_task_pty(tmp_path)
+
+    assert returncode == 0
+    assert restored is True
+    assert b"SENTINEL-ABOVE" in output
+    assert b"t0051" in output
+    assert b"Interactive help" in output
+    assert b"No changes to tasks.org" in output
+    assert b"\x1b[?1049h" not in output
+    assert b"\x1b[?1047h" not in output
+    assert b"\x1b[?47h" not in output
+    before_prompt, marker, after_prompt = output.rpartition(b"NEXT-PROMPT>")
+    assert marker == b"NEXT-PROMPT>"
+    assert re.search(
+        rb"\r+\n(?:\x1b\[[0-?]*[ -/]*[@-~])*$",
+        before_prompt,
+    )
+    assert after_prompt == b" "
+
+
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_inline_task_contexts_share_one_bounded_application(
     tmp_path: Path,
@@ -1601,6 +1739,8 @@ def test_project_task_save_returns_to_same_project(tmp_path: Path) -> None:
     assert len(controller.session.views) == 1
     assert controller.session.current_view.title == "Projects"
     assert controller.session.current_view.selected_index == 1
+    assert controller.session.final_message == "Saved changes to tasks.org"
+    assert controller.session.message == "Saved changes to tasks.org"
     assert "** TODO t0001 First" in first.read_text(encoding="utf-8")
     assert "** DONE t0001 Second" in second.read_text(encoding="utf-8")
 
@@ -1752,6 +1892,8 @@ def test_interactive_save_view_saves_by_default(tmp_path: Path) -> None:
     assert not buf.autosave_path.exists()
     assert controller.session is not None
     assert controller.session.message == "Saved changes to tasks.org"
+    assert controller.session.final_message == "Saved changes to tasks.org"
+    assert controller.session.application.erase_when_done is False
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
@@ -1779,6 +1921,8 @@ def test_interactive_save_view_cancel_then_discard(tmp_path: Path) -> None:
     assert not buf.autosave_path.exists()
     assert controller.session is not None
     assert controller.session.message == "Discarded changes to tasks.org"
+    assert controller.session.final_message == "Discarded changes to tasks.org"
+    assert controller.session.application.erase_when_done is False
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
