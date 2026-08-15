@@ -251,3 +251,65 @@ The roadmap is complete when:
 - non-TTY numbered behavior remains usable; and
 - pipe-input and PTY tests defend repainting, resize, terminal restoration, and
   absence of alternate-screen switching.
+
+# Task Archiving
+
+Tracked as `t0010`. This is a separate area from the interactive-UI work above.
+
+## Goal
+
+Move completed tasks out of the working task file without inventing an ortask
+convention. An Emacs org user who already archives with `C-c C-x C-a` should
+find ortask's archive file unremarkable, and should be able to keep archiving
+from Emacs afterward with no ortask involvement.
+
+## Stock Emacs Behavior to Match
+
+`org-archive-subtree` writes to `org-archive-location`, whose default is:
+
+```
+"%s_archive::* Archived Tasks"
+```
+
+`%s` expands to the current file's full name including its extension, so
+`todo.org` archives to `todo.org_archive` — the extension lands mid-filename,
+which looks wrong but is what an unconfigured Emacs produces. Entries append
+under a top-level `* Archived Tasks` heading, promoted to that level rather
+than re-nested under copies of their original parents. Original position is
+recorded in a property drawer on the archived heading: `ARCHIVE_TIME`,
+`ARCHIVE_FILE`, `ARCHIVE_OLPATH` (the outline path of the former parents),
+`ARCHIVE_CATEGORY`, and `ARCHIVE_TODO` (the state at archive time).
+
+Two variations are common enough to accommodate but not to default to: users
+who override the location to `%s_archive.org` so the file ends in `.org`, and
+users who tag entries `:ARCHIVE:` in place instead of moving them at all.
+Archiving in org is not exclusively a file move.
+
+## Direction for ortask
+
+Add an `archive` verb to `ortask.py` that moves one or more DONE subtrees to
+the archive file and writes the same property drawer Emacs would. The archive
+target derives from the task file's own name, so `tasks.org` archives to
+`tasks.org_archive`; a later config key or `--to` option can override it.
+
+Constraints that follow from existing project rules:
+
+- IDs are permanent and never reused, so archived tasks keep their IDs and ID
+  allocation must continue to account for them.
+- Archiving moves a whole subtree; archiving a parent takes its subtasks with
+  it. Archiving a subtask while its parent stays open needs an explicit answer.
+- The archive file is a destination, not a task file. It must not be picked up
+  by `ortask.py`'s discovery order, and it must not appear as a project's task
+  file in `orgmgr.py`. Reading it — `ort list --archived` or similar — is a
+  reasonable later addition, but the default views should stay quiet.
+- Writes stay atomic and symlink-resolving on both files, and a failure must
+  not leave a subtree in neither file or in both.
+
+## Open Questions
+
+- Whether `archive` takes explicit IDs, a `--done` sweep, or both.
+- Whether SUPERSEDED (terminal but not DONE) subtrees are eligible.
+- Whether the TUI gets an archive action, and whether it needs confirmation
+  given that archiving is reversible only by editing two files.
+- Whether ortask should recognize an existing `#+ARCHIVE:` keyword or an
+  `:ARCHIVE:` property in the task file and honor it over the default.
