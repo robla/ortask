@@ -89,6 +89,7 @@ class MenuView:
     summary: str = ""
     preamble: str = ""
     instruction: str = ""
+    empty_text: str = "(no tasks)"
     actions: dict[str, MenuAction] = field(default_factory=dict)
     select_help: str = "Open the highlighted item"
     back_help: str = "Back one level (exit at the top level)"
@@ -230,21 +231,25 @@ def _status_class(status: str) -> str:
         return "class:status.todo"
     if status == "DONE":
         return "class:status.done"
+    if status == "PROJECT":
+        return "class:project.name"
     return "class:status.other"
 
 
 def _selected_bar(status: str) -> str:
-    """Selection-bar class for a highlighted row, keyed to its task state.
+    """Selection-bar class for a highlighted row, keyed to its row status.
 
     Mirrors :func:`_status_class`: TODO rows get the gold bar, DONE rows the
-    green bar, anything else the neutral gray bar. The bar color (plus black
-    text) carries the task state on the selected row, so the per-label
-    ``status.*`` foreground is dropped there.
+    green bar, PROJECT rows cyan, and anything else the neutral gray bar. The
+    bar color (plus black text) carries the row type on the selection, so the
+    per-label foreground is dropped there.
     """
     if status == "TODO":
         return "selected.todo"
     if status == "DONE":
         return "selected.done"
+    if status == "PROJECT":
+        return "selected.project"
     return "selected.other"
 
 
@@ -285,10 +290,15 @@ def _selector_help(
     return FormattedText(fragments)
 
 
-def _render_menu_rows(rows: list[MenuRow], selected_index: int) -> FormattedText:
+def _render_menu_rows(
+    rows: list[MenuRow],
+    selected_index: int,
+    *,
+    empty_text: str = "(no tasks)",
+) -> FormattedText:
     fragments: list[tuple[str, str]] = []
     if not rows:
-        fragments.append(("class:dim", "  (no tasks)\n"))
+        fragments.append(("class:dim", f"  {empty_text}\n"))
     for index, row in enumerate(rows):
         selected = index == selected_index
         cursor = "▶ " if selected else "  "
@@ -529,7 +539,11 @@ class InlineMenuSession:
                 select_help=view.select_help,
                 back_help=view.back_help,
             )
-        rows = _render_menu_rows(view.rows, view.selected_index)
+        rows = _render_menu_rows(
+            view.rows,
+            view.selected_index,
+            empty_text=view.empty_text,
+        )
         if not view.preamble:
             return rows
         return FormattedText(

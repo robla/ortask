@@ -1527,48 +1527,82 @@ def test_select_menu_empty_rows_allows_exit() -> None:
     assert run("e") == menu.MenuResult("edit", None)
 
 
-def test_project_menu_uses_highlight_selector_when_available(
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_project_menu_uses_one_application_for_nested_task_views(
     tmp_path: Path, monkeypatch
 ) -> None:
-    # The registry project picker should use the same fancy selector as task lists.
+    # Project, task, detail, Help, and picker views should share one application.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
     project_dir = tmp_path / "registry" / "sample"
-    org_file = write(
+    write(
         project_dir / "todo.org",
         """
         * Tasks
         ** TODO t0001 Pick me
         """,
     )
-    results = iter([
-        menu.MenuResult("select", 0),
-        menu.MenuResult("back", None),
-    ])
-    selector_calls: list[list[menu.ProjectRow]] = []
-    opened: list[tuple[manager.Project, bool]] = []
+    real_application = menu.Application
+    applications = []
+
+    def tracked_application(*args, **kwargs):
+        app = real_application(*args, **kwargs)
+        applications.append(app)
+        return app
+
+    def obsolete_path(*_args, **_kwargs):
+        raise AssertionError("project mode must not start a one-shot selector")
 
     monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
-    monkeypatch.setattr(
-        menu,
-        "select_project_menu",
-        lambda rows, **kw: selector_calls.append(rows) or next(results),
-    )
-    monkeypatch.setattr(
-        projtui,
-        "task_menu",
-        lambda project, include_done: opened.append((project, include_done)) or True,
-    )
+    monkeypatch.setattr(menu, "Application", tracked_application)
+    monkeypatch.setattr(menu, "select_project_menu", obsolete_path)
+    monkeypatch.setattr(projtui, "task_menu", obsolete_path)
 
-    assert projtui.project_menu(tmp_path / "registry", include_done=True) == 0
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Open project/task, visit Help and priority, then pop every context.
+            pin.send_text("\r\r\x07qpqqqq")
+            assert projtui.project_menu(
+                tmp_path / "registry",
+                include_done=True,
+            ) == 0
 
-    assert selector_calls
-    assert selector_calls[0][0].name == "sample"
-    assert selector_calls[0][0].org_file == "sample/todo.org"
-    assert opened == [
-        (
-            manager.Project("sample", project_dir, org_file.resolve()),
-            True,
-        )
-    ]
+    assert len(applications) == 1
+    assert applications[0].full_screen is False
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_project_task_save_returns_to_same_project(tmp_path: Path) -> None:
+    # Saving a child task context should restore its project selection, not exit.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    registry = tmp_path / "registry"
+    first = write(
+        registry / "alpha" / "tasks.org",
+        "* Tasks\n** TODO t0001 First\n",
+    )
+    second = write(
+        registry / "beta" / "tasks.org",
+        "* Tasks\n** TODO t0001 Second\n",
+    )
+    controller = projtui.InteractiveProjectController(registry, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Select beta, edit state, save, then leave the restored project view.
+            pin.send_text("j\r\x1b[1;2Cq\rq")
+            controller.run()
+
+    assert controller.session is not None
+    assert len(controller.session.views) == 1
+    assert controller.session.current_view.title == "Projects"
+    assert controller.session.current_view.selected_index == 1
+    assert "** TODO t0001 First" in first.read_text(encoding="utf-8")
+    assert "** DONE t0001 Second" in second.read_text(encoding="utf-8")
 
 
 def test_task_menu_order_preserves_org_file_hierarchy(tmp_path: Path) -> None:

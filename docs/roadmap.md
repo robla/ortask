@@ -8,28 +8,27 @@ output above it, and repaint that same region when the user opens a task, Help,
 a priority picker, or another context. It should not leave every prior menu in
 scrollback while the session is still running.
 
-The same application shell should eventually serve `orgmgr.py -i`. The plain
-numbered menus remain the non-TTY fallback and are not part of this rendering
-change.
+The same application shell now serves `orgmgr.py -i`. The plain numbered menus
+remain the non-TTY fallback and are not part of this rendering change.
 
-**Status:** The first local-task slice is implemented. `ort -i` now keeps its
-task list, task details, nested subtasks, Help, task confirmation, and priority
+**Status:** The main context migration is implemented. `ort -i` keeps its task
+list, task details, nested subtasks, Help, task confirmation, and priority
 picker inside one bounded `InlineMenuSession`. External-editor launch suspends
-and resumes that application. Dirty task sessions now resolve Save,
+and resumes that application. Dirty task sessions resolve Save,
 Discard, or Continue Editing inside the bounded view stack, and task sessions
 with recovery data begin with bounded Keep, Recover, and Discard choices. The
-`orgmgr.py -i` project list, shared project/task session, final outcome policy,
-and PTY cleanup coverage remain.
+`orgmgr.py -i` project list now serves as the root of that same view stack. The
+final outcome policy and PTY cleanup coverage remain.
 
 ## Original Cause
 
-The original selector was inline but not a persistent application.
+The original production selector was inline but not a persistent application.
 `ortasklib.menu._run_selector()` constructs a new
 `prompt_toolkit.Application`, calls `Application.run()`, and exits that
-application for every selection or action. Its callers then loop and call
-`select_menu()` again. Opening a task creates another selector, returning from
-that task creates another task-list selector, and project navigation repeats
-the same pattern.
+application for every selection or action. Its original callers then looped and
+called `select_menu()` again. Opening a task created another selector, returning
+from that task created another task-list selector, and project navigation
+repeated the same pattern.
 
 The applications use `full_screen=False`, which correctly avoids the alternate
 screen, but leave `erase_when_done` at prompt_toolkit's `False` default. Each
@@ -120,25 +119,26 @@ and confirm that the cursor and next shell prompt end below the application.
 
 ### 2. Add the persistent bounded shell
 
-**Implemented for local task sessions.** `InlineMenuSession` supplies the
-20-row dynamic header/body/footer layout and resize clamping. The compatibility
-one-shot selectors remain for the project menu during migration.
+**Implemented.** `InlineMenuSession` supplies the 20-row dynamic
+header/body/footer layout and resize clamping for local task sessions and the
+registry-scoped project/task stack. Compatibility one-shot selectors remain
+available but are no longer used by production interactive paths.
 
 Build a single 20-row application containing a dynamic header, scrolling body,
 and command footer. Port task-list navigation first while keeping selection
 anchored by task ID. Add `before_render` resize handling so shrinking the
 terminal adjusts the effective height without replacing the application.
 
-During migration, the existing `select_menu()` API may remain for tests or
-other callers, but the `ort -i` path must stop using repeated one-shot
-applications. Remove the obsolete path after all interactive views have moved.
+The existing `select_menu()` API remains for compatibility and focused legacy
+tests, but production interactive paths no longer use repeated one-shot
+applications. The obsolete API is now eligible for separate cleanup.
 
 ### 3. Move contexts onto a view stack
 
-**Partially implemented.** Local task details, nested subtasks, Help, task
-confirmation, and priority selection now push, pop, or replace `MenuView`
-instances without ending the application. The `orgmgr.py -i` project list still
-needs to become the root view of the same session.
+**Implemented.** Local task details, nested subtasks, Help, task confirmation,
+priority selection, and the `orgmgr.py -i` project list now push, pop, or
+replace `MenuView` instances without ending the application. Returning from a
+task context refreshes the project list and restores selection by project name.
 
 Represent task details, subtasks, project selection, priority selection, and
 Help as push/pop transitions. Replace recursive `focus_menu()` calls and outer
@@ -205,12 +205,11 @@ A brief external read of `ortasklib/menu.py`, `projtui.py`, and their git
 history against inedit's `_inedit/` split, for context ahead of any shared
 extraction:
 
-- **Two selectors are coexisting, not converging yet.** `_run_selector`,
-  `select_menu`, and `select_project_menu` remain in `menu.py` alongside the
-  new `InlineMenuSession`/`MenuView` stack, which is most of why the file is
-  now 846 lines. This roadmap already calls that transitional; the risk is
-  that `orgmgr.py -i` stays on the old path long enough for "transitional" to
-  become permanent.
+- **Compatibility selectors still coexist with the production stack.**
+  `_run_selector`, `select_menu`, and `select_project_menu` remain in `menu.py`
+  alongside `InlineMenuSession`/`MenuView`, but `orgmgr.py -i` has now moved to
+  the persistent stack. Removing the unused compatibility path is separate
+  cleanup rather than a blocker for the bounded-session roadmap.
 - **One ortask module is doing what inedit splits three ways.** inedit
   separates presentation, application lifecycle, and terminal handling into
   distinct modules with an enforced acyclic dependency graph
@@ -225,11 +224,11 @@ extraction:
   `handrail-plan.md` proposes, would likely have turned that into a one-line
   change instead of a rewrite-review-rewrite cycle.
 - **`InlineMenuSession` is good evidence for a shared vocabulary, not proof of
-  it yet.** Its view/session shape already lines up well with
+  a cross-project library yet.** Its view/session shape already lines up with
   `handrail-plan.md`'s `InlineApp`/`View`/`ViewStack`/`SelectionResult`
-  sketch, which is encouraging. But only the local-task path has moved onto
-  it — the project-list path is still the old one-shot pattern. One migrated
-  call site isn't the two independent consumers extraction should wait for.
+  sketch, and both local-task and project/task controllers now use it. Those
+  are still two paths in one application, not independent consumers; shared
+  extraction should continue to wait for matching evidence from another app.
 
 ## Completion Criteria
 

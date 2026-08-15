@@ -15,7 +15,7 @@ resize, and the absence of alternate-screen switching.
 *** DONE [#A] t0009.2 Add one persistent 20-row prompt_toolkit application shell
 Give the session a dynamic header, scrolling body, fixed command footer, and
 terminal-aware effective height.
-*** TODO [#A] t0009.3 Move project, task, detail, Help, and picker contexts onto a view stack
+*** DONE [#A] t0009.3 Move project, task, detail, Help, and picker contexts onto a view stack
 Preserve stable selection and scroll state when pushing and popping views.
 *** DONE [#A] t0009.4 Move recovery and save/discard prompts into the bounded application
 Show confirmations and outcomes in the active region without appending output.

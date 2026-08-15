@@ -36,17 +36,18 @@ file.
 The task selector has two modes, chosen automatically by
 `menu.interactive_select_available()`:
 
-- **Highlight-bar mode** (interactive TTY with `prompt_toolkit`): local task
-  workflows run in one bounded `menu.InlineMenuSession`. Up/Down or `j`/`k`
-  move the highlight (wrapping); `Enter` opens the focus view; Shift-Left/Right cycles
-  the highlighted task through the `TODO`/`DONE` ring; Shift-Up/Down raises or
-  lowers its priority; `p` opens an explicit priority picker; `C-t` cycles the
-  visibility filter (`all -> TODO -> DONE`); `e` opens the editor at the
-  highlighted task's line; `C-g` opens contextual command help; and `Esc`, `b`,
-  or `q` goes back exactly one level. In `orgmgr.py -i`, leaving a task list
-  returns to the project menu; in local `ortask.py -i`, that task list is the top
-  level, so leaving it exits. The local task app renders inline (not full
-  screen), defaults to 20 rows, and repaints that region as contexts change.
+- **Highlight-bar mode** (interactive TTY with `prompt_toolkit`): task workflows
+  run in one bounded `menu.InlineMenuSession`. Up/Down or `j`/`k`
+  move the highlight (wrapping); `Enter` opens the focus view;
+  Shift-Left/Right cycles the highlighted task through the `TODO`/`DONE` ring;
+  Shift-Up/Down raises or lowers its priority; `p` opens an explicit priority
+  picker; `C-t` cycles the visibility filter (`all -> TODO -> DONE`); `e` opens
+  the editor at the highlighted task's line; `C-g` opens contextual command
+  help; and `Esc`, `b`, or `q` goes back exactly one level. In `orgmgr.py -i`,
+  leaving a task list returns to the project menu; in local `ortask.py -i`, that
+  task list is the top level, so leaving it exits. The application renders
+  inline (not full screen), defaults to 20 rows, and repaints that region as
+  contexts change.
   It retains at most its final frame instead of appending each visited task
   view.
   Long lists scroll within the row body while the title, summary, and key hint
@@ -56,9 +57,9 @@ The task selector has two modes, chosen automatically by
   numbered dashboard + prompt, preserved as the scriptable fallback with the
   same `C-t` visibility cycle.
 
-The top-level project list uses the same selection vocabulary but still runs
-through the older one-shot `select_project_menu()` during migration. Moving it
-into the task session as the root view is tracked in [roadmap.md](roadmap.md).
+The top-level `orgmgr.py -i` project list is the root view of the same bounded
+application. Opening a project pushes its recovery or task view; leaving that
+task context refreshes the project list and restores the same project by name.
 In highlight-bar mode, `C-g` replaces the rows with a modal help view; `C-g`,
 `Esc`, `b`, `q`, or `Enter` closes help and restores the same selection. Custom
 actions use `menu.MenuAction` metadata so adding a binding also adds its key and

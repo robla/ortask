@@ -611,20 +611,28 @@ class InteractiveTaskController:
         self.filter_mode = _task_filter_mode(include_done)
         self.session: menu.InlineMenuSession | None = None
 
-    def run(self) -> None:
-        action_keys = tuple(
+    @staticmethod
+    def action_keys() -> tuple[str, ...]:
+        return tuple(
             dict.fromkeys([*TASK_MENU_ACTIONS, *FOCUS_MENU_ACTIONS])
         )
+
+    def run(self) -> None:
         session = menu.InlineMenuSession(
-            self._initial_view(),
-            action_keys=action_keys,
+            self.initial_view(),
+            action_keys=self.action_keys(),
         )
         self.session = session
         session.run()
         if session.error:
             print(session.error, file=sys.stderr)
 
-    def _initial_view(self) -> menu.MenuView:
+    def attach(self, session: menu.InlineMenuSession) -> None:
+        """Push this task context onto an existing bounded session."""
+        self.session = session
+        session.push_view(self.initial_view())
+
+    def initial_view(self) -> menu.MenuView:
         recovered = _recovery_text(self.buf)
         if recovered is None:
             return self._task_view()
@@ -1130,23 +1138,98 @@ def focus_menu(buf: OrgBuffer, item: MenuItem) -> None:
 PROJECT_MENU_INSTRUCTION = "↑↓/jk · ↵ open · C-g help · Esc/b/q exit"
 
 
+class InteractiveProjectController:
+    """Build the project/task view stack for one bounded menu application."""
+
+    def __init__(self, workspace: Path, include_done: bool) -> None:
+        self.workspace = workspace
+        self.include_done = include_done
+        self.session: menu.InlineMenuSession | None = None
+
+    def run(self) -> None:
+        session = menu.InlineMenuSession(
+            self._project_view(),
+            action_keys=InteractiveTaskController.action_keys(),
+        )
+        self.session = session
+        session.run()
+        if session.error:
+            print(session.error, file=sys.stderr)
+
+    def _project_view(
+        self,
+        selected_name: str | None = None,
+        fallback_index: int = 0,
+    ) -> menu.MenuView:
+        projects = discover_projects(self.workspace)
+        project_rows = _project_rows(self.workspace, projects)
+        rows = [
+            menu.MenuRow(
+                row.number,
+                "PROJECT",
+                f"{row.name:<12}  {row.org_file}",
+            )
+            for row in project_rows
+        ]
+        start_index = self._anchor_index(projects, selected_name, fallback_index)
+
+        def handle(
+            session: menu.InlineMenuSession,
+            result: menu.MenuResult,
+        ) -> None:
+            if result.action != "select" or result.index is None:
+                return
+            if not 0 <= result.index < len(projects):
+                return
+            project = projects[result.index]
+            controller = InteractiveTaskController(
+                project,
+                OrgBuffer(canonical_org_file(project)),
+                self.include_done,
+            )
+            controller.attach(session)
+
+        def resume(session: menu.InlineMenuSession) -> None:
+            view = session.current_view
+            index = view.selected_index
+            name = projects[index].name if 0 <= index < len(projects) else None
+            session.replace_view(self._project_view(name, index))
+
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title="Projects",
+            summary=f"Registry: {self.workspace}",
+            instruction=PROJECT_MENU_INSTRUCTION,
+            empty_text="(no projects)",
+            select_help="Open the highlighted project",
+            selected_index=start_index,
+            on_resume=resume,
+        )
+
+    @staticmethod
+    def _anchor_index(
+        projects: list[Project],
+        selected_name: str | None,
+        fallback_index: int,
+    ) -> int:
+        if selected_name is not None:
+            for index, project in enumerate(projects):
+                if project.name == selected_name:
+                    return index
+        if not projects:
+            return 0
+        return min(max(fallback_index, 0), len(projects) - 1)
+
+
 def project_menu(workspace: Path, include_done: bool) -> int:
+    if menu.interactive_select_available():
+        InteractiveProjectController(workspace, include_done).run()
+        return 0
+
     while True:
         projects = discover_projects(workspace)
         rows = _project_rows(workspace, projects)
-        if menu.interactive_select_available():
-            result = menu.select_project_menu(
-                rows,
-                title="Projects",
-                summary=f"Registry: {workspace}",
-                instruction=PROJECT_MENU_INSTRUCTION,
-            )
-            if result.action == "back":
-                return 0
-            if result.index is not None and projects:
-                task_menu(projects[result.index], include_done)
-            continue
-
         menu.print_project_dashboard("Projects", workspace, rows)
         try:
             choice = _prompt_choice(len(projects), allow_back=False)
