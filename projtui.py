@@ -12,6 +12,7 @@ import os
 import shlex
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +31,8 @@ from ortasklib.manager import (
 
 
 DETAIL_LINE_LIMIT = 20
+INLINE_DETAIL_LINE_LIMIT = 8
+
 
 @dataclass(frozen=True)
 class MenuItem:
@@ -249,7 +252,11 @@ def _project_rows(workspace: Path, projects: list[Project]) -> list[menu.Project
     return rows
 
 
-def _context_lines(buf: OrgBuffer, item: MenuItem) -> list[str]:
+def _context_lines(
+    buf: OrgBuffer,
+    item: MenuItem,
+    limit: int = DETAIL_LINE_LIMIT,
+) -> list[str]:
     if item.task:
         items = core.parse_org(buf.read())
         lines: list[str] = []
@@ -259,10 +266,10 @@ def _context_lines(buf: OrgBuffer, item: MenuItem) -> list[str]:
             if task.id == selected.id or task.id.startswith(prefix):
                 lines.append(core.build_org_heading(task))
                 lines.extend(task.body_lines)
-        display_lines = lines[:DETAIL_LINE_LIMIT]
-        if len(lines) > DETAIL_LINE_LIMIT:
+        display_lines = lines[:limit]
+        if len(lines) > limit:
             display_lines.append(
-                f"... truncated {len(lines) - DETAIL_LINE_LIMIT} more line(s)"
+                f"... truncated {len(lines) - limit} more line(s)"
             )
         return display_lines
 
@@ -278,10 +285,10 @@ def _context_lines(buf: OrgBuffer, item: MenuItem) -> list[str]:
             if level <= base_level:
                 break
         display_lines.append(line)
-    result = display_lines[:DETAIL_LINE_LIMIT]
-    if len(display_lines) > DETAIL_LINE_LIMIT:
+    result = display_lines[:limit]
+    if len(display_lines) > limit:
         result.append(
-            f"... truncated {len(display_lines) - DETAIL_LINE_LIMIT} more line(s)"
+            f"... truncated {len(display_lines) - limit} more line(s)"
         )
     return result
 
@@ -535,28 +542,6 @@ def _priority_picker(buf: OrgBuffer, item: MenuItem) -> None:
         print("not an ortask task; cannot change priority")
         return
     current = item.task.priority
-    if menu.interactive_select_available():
-        rows = [
-            menu.MenuRow(index, priority or "NONE", description)
-            for index, (priority, description) in enumerate(PRIORITY_OPTIONS, start=1)
-        ]
-        start_index = next(
-            index
-            for index, (priority, _) in enumerate(PRIORITY_OPTIONS)
-            if priority == current
-        )
-        result = menu.select_menu(
-            rows,
-            title=f"Set priority for {item.task.id}",
-            summary=f"Current priority: {current or 'none'}",
-            instruction="↑↓/jk · ↵ set · C-g help · Esc/b/q cancel",
-            start_index=start_index,
-            select_help="Set the highlighted priority",
-        )
-        if result.action == "select" and result.index is not None:
-            _set_priority(buf, item, PRIORITY_OPTIONS[result.index][0])
-        return
-
     while True:
         try:
             answer = menu.prompt_text(
@@ -609,55 +594,321 @@ def _anchor_index(items: list[MenuItem], selected_id: str | None, fallback: int)
     return min(max(fallback, 0), len(items) - 1)
 
 
-def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool) -> None:
-    selected_id: str | None = None
-    fallback_index = 0
-    filter_mode = _task_filter_mode(include_done)
-    while True:
+class InteractiveTaskController:
+    """Build ortask views for one persistent bounded menu application."""
+
+    def __init__(
+        self,
+        project: Project,
+        buf: OrgBuffer,
+        include_done: bool,
+    ) -> None:
+        self.project = project
+        self.buf = buf
+        self.filter_mode = _task_filter_mode(include_done)
+        self.session: menu.InlineMenuSession | None = None
+
+    def run(self) -> None:
+        action_keys = tuple(
+            dict.fromkeys([*TASK_MENU_ACTIONS, *FOCUS_MENU_ACTIONS])
+        )
+        session = menu.InlineMenuSession(
+            self._task_view(),
+            action_keys=action_keys,
+        )
+        self.session = session
+        session.run()
+        if session.error:
+            print(session.error, file=sys.stderr)
+
+    def _task_view(
+        self,
+        selected_id: str | None = None,
+        fallback_index: int = 0,
+    ) -> menu.MenuView:
         try:
             items = load_menu_items(
-                buf, filter_mode=filter_mode, sort_key=_stable_sort_key
+                self.buf,
+                filter_mode=self.filter_mode,
+                sort_key=_stable_sort_key,
             )
         except ValueError as exc:
-            print(exc)
-            return
-        rows = [_dashboard_row(i, item) for i, item in enumerate(items, start=1)]
+            items = []
+            rows = [menu.MenuRow(1, "ERROR", str(exc))]
+        else:
+            rows = [
+                _dashboard_row(index, item)
+                for index, item in enumerate(items, start=1)
+            ]
         todo, done, total = menu.count_statuses(rows)
-        summary = f"Open: {todo}  Done: {done}  Total: {total}"
-        result = menu.select_menu(
-            rows,
-            title=f"{project.name} tasks",
-            summary=summary,
-            instruction=_task_menu_instruction(filter_mode),
+        start_index = _anchor_index(items, selected_id, fallback_index)
+
+        def handle(
+            session: menu.InlineMenuSession,
+            result: menu.MenuResult,
+        ) -> None:
+            self._handle_task_result(session, items, result)
+
+        def resume(session: menu.InlineMenuSession) -> None:
+            old_view = session.current_view
+            index = old_view.selected_index
+            task_id = self._task_id_at(items, index)
+            session.replace_view(self._task_view(task_id, index))
+
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title=f"{self.project.name} tasks",
+            summary=f"Open: {todo}  Done: {done}  Total: {total}",
+            instruction=_task_menu_instruction(self.filter_mode),
             actions=TASK_MENU_ACTIONS,
-            start_index=_anchor_index(items, selected_id, fallback_index),
+            select_help="Open the highlighted task's details",
+            selected_index=start_index,
+            on_resume=resume,
         )
-        if result.index is not None and items:
-            fallback_index = result.index
-            chosen = items[result.index]
-            selected_id = chosen.task.id if chosen.task is not None else None
-        if result.action == "back":
-            return
+
+    @staticmethod
+    def _task_id_at(items: list[MenuItem], index: int | None) -> str | None:
+        if index is None or not 0 <= index < len(items):
+            return None
+        task = items[index].task
+        return task.id if task is not None else None
+
+    def _handle_task_result(
+        self,
+        session: menu.InlineMenuSession,
+        items: list[MenuItem],
+        result: menu.MenuResult,
+    ) -> None:
+        index = result.index
+        item = items[index] if index is not None and index < len(items) else None
+        selected_id = self._task_id_at(items, index)
+        fallback = index or 0
+
         if result.action == "edit":
-            line = items[result.index].line_num if items and result.index is not None else None
-            _open_editor(buf, line)
-            continue
+            line_num = item.line_num if item is not None else None
+            self._suspend_for_editor(
+                session,
+                line_num,
+                lambda: session.replace_view(
+                    self._task_view(selected_id, fallback)
+                ),
+            )
+            return
         if result.action == "filter":
-            filter_mode = _next_task_filter(filter_mode)
-            continue
-        if not items:
-            continue
-        item = items[result.index]
+            self.filter_mode = _next_task_filter(self.filter_mode)
+            session.replace_view(self._task_view(selected_id, fallback))
+            return
+        if item is None:
+            return
         if result.action == "toggle":
-            _toggle_state(buf, item)
+            _toggle_state(self.buf, item)
+            session.replace_view(self._task_view(selected_id, fallback))
         elif result.action == "priority_up":
-            _shift_priority(buf, item, 1)
+            _shift_priority(self.buf, item, 1)
+            session.replace_view(self._task_view(selected_id, fallback))
         elif result.action == "priority_down":
-            _shift_priority(buf, item, -1)
-        elif result.action == "priority":
-            _priority_picker(buf, item)
+            _shift_priority(self.buf, item, -1)
+            session.replace_view(self._task_view(selected_id, fallback))
+        elif result.action == "priority" and item.task is not None:
+            session.push_view(self._priority_view(item))
         elif result.action == "select":
-            focus_menu(buf, item)
+            session.push_view(self._focus_view(item))
+
+    def _focus_view(
+        self,
+        item: MenuItem,
+        selected_index: int = 0,
+    ) -> menu.MenuView:
+        item = _refresh_item(self.buf, item)
+        subtasks = _direct_subtasks(self.buf, item)
+        rows, targets = _focus_rows(item, subtasks)
+        if item.task is not None:
+            title = f"Edit {item.task.id}: {item.task.text}"
+            summary = (
+                f"State: {item.task.state} · Priority: "
+                f"{item.task.priority or 'none'} · Line: {item.task.line_num + 1}"
+            )
+            actions = FOCUS_MENU_ACTIONS
+        else:
+            title = "Org heading"
+            summary = item.label
+            actions = {"e": _EDIT_MENU_ACTION}
+
+        def handle(
+            session: menu.InlineMenuSession,
+            result: menu.MenuResult,
+        ) -> None:
+            self._handle_focus_result(session, item, targets, result)
+
+        def resume(session: menu.InlineMenuSession) -> None:
+            index = session.current_view.selected_index
+            session.replace_view(self._focus_view(item, index))
+
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title=title,
+            summary=summary,
+            preamble="\n".join(
+                _context_lines(
+                    self.buf,
+                    item,
+                    limit=INLINE_DETAIL_LINE_LIMIT,
+                )
+            ),
+            instruction=(
+                "↑↓/jk · ↵ choose · C-g help · Shift+←/→ state · "
+                "Shift+↑/↓ priority · p priority · e editor · Esc/b/q back"
+            ),
+            actions=actions,
+            select_help="Edit the highlighted field or open the subtask",
+            selected_index=selected_index,
+            on_resume=resume,
+        )
+
+    def _handle_focus_result(
+        self,
+        session: menu.InlineMenuSession,
+        item: MenuItem,
+        targets: list[tuple[str, MenuItem | None]],
+        result: menu.MenuResult,
+    ) -> None:
+        selected_index = result.index or 0
+        if result.action == "edit":
+            self._suspend_for_editor(
+                session,
+                item.line_num,
+                lambda: session.replace_view(
+                    self._focus_view(item, selected_index)
+                ),
+            )
+            return
+        if item.task is None:
+            return
+        if result.action == "toggle":
+            _toggle_state(self.buf, item)
+            session.replace_view(self._focus_view(item, selected_index))
+            return
+        if result.action == "priority_up":
+            _shift_priority(self.buf, item, 1)
+            session.replace_view(self._focus_view(item, selected_index))
+            return
+        if result.action == "priority_down":
+            _shift_priority(self.buf, item, -1)
+            session.replace_view(self._focus_view(item, selected_index))
+            return
+        if result.action == "priority":
+            session.push_view(self._priority_view(item))
+            return
+        if result.action == "done":
+            session.push_view(self._done_confirmation_view(item))
+            return
+        if result.action != "select" or result.index is None:
+            return
+
+        action, target = targets[result.index]
+        if action == "state":
+            _toggle_state(self.buf, item)
+            session.replace_view(self._focus_view(item, result.index))
+        elif action == "priority":
+            session.push_view(self._priority_view(item))
+        elif action == "edit":
+            self._suspend_for_editor(
+                session,
+                item.line_num,
+                lambda: session.replace_view(
+                    self._focus_view(item, result.index or 0)
+                ),
+            )
+        elif action == "subtask" and target is not None:
+            session.push_view(self._focus_view(target))
+
+    def _priority_view(self, item: MenuItem) -> menu.MenuView:
+        assert item.task is not None
+        current = item.task.priority
+        rows = [
+            menu.MenuRow(index, priority or "NONE", description)
+            for index, (priority, description) in enumerate(
+                PRIORITY_OPTIONS,
+                start=1,
+            )
+        ]
+        start_index = next(
+            index
+            for index, (priority, _) in enumerate(PRIORITY_OPTIONS)
+            if priority == current
+        )
+
+        def handle(
+            session: menu.InlineMenuSession,
+            result: menu.MenuResult,
+        ) -> None:
+            if result.action != "select" or result.index is None:
+                return
+            _set_priority(self.buf, item, PRIORITY_OPTIONS[result.index][0])
+            session.pop_view()
+
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title=f"Set priority for {item.task.id}",
+            summary=f"Current priority: {current or 'none'}",
+            instruction="↑↓/jk · ↵ set · C-g help · Esc/b/q cancel",
+            select_help="Set the highlighted priority",
+            selected_index=start_index,
+        )
+
+    def _done_confirmation_view(self, item: MenuItem) -> menu.MenuView:
+        assert item.task is not None
+        rows = [
+            menu.MenuRow(1, "YES", "Mark the task DONE"),
+            menu.MenuRow(2, "NO", "Cancel and return to the task"),
+        ]
+
+        def handle(
+            session: menu.InlineMenuSession,
+            result: menu.MenuResult,
+        ) -> None:
+            if result.action != "select" or result.index is None:
+                return
+            if result.index == 0:
+                try:
+                    new_lines = tasks.change_state(
+                        self.buf.read(),
+                        item.task.id,
+                        "DONE",
+                    )
+                except tasks.TaskNotFound:
+                    new_lines = None
+                if new_lines is not None:
+                    self.buf.apply(new_lines)
+            session.pop_view()
+
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title=f"Mark {item.task.id} DONE?",
+            summary=item.task.text,
+            instruction="↑↓/jk · ↵ choose · Esc/b/q cancel",
+            select_help="Confirm or cancel the state change",
+            selected_index=1,
+        )
+
+    def _suspend_for_editor(
+        self,
+        session: menu.InlineMenuSession,
+        line_num: int | None,
+        on_done: Callable[[], None],
+    ) -> None:
+        session.suspend(
+            lambda: _open_editor(self.buf, line_num),
+            on_done=on_done,
+        )
+
+
+def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool) -> None:
+    InteractiveTaskController(project, buf, include_done).run()
 
 
 def _numbered_task_menu(
@@ -737,77 +988,6 @@ def _focus_rows(
     return rows, targets
 
 
-def _interactive_focus_menu(buf: OrgBuffer, item: MenuItem) -> None:
-    selected_index = 0
-    while True:
-        item = _refresh_item(buf, item)
-        subtasks = _direct_subtasks(buf, item)
-        rows, targets = _focus_rows(item, subtasks)
-        if item.task is not None:
-            title = f"Edit {item.task.id}: {item.task.text}"
-            summary = (
-                f"State: {item.task.state} · Priority: "
-                f"{item.task.priority or 'none'} · Line: {item.task.line_num + 1}"
-            )
-        else:
-            title = "Org heading"
-            summary = item.label
-        selected_index = min(selected_index, len(rows) - 1)
-        result = menu.select_menu(
-            rows,
-            title=title,
-            summary=summary,
-            preamble="\n".join(_context_lines(buf, item)),
-            instruction=(
-                "↑↓/jk · ↵ choose · C-g help · Shift+←/→ state · "
-                "Shift+↑/↓ priority · p priority · e editor · Esc/b/q back"
-            ),
-            actions=(
-                FOCUS_MENU_ACTIONS
-                if item.task is not None
-                else {"e": _EDIT_MENU_ACTION}
-            ),
-            start_index=selected_index,
-            select_help="Edit the highlighted field or open the subtask",
-        )
-        if result.index is not None:
-            selected_index = result.index
-        if result.action == "back":
-            return
-        if result.action == "edit":
-            _open_editor(buf, item.line_num)
-            continue
-        if item.task is None:
-            continue
-        if result.action == "toggle":
-            _toggle_state(buf, item)
-            continue
-        if result.action == "priority_up":
-            _shift_priority(buf, item, 1)
-            continue
-        if result.action == "priority_down":
-            _shift_priority(buf, item, -1)
-            continue
-        if result.action == "priority":
-            _priority_picker(buf, item)
-            continue
-        if result.action == "done":
-            _mark_done(buf, item)
-            continue
-        if result.action != "select" or result.index is None:
-            continue
-
-        action, target = targets[result.index]
-        if action == "state":
-            _toggle_state(buf, item)
-        elif action == "priority":
-            _priority_picker(buf, item)
-        elif action == "edit":
-            _open_editor(buf, item.line_num)
-        elif action == "subtask" and target is not None:
-            focus_menu(buf, target)
-
-
 def _numbered_focus_menu(buf: OrgBuffer, item: MenuItem) -> None:
     _show_context(buf, item)
     while True:
@@ -846,10 +1026,7 @@ def _numbered_focus_menu(buf: OrgBuffer, item: MenuItem) -> None:
 
 
 def focus_menu(buf: OrgBuffer, item: MenuItem) -> None:
-    if menu.interactive_select_available():
-        _interactive_focus_menu(buf, item)
-    else:
-        _numbered_focus_menu(buf, item)
+    _numbered_focus_menu(buf, item)
 
 
 PROJECT_MENU_INSTRUCTION = "↑↓/jk · ↵ open · C-g help · Esc/b/q exit"

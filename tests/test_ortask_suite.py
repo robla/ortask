@@ -1228,7 +1228,191 @@ def test_selector_help_uses_action_metadata_once() -> None:
     assert "Esc/b/q" in text and "C-g/Esc/b/q/Enter closes it" in text
 
 
-def test_focus_editor_exposes_fields_and_subtasks(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_task_contexts_share_one_bounded_application(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    # Task, subtask, Help, and priority views should repaint one 20-row app.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n** TODO t0001 Parent\n*** TODO t0001.1 Child\n",
+    )
+    original = org_file.read_text(encoding="utf-8")
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    real_application = menu.Application
+    applications = []
+
+    def tracked_application(*args, **kwargs):
+        app = real_application(*args, **kwargs)
+        applications.append(app)
+        return app
+
+    monkeypatch.setattr(menu, "Application", tracked_application)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Include a canceled picker before applying priority C.
+            pin.send_text("\rjjj\rq\x07qpqpk\rqq")
+            controller.run()
+
+    assert len(applications) == 1
+    assert controller.session is not None
+    assert controller.session.requested_height == 20
+    assert controller.session.effective_height == 20
+    assert applications[0].full_screen is False
+    assert applications[0].erase_when_done is False
+    assert "** TODO [#C] t0001 Parent" in buf.read()
+    assert org_file.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_menu_session_clamps_height_and_scrolls() -> None:
+    # A bounded session should reserve one terminal row and scroll its body.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.data_structures import Size
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    class TinyOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=12, columns=80)
+
+        def get_rows_below_cursor_position(self) -> int:
+            return 12
+
+    rows = [
+        menu.MenuRow(index + 1, "TODO", f"t{index + 1:04} row")
+        for index in range(30)
+    ]
+
+    def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+        if result.action == "select":
+            session.pop_view()
+
+    view = menu.MenuView(rows, handle, selected_index=20)
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=TinyOutput()):
+            pin.send_text("\r")
+            session = menu.InlineMenuSession(view)
+            session.run()
+
+    assert session.effective_height == 11
+    assert session.body_window.render_info.window_height == 6
+    assert session.body_window.vertical_scroll <= 20
+    assert 20 < session.body_window.vertical_scroll + 6
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_menu_session_rejects_too_small_terminal_cleanly() -> None:
+    # A terminal that cannot fit the minimum plus one outside row exits once.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.data_structures import Size
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    class TooSmallOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=6, columns=80)
+
+        def get_rows_below_cursor_position(self) -> int:
+            return 6
+
+    view = menu.MenuView(
+        [menu.MenuRow(1, "TODO", "t0001 task")],
+        lambda _session, _result: None,
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=TooSmallOutput()):
+            session = menu.InlineMenuSession(view)
+            assert session.run() == menu.MenuResult("back", None)
+
+    assert session.error == "terminal has 6 rows; at least 7 are required"
+    assert session.application.erase_when_done is True
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_menu_session_never_enters_alternate_screen() -> None:
+    # The persistent mini-app must emit no common alternate-screen entry code.
+    import io
+
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.data_structures import Size
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output.vt100 import Vt100_Output
+
+    stream = io.StringIO()
+    output = Vt100_Output(
+        stream,
+        get_size=lambda: Size(rows=30, columns=80),
+        term="xterm-256color",
+        enable_cpr=False,
+    )
+
+    def handle(_session: menu.InlineMenuSession, _result: menu.MenuResult) -> None:
+        return
+
+    view = menu.MenuView([menu.MenuRow(1, "TODO", "t0001 task")], handle)
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=output):
+            pin.send_text("q")
+            menu.InlineMenuSession(view).run()
+
+    rendered = stream.getvalue()
+    assert "\x1b[?1049h" not in rendered
+    assert "\x1b[?1047h" not in rendered
+    assert "\x1b[?47h" not in rendered
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_menu_session_suspends_external_command(monkeypatch) -> None:
+    # External commands should run through terminal handoff and resume one app.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    calls = []
+
+    async def fake_run_in_terminal(func, *, in_executor):
+        assert in_executor is True
+        return func()
+
+    monkeypatch.setattr(menu, "run_in_terminal", fake_run_in_terminal)
+    actions = {"e": menu.MenuAction("edit", "e", "Open external editor")}
+
+    def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+        if result.action != "edit":
+            return
+
+        def resumed() -> None:
+            calls.append("resumed")
+            session.pop_view()
+
+        session.suspend(
+            lambda: calls.append("external"),
+            on_done=resumed,
+        )
+
+    view = menu.MenuView(
+        [menu.MenuRow(1, "EDIT", "Open editor")],
+        handle,
+        actions=actions,
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("e")
+            menu.InlineMenuSession(view, action_keys=("e",)).run()
+
+    assert calls == ["external", "resumed"]
+
+
+def test_focus_editor_exposes_fields_and_subtasks(tmp_path: Path) -> None:
     # The interactive task editor should expose editable fields before child tasks.
     org_file = write(
         tmp_path / "tasks.org",
@@ -1241,56 +1425,19 @@ def test_focus_editor_exposes_fields_and_subtasks(tmp_path: Path, monkeypatch) -
     )
     buf = projtui.OrgBuffer(org_file)
     parent = projtui.load_menu_items(buf)[0]
-    calls = []
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
 
-    monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
-    monkeypatch.setattr(
-        menu,
-        "select_menu",
-        lambda rows, **kwargs: calls.append((rows, kwargs))
-        or menu.MenuResult("back", None),
-    )
+    view = controller._focus_view(parent)
 
-    projtui.focus_menu(buf, parent)
-
-    rows, options = calls[0]
-    assert [row.status for row in rows] == ["STATE", "PRIOR", "EDIT", "TODO"]
-    assert [row.text for row in rows[:3]] == [
+    assert [row.status for row in view.rows] == ["STATE", "PRIOR", "EDIT", "TODO"]
+    assert [row.text for row in view.rows[:3]] == [
         "TODO",
         "B",
         "Open task in external editor",
     ]
-    assert "Body line" in options["preamble"]
-    assert "t0001.1 Child" in options["preamble"]
-
-
-@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
-def test_priority_picker_sets_and_cancels_buffered_priority(
-    tmp_path: Path, monkeypatch
-) -> None:
-    # The nested priority picker applies Enter and treats q as a non-mutating cancel.
-    from prompt_toolkit.application import create_app_session
-    from prompt_toolkit.input import create_pipe_input
-    from prompt_toolkit.output import DummyOutput
-
-    org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 Target\n")
-    original = org_file.read_text(encoding="utf-8")
-    buf = projtui.OrgBuffer(org_file)
-    monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
-
-    def run(keys: str) -> None:
-        item = projtui.load_menu_items(buf)[0]
-        with create_pipe_input() as pin:
-            with create_app_session(input=pin, output=DummyOutput()):
-                pin.send_text(keys)
-                projtui._priority_picker(buf, item)
-
-    run("\x1b[B\r")  # From none, Down wraps to A and Enter applies it.
-    assert "** TODO [#A] t0001 Target" in buf.read()
-    snapshot = buf.read()
-    run("q")
-    assert buf.read() == snapshot
-    assert org_file.read_text(encoding="utf-8") == original
+    assert "Body line" in view.preamble
+    assert "t0001.1 Child" in view.preamble
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")

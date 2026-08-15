@@ -36,17 +36,19 @@ file.
 The task selector has two modes, chosen automatically by
 `menu.interactive_select_available()`:
 
-- **Highlight-bar mode** (interactive TTY with `prompt_toolkit`): an inline
-  arrow-key selector via `menu.select_menu()`. Up/Down or `j`/`k` move the
-  highlight (wrapping); `Enter` opens the focus view; Shift-Left/Right cycles
+- **Highlight-bar mode** (interactive TTY with `prompt_toolkit`): local task
+  workflows run in one bounded `menu.InlineMenuSession`. Up/Down or `j`/`k`
+  move the highlight (wrapping); `Enter` opens the focus view; Shift-Left/Right cycles
   the highlighted task through the `TODO`/`DONE` ring; Shift-Up/Down raises or
   lowers its priority; `p` opens an explicit priority picker; `C-t` cycles the
   visibility filter (`all -> TODO -> DONE`); `e` opens the editor at the
   highlighted task's line; `C-g` opens contextual command help; and `Esc`, `b`,
   or `q` goes back exactly one level. In `orgmgr.py -i`, leaving a task list
   returns to the project menu; in local `ortask.py -i`, that task list is the top
-  level, so leaving it exits. The app renders inline (not full screen), so it
-  erases itself on exit and leaves scrollback intact.
+  level, so leaving it exits. The local task app renders inline (not full
+  screen), defaults to 20 rows, and repaints that region as contexts change.
+  It retains at most its final frame instead of appending each visited task
+  view.
   Long lists scroll within the row body while the title, summary, and key hint
   remain fixed; the selector keeps one context row above and below the highlight
   when space permits.
@@ -54,12 +56,13 @@ The task selector has two modes, chosen automatically by
   numbered dashboard + prompt, preserved as the scriptable fallback with the
   same `C-t` visibility cycle.
 
-The top-level project list uses the same shared selection model: highlight-bar
-mode on an interactive TTY, and the Rich/plain numbered dashboard as the
-non-interactive fallback. In highlight-bar mode, `C-g` replaces the rows with a
-modal help view; `C-g`, `Esc`, `b`, `q`, or `Enter` closes help and restores the
-same selection. Custom actions use `menu.MenuAction` metadata so adding a binding
-also adds its key and description to this help view.
+The top-level project list uses the same selection vocabulary but still runs
+through the older one-shot `select_project_menu()` during migration. Moving it
+into the task session as the root view is tracked in [roadmap.md](roadmap.md).
+In highlight-bar mode, `C-g` replaces the rows with a modal help view; `C-g`,
+`Esc`, `b`, `q`, or `Enter` closes help and restores the same selection. Custom
+actions use `menu.MenuAction` metadata so adding a binding also adds its key and
+description to this help view.
 
 Treat the interactive UI as a stack. `Esc`, `b`, and `q` are synonyms for
 popping its top layer: help returns to the underlying menu, a subtask returns to
@@ -163,12 +166,12 @@ choices, manage cancellation, and expose hooks for actions. `castabout` can add
 local `ortask.py -i` can add task-editing actions. All of them should feel like
 the same family of menus.
 
-Implementation has started in `ortasklib.menu` with small task/project row
-dataclasses, shared dashboard/table renderers, prompt helpers that map `Esc` to
-`ContextCancelled`, and inline highlight-bar selectors for task and project
-rows. Keep the abstraction small:
-rendering and choice collection belong in the shared layer; task-specific
-actions stay in the calling tool.
+`ortasklib.menu` now contains small task/project row dataclasses, shared
+dashboard/table renderers, prompt helpers that map `Esc` to
+`ContextCancelled`, compatibility one-shot selectors, and the bounded
+`MenuView`/`InlineMenuSession` stack. Keep the abstraction small: rendering,
+choice collection, context transitions, and terminal lifecycle belong in the
+shared layer; task-specific actions stay in the calling tool.
 
 ## Highlight-Bar Selection
 
@@ -341,8 +344,10 @@ row out from under the cursor.
 ## Task Editor
 
 Selecting a task opens a highlight-bar editor over the same buffered Org file.
-It shows the task heading/body and descendants (capped at 20 lines), followed by
-selectable State, Priority, external-editor, and direct-subtask rows:
+It shows a compact task heading/body/descendant excerpt followed by selectable
+State, Priority, external-editor, and direct-subtask rows. The bounded session
+currently caps that excerpt at eight lines so both details and controls fit its
+15-row body; the numbered fallback retains the older 20-line detail cap:
 
 ```text
 Edit tw26W26.0.3: Post to reddit (/r/electorama)

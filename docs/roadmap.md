@@ -12,9 +12,15 @@ The same application shell should eventually serve `orgmgr.py -i`. The plain
 numbered menus remain the non-TTY fallback and are not part of this rendering
 change.
 
-## Current Cause
+**Status:** The first local-task slice is implemented. `ort -i` now keeps its
+task list, task details, nested subtasks, Help, task confirmation, and priority
+picker inside one bounded `InlineMenuSession`. External-editor launch suspends
+and resumes that application. The `orgmgr.py -i` project list, recovery and
+save/discard prompts, final outcome display, and PTY cleanup coverage remain.
 
-The current selector is inline but not a persistent application.
+## Original Cause
+
+The original selector was inline but not a persistent application.
 `ortasklib.menu._run_selector()` constructs a new
 `prompt_toolkit.Application`, calls `Application.run()`, and exits that
 application for every selection or action. Its callers then loop and call
@@ -70,19 +76,16 @@ migration.
 
 ## Proposed Application Shape
 
-Introduce a session-oriented API alongside the current one-shot selector.
-Names are provisional, but the responsibilities should be explicit:
+The implementation now provides a session-oriented API alongside the one-shot
+selector:
 
-- `InteractiveState` owns requested/effective height, the active view stack,
-  transient messages, and selection anchors. Application data such as
-  `OrgBuffer` remains supplied by `projtui.py`.
-- `MenuView` describes a title, summary, rows, selected stable key, available
-  commands, optional detail text, and Enter behavior. Project, task, detail,
-  and priority views can use the same shape without sharing domain logic.
-- `MenuController` handles movement, command dispatch, Help, push/pop, terminal
-  resize, and application invalidation. It should not parse Org or write files.
-- `build_inline_application()` constructs one persistent layout and bindings.
-  `run_inline_session()` is the only normal call to `Application.run()`.
+- `menu.InlineMenuSession` owns requested/effective height, the active view
+  stack, transient messages, movement, Help, terminal resize, external-command
+  suspension, and the one call to `Application.run()`.
+- `menu.MenuView` describes a title, summary, rows, selected index, available
+  commands, optional detail text, and callbacks for actions and resume.
+- `projtui.InteractiveTaskController` constructs task-specific views and owns
+  Org parsing, `OrgBuffer` edits, stable task selection, and task actions.
 
 The layout can follow inedit's proven structure: an `HSplit` with dynamic
 header, one body window, and a fixed footer, all constrained by a callable
@@ -100,6 +103,12 @@ state rather than return to an outer Python loop.
 
 ### 1. Characterize the terminal contract
 
+**Partially implemented.** Pipe-input tests now cover task/subtask/Help/picker
+transitions in one application, bounded scrolling, effective-height clamping,
+buffered edits, terminal handoff, and the absence of common alternate-screen
+entry sequences in captured VT output. Real PTY cleanup and next-prompt tests
+remain.
+
 Add prompt_toolkit pipe-input tests and PTY-level tests before changing the
 lifecycle. Cover a long task list, task-detail entry and return, Help, a nested
 picker, and final exit. Tests should distinguish repaint control sequences from
@@ -107,6 +116,10 @@ new retained frames, verify that no alternate-screen entry sequence is emitted,
 and confirm that the cursor and next shell prompt end below the application.
 
 ### 2. Add the persistent bounded shell
+
+**Implemented for local task sessions.** `InlineMenuSession` supplies the
+20-row dynamic header/body/footer layout and resize clamping. The compatibility
+one-shot selectors remain for the project menu during migration.
 
 Build a single 20-row application containing a dynamic header, scrolling body,
 and command footer. Port task-list navigation first while keeping selection
@@ -118,6 +131,11 @@ other callers, but the `ort -i` path must stop using repeated one-shot
 applications. Remove the obsolete path after all interactive views have moved.
 
 ### 3. Move contexts onto a view stack
+
+**Partially implemented.** Local task details, nested subtasks, Help, task
+confirmation, and priority selection now push, pop, or replace `MenuView`
+instances without ending the application. The `orgmgr.py -i` project list still
+needs to become the root view of the same session.
 
 Represent task details, subtasks, project selection, priority selection, and
 Help as push/pop transitions. Replace recursive `focus_menu()` calls and outer
@@ -143,6 +161,10 @@ remain buffered and mirrored to the auto-save file, and the real Org file is
 written only through an explicit save path.
 
 ### 5. Suspend for the external editor
+
+**Implemented for the task session.** `InlineMenuSession.suspend()` uses
+prompt_toolkit terminal handoff, and the task controller reloads and replaces
+the active view after `_open_editor()` returns.
 
 Replace direct `subprocess.run()` from a completed selector with
 prompt_toolkit's `run_in_terminal()` or an equivalent suspend/resume helper.

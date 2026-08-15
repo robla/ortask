@@ -145,13 +145,18 @@ Small shared rendering primitives for interactive tools:
 - `print_task_dashboard()` — Rich table rendering with a plain text fallback
 - `print_project_dashboard()` — shared project-list rendering for `projtui.py`
 - `select_menu()` / `select_project_menu()` — inline prompt_toolkit
-  highlight-bar selectors for task and project rows
+  one-shot highlight-bar selectors retained for compatibility and the project
+  menu during migration
+- `MenuView` / `InlineMenuSession` — a persistent, bounded 20-row application
+  shell with scrolling, command dispatch, contextual Help, view-stack
+  transitions, resize clamping, and external-command suspension
 - `prompt_text()` / `ContextCancelled` — prompt_toolkit Esc cancellation with
   plain `input()` fallback
 
-This is the first step toward the shared menuing layer described in
-`docs/interactive.md`. It owns presentation, not workflow behavior; `projtui.py`
-still decides which rows to show and what each action does.
+The shared layer owns presentation and interaction mechanics, not workflow
+behavior. `projtui.InteractiveTaskController` decides which rows to show and
+what each action does. The project selector and save/recovery prompts still use
+the older one-shot path; their migration is tracked in `docs/roadmap.md`.
 
 ## Test compatibility
 
