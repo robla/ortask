@@ -58,6 +58,8 @@ class MenuRow:
     number: int
     status: str
     text: str
+    tree_depth: int = 0
+    disclosure: str | None = None
 
 
 @dataclass(frozen=True)
@@ -348,15 +350,21 @@ def _render_menu_rows(
     for index, row in enumerate(rows):
         selected = index == selected_index
         cursor = "▶ " if selected else "  "
+        tree_prefix = ""
+        if row.disclosure is not None:
+            tree_prefix = f"{'  ' * row.tree_depth}{row.disclosure} "
         if selected:
             bar = _selected_bar(row.status)
-            line = f"{cursor}{row.number:>2}  {row.status:<6}  {row.text}\n"
+            line = (
+                f"{cursor}{row.number:>2}  {row.status:<6}  "
+                f"{tree_prefix}{row.text}\n"
+            )
             fragments.append(("[SetCursorPosition]", ""))
             fragments.append((f"class:{bar}", line))
         else:
             fragments.append(("", f"{cursor}{row.number:>2}  "))
             fragments.append((_status_class(row.status), f"{row.status:<6}"))
-            fragments.append(("", f"  {row.text}\n"))
+            fragments.append(("", f"  {tree_prefix}{row.text}\n"))
     return FormattedText(fragments)
 
 

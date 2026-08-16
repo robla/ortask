@@ -1976,6 +1976,177 @@ def test_task_menu_order_preserves_org_file_hierarchy(tmp_path: Path) -> None:
     assert sorted_ids == ids
 
 
+def test_interactive_task_tree_starts_collapsed_with_disclosure_cues(
+    tmp_path: Path,
+) -> None:
+    # The task dashboard should begin at overview depth and visibly mark parents.
+    org_file = write(
+        tmp_path / "tasks.org",
+        """
+        * Tasks
+        ** TODO t0001 Parent
+        *** TODO t0001.1 Child
+        **** TODO t0001.1.1 Grandchild
+        ** DONE t0002 Leaf
+        """,
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = projtui.InteractiveTaskController(
+        project,
+        projtui.OrgBuffer(org_file),
+        include_done=True,
+    )
+
+    view = controller.initial_view()
+
+    assert [row.text for row in view.rows] == ["t0001 Parent", "t0002 Leaf"]
+    assert [row.disclosure for row in view.rows] == ["▸", " "]
+    assert view.summary == "Open: 3  Done: 1  Total: 4"
+    rendered = "".join(part[1] for part in menu._render_menu_rows(view.rows, 0))
+    assert "▶" in rendered
+    assert "▸ t0001 Parent" in rendered
+
+
+def test_task_tree_respects_non_task_heading_boundaries(tmp_path: Path) -> None:
+    # Ordinary Org headings must break or preserve task ancestry by structure.
+    org_file = write(
+        tmp_path / "notes.org",
+        """
+        * TODO t0001 First root
+        * Notes
+        ** TODO t0002 Root beneath non-task heading
+        * TODO t0003 Second root
+        ** Discussion
+        *** TODO t0003.1 Child through non-task heading
+        """,
+    )
+    buf = projtui.OrgBuffer(org_file)
+    items = projtui.load_menu_items(buf)
+
+    parents, children, depths = projtui._task_tree(items, buf.read())
+
+    assert parents == {"t0003.1": "t0003"}
+    assert children == {"t0003": ["t0003.1"]}
+    assert depths == {"t0001": 0, "t0002": 0, "t0003": 0, "t0003.1": 1}
+
+
+def test_interactive_task_tree_actions_preserve_hierarchy_and_selection(
+    tmp_path: Path,
+) -> None:
+    # Local and global folds should reveal levels and anchor hidden descendants.
+    org_file = write(
+        tmp_path / "tasks.org",
+        """
+        * Tasks
+        ** TODO t0001 Parent
+        *** TODO t0001.1 Child
+        **** TODO t0001.1.1 Grandchild
+        ** TODO t0002 Sibling
+        """,
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = projtui.InteractiveTaskController(
+        project,
+        projtui.OrgBuffer(org_file),
+        include_done=True,
+    )
+
+    class ReplacingSession:
+        def __init__(self, view: menu.MenuView) -> None:
+            self.current_view = view
+            self.message: str | None = None
+
+        def replace_view(self, view: menu.MenuView) -> None:
+            self.current_view = view
+
+        def set_message(self, message: str) -> None:
+            self.message = message
+
+    session = ReplacingSession(controller.initial_view())
+
+    session.current_view.on_result(session, menu.MenuResult("fold", 0))
+    assert [row.text for row in session.current_view.rows] == [
+        "t0001 Parent",
+        "t0001.1 Child",
+        "t0002 Sibling",
+    ]
+    assert [row.disclosure for row in session.current_view.rows] == ["▾", "▸", " "]
+    assert [row.tree_depth for row in session.current_view.rows] == [0, 1, 0]
+
+    session.current_view.on_result(session, menu.MenuResult("tree_right", 1))
+    session.current_view.on_result(session, menu.MenuResult("tree_right", 1))
+    assert session.current_view.selected_index == 2
+    assert session.current_view.rows[2].text == "t0001.1.1 Grandchild"
+
+    session.current_view.on_result(session, menu.MenuResult("tree_left", 2))
+    assert session.current_view.selected_index == 1
+    session.current_view.on_result(session, menu.MenuResult("fold_all", 1))
+    assert len(session.current_view.rows) == 2
+    assert session.current_view.selected_index == 0
+    assert session.current_view.rows[0].text == "t0001 Parent"
+
+
+def test_filtered_task_tree_retains_ancestors_as_context(tmp_path: Path) -> None:
+    # A matching child should remain reachable beneath a nonmatching parent.
+    org_file = write(
+        tmp_path / "tasks.org",
+        """
+        * Tasks
+        ** DONE t0001 Completed parent
+        *** TODO t0001.1 Open child
+        ** DONE t0002 Completed leaf
+        """,
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = projtui.InteractiveTaskController(
+        project,
+        projtui.OrgBuffer(org_file),
+        include_done=False,
+    )
+
+    view = controller.initial_view()
+
+    assert [row.text for row in view.rows] == ["t0001 Completed parent"]
+    assert view.rows[0].disclosure == "▸"
+    assert view.summary == "Open: 1  Done: 0  Total: 1"
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_interactive_task_tree_keybindings(tmp_path: Path) -> None:
+    # Terminal key sequences should drive local folds and directional tree motion.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n** TODO t0001 Parent\n*** TODO t0001.1 Child\n"
+        "** TODO t0002 Sibling\n",
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = projtui.InteractiveTaskController(
+        project,
+        projtui.OrgBuffer(org_file),
+        include_done=True,
+    )
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Right expands and enters; Left returns; S-Tab folds all; Tab reopens.
+            pin.send_text("\x1b[C\x1b[C\x1b[D\x1b[Z\tq")
+            controller.run()
+
+    assert controller.session is not None
+    view = controller.session.current_view
+    assert isinstance(view, menu.MenuView)
+    assert [row.text for row in view.rows] == [
+        "t0001 Parent",
+        "t0001.1 Child",
+        "t0002 Sibling",
+    ]
+    assert view.selected_index == 0
+
+
 def test_load_menu_items_defaults_to_all_task_states(tmp_path: Path) -> None:
     # The shared task view starts with TODO and DONE rows visible, then filters explicitly.
     org_file = write(

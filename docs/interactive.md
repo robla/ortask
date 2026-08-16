@@ -38,7 +38,10 @@ The task selector has two modes, chosen automatically by
 
 - **Highlight-bar mode** (interactive TTY with `prompt_toolkit`): task workflows
   run in one bounded `menu.InlineMenuSession`. Up/Down or `j`/`k`
-  move the highlight (wrapping); `Enter` opens the focus view;
+  move the highlight (wrapping). The list starts as a top-level overview;
+  `Tab` expands or collapses a task, Shift-Tab expands all or returns to the
+  overview, and Left/Right provide directional tree navigation. `Enter` opens
+  the focus view;
   Shift-Left/Right cycles the highlighted task through the `TODO`/`DONE` ring;
   Shift-Up/Down raises or lowers its priority; `p` opens an explicit priority
   picker; `C-t` cycles the visibility filter (`all -> TODO -> DONE`); `e` opens
@@ -60,7 +63,8 @@ The task selector has two modes, chosen automatically by
   without losing unfinished input.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved as the scriptable fallback with the
-  same `C-t` visibility cycle.
+  same `C-t` visibility cycle. It lists the complete filtered hierarchy because
+  it has no persistent cursor or per-task expansion state.
 
 The top-level `orgmgr.py -i` project list is the root view of the same bounded
 application. Opening a project pushes its recovery or task view; leaving that
@@ -81,7 +85,9 @@ Unselected rows show task state through the label color (TODO yellow, DONE
 green). The highlighted row instead becomes a single continuous bar in the
 task's state color — gold for TODO, green for DONE (light gray for any other
 state, cyan for a highlighted project) — with black text, so the whole line,
-the label included, stays legible. The selected row marker is `▶`.
+the label included, stays legible. The selected row marker is `▶`. Expandable
+tasks carry a disclosure triangle: `▸` when collapsed and `▾` when expanded;
+the triangle is part of the highlight bar when that task is selected.
 
 ### Editing buffer (auto-save and save-on-exit)
 
@@ -269,6 +275,13 @@ Recommended task-list bindings:
 
 - Up/Down move the highlight. `j`/`k` are acceptable vi-style aliases because
   they are common, low-risk, and do not conflict with Org task semantics.
+- `Tab` toggles the highlighted task's direct children, following Org's local
+  visibility-cycle convention. Deeper parents remain independently collapsed.
+- Shift-Tab toggles between the top-level overview and a fully expanded task
+  tree, following Org's global visibility-cycle convention in a task-only view.
+- Right expands a collapsed task, then moves to its first child when pressed
+  again. Left collapses an expanded task, then moves to its parent when already
+  collapsed. These directional aliases follow conventional tree controls.
 - Enter opens the highlighted task's detail/focus view.
 - Shift-Right cycles the highlighted task forward through the TODO state ring;
   Shift-Left cycles backward. These should be documented as the primary state
@@ -339,15 +352,18 @@ judgment or forcing a computed priority order.
 Default display order is the order of headings in the Org file. This preserves
 the visible parent/child hierarchy, keeps authored weekly workflows readable,
 and matches what an Emacs Org user expects after arranging a tree by hand.
-`TODO` and `DONE` rows are visible by default. `C-t` cycles visibility through
-`all -> TODO -> DONE`, but filtering must not otherwise reorder the remaining
-rows. Org priorities such as `[#A]` remain visible metadata; they do not move
-rows.
+The highlight-bar list initially shows only top-level tasks. Expansion reveals
+children in file order without changing counts or task order. `TODO` and `DONE`
+qualify by default; `C-t` cycles the filter through `all -> TODO -> DONE`.
+Filtering retains a nonmatching ancestor when it provides the path to a
+matching descendant, rather than promoting the descendant to a false root.
+Org priorities such as `[#A]` remain visible metadata; they do not move rows.
 
 The highlight-bar selector also re-anchors the highlight on the same task ID
 across reloads, so a toggled task stays selected even if the list membership
 changes. Because the menu order is file order, toggling TODO/DONE never moves a
-row out from under the cursor.
+row out from under the cursor. Collapsing a branch containing the selection
+re-anchors the highlight to the nearest visible ancestor.
 
 ## Task Editor
 

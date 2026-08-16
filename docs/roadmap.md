@@ -372,6 +372,12 @@ The task-list view remains the fast triage surface. State, priority, filtering,
 Help, and other common commands operate directly on the highlighted task.
 `Enter` opens an issue workspace rather than a menu of actions.
 
+The list starts as a top-level overview. `Tab` toggles a task's direct children,
+Shift-Tab toggles all branches, and Left/Right collapse, expand, or move between
+parents and children. Collapsed and expanded parents show `▸` and `▾`
+respectively. Folding preserves Org file order and is independent from state
+filtering and summary counts.
+
 The issue workspace should keep these regions visible together when terminal
 space permits:
 

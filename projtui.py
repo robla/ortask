@@ -177,6 +177,112 @@ def load_menu_items(
     return _read_only_headings(text)
 
 
+def _filter_menu_items(
+    items: list[MenuItem], filter_mode: str
+) -> list[MenuItem]:
+    mode = _task_filter_mode(True, filter_mode)
+    if not any(item.task is not None for item in items):
+        return items
+    if mode == "todo":
+        return [item for item in items if item.task and item.task.state == "TODO"]
+    if mode == "done":
+        return [
+            item
+            for item in items
+            if item.task and item.task.state in core.TERMINAL_STATES
+        ]
+    return items
+
+
+def _task_tree(
+    items: list[MenuItem], org_text: str
+) -> tuple[dict[str, str], dict[str, list[str]], dict[str, int]]:
+    """Return parent, direct-child, and display-depth maps in Org order."""
+    parent_ids: dict[str, str] = {}
+    child_ids: dict[str, list[str]] = {}
+    depths: dict[str, int] = {}
+    tasks_by_line = {
+        item.task.line_num: item.task
+        for item in items
+        if item.task is not None
+    }
+    heading_stack: list[tuple[int, str | None]] = []
+
+    for line_num, line in enumerate(org_text.splitlines()):
+        if not core.ORG_HEADING_RE.match(line):
+            continue
+        level = len(line) - len(line.lstrip("*"))
+        while heading_stack and heading_stack[-1][0] >= level:
+            heading_stack.pop()
+        task = tasks_by_line.get(line_num)
+        task_id = task.id if task is not None else None
+        if task_id is not None:
+            parent_id = next(
+                (
+                    ancestor_id
+                    for _, ancestor_id in reversed(heading_stack)
+                    if ancestor_id is not None
+                ),
+                None,
+            )
+            if parent_id is None:
+                depths[task_id] = 0
+            else:
+                parent_ids[task_id] = parent_id
+                child_ids.setdefault(parent_id, []).append(task_id)
+                depths[task_id] = depths[parent_id] + 1
+        heading_stack.append((level, task_id))
+    return parent_ids, child_ids, depths
+
+
+def _include_task_ancestors(
+    items: list[MenuItem], parent_ids: dict[str, str]
+) -> set[str]:
+    included = {item.task.id for item in items if item.task is not None}
+    for task_id in tuple(included):
+        parent_id = parent_ids.get(task_id)
+        while parent_id is not None:
+            included.add(parent_id)
+            parent_id = parent_ids.get(parent_id)
+    return included
+
+
+def _visible_task_items(
+    items: list[MenuItem],
+    included_ids: set[str],
+    expanded_ids: set[str],
+    parent_ids: dict[str, str],
+) -> list[MenuItem]:
+    visible: list[MenuItem] = []
+    visible_ids: set[str] = set()
+    for item in items:
+        if item.task is None:
+            visible.append(item)
+            continue
+        task_id = item.task.id
+        if task_id not in included_ids:
+            continue
+        parent_id = parent_ids.get(task_id)
+        if parent_id is None or (
+            parent_id in visible_ids and parent_id in expanded_ids
+        ):
+            visible.append(item)
+            visible_ids.add(task_id)
+    return visible
+
+
+def _nearest_visible_task_id(
+    selected_id: str | None,
+    visible_ids: set[str],
+    parent_ids: dict[str, str],
+) -> str | None:
+    while selected_id is not None:
+        if selected_id in visible_ids:
+            return selected_id
+        selected_id = parent_ids.get(selected_id)
+    return None
+
+
 TASK_FILTERS = ("all", "todo", "done")
 
 
@@ -228,12 +334,28 @@ def _print_items(title: str, items: list[MenuItem]) -> None:
         print("  (no items)")
 
 
-def _dashboard_row(idx: int, item: MenuItem) -> menu.MenuRow:
+def _dashboard_row(
+    idx: int,
+    item: MenuItem,
+    *,
+    tree_depth: int | None = None,
+    disclosure: str | None = None,
+) -> menu.MenuRow:
     if item.task is None:
         return menu.MenuRow(idx, "ORG", item.label)
     priority = f" [#{item.task.priority}]" if item.task.priority else ""
-    indent = "  " * max(item.task.level - 2, 0)
-    return menu.MenuRow(idx, item.task.state, f"{indent}{item.task.id}{priority} {item.task.text}")
+    if tree_depth is None:
+        indent = "  " * max(item.task.level - 2, 0)
+        text = f"{indent}{item.task.id}{priority} {item.task.text}"
+        return menu.MenuRow(idx, item.task.state, text)
+    text = f"{item.task.id}{priority} {item.task.text}"
+    return menu.MenuRow(
+        idx,
+        item.task.state,
+        text,
+        tree_depth=tree_depth,
+        disclosure=disclosure,
+    )
 
 
 def _print_dashboard(title: str, org_file: Path, items: list[MenuItem]) -> None:
@@ -352,8 +474,9 @@ def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
 
 def _task_menu_instruction(filter_mode: str) -> str:
     return (
-        f"{_task_filter_label(filter_mode)} · ↑↓/jk · ↵ open · "
-        "C-g help · Shift+←/→ state · Shift+↑/↓ priority · "
+        f"{_task_filter_label(filter_mode)} · ↑↓/jk move · Tab fold · "
+        "←/→ tree · S-Tab all · ↵ open · C-g help · "
+        "Shift+←/→ state · Shift+↑/↓ priority · "
         "C-t filter · p priority · e edit · Esc/b/q back"
     )
 
@@ -373,7 +496,20 @@ _PICK_PRIORITY_ACTION = menu.MenuAction(
 _EDIT_MENU_ACTION = menu.MenuAction(
     "edit", "e", "Open the highlighted task in the editor"
 )
+_FOLD_MENU_ACTION = menu.MenuAction(
+    "fold", "Tab", "Expand or collapse the highlighted task"
+)
 TASK_MENU_ACTIONS = {
+    "c-i": _FOLD_MENU_ACTION,
+    "s-tab": menu.MenuAction(
+        "fold_all", "Shift+Tab", "Expand all tasks or return to the overview"
+    ),
+    "right": menu.MenuAction(
+        "tree_right", "Right", "Expand the task or move to its first subtask"
+    ),
+    "left": menu.MenuAction(
+        "tree_left", "Left", "Collapse the task or move to its parent"
+    ),
     "e": _EDIT_MENU_ACTION,
     "p": _PICK_PRIORITY_ACTION,
     "c-t": menu.MenuAction(
@@ -609,6 +745,7 @@ class InteractiveTaskController:
         self.project = project
         self.buf = buf
         self.filter_mode = _task_filter_mode(include_done)
+        self.expanded_task_ids: set[str] = set()
         self.session: menu.InlineMenuSession | None = None
 
     @staticmethod
@@ -690,28 +827,80 @@ class InteractiveTaskController:
         selected_id: str | None = None,
         fallback_index: int = 0,
     ) -> menu.MenuView:
+        parent_ids: dict[str, str] = {}
+        child_ids: dict[str, list[str]] = {}
+        included_ids: set[str] = set()
         try:
-            items = load_menu_items(
+            all_items = load_menu_items(
                 self.buf,
-                filter_mode=self.filter_mode,
+                filter_mode="all",
                 sort_key=_stable_sort_key,
+            )
+            matched_items = _filter_menu_items(all_items, self.filter_mode)
+            parent_ids, child_ids, depths = _task_tree(
+                all_items,
+                self.buf.read(),
+            )
+            included_ids = _include_task_ancestors(matched_items, parent_ids)
+            items = _visible_task_items(
+                all_items,
+                included_ids,
+                self.expanded_task_ids,
+                parent_ids,
             )
         except ValueError as exc:
             items = []
+            matched_items = []
             rows = [menu.MenuRow(1, "ERROR", str(exc))]
         else:
-            rows = [
-                _dashboard_row(index, item)
-                for index, item in enumerate(items, start=1)
-            ]
-        todo, done, total = menu.count_statuses(rows)
-        start_index = _anchor_index(items, selected_id, fallback_index)
+            rows = []
+            for index, item in enumerate(items, start=1):
+                if item.task is None:
+                    rows.append(_dashboard_row(index, item))
+                    continue
+                task_id = item.task.id
+                expandable = any(
+                    child_id in included_ids
+                    for child_id in child_ids.get(task_id, [])
+                )
+                disclosure = (
+                    "▾" if task_id in self.expanded_task_ids else "▸"
+                ) if expandable else " "
+                rows.append(
+                    _dashboard_row(
+                        index,
+                        item,
+                        tree_depth=depths.get(task_id, 0),
+                        disclosure=disclosure,
+                    )
+                )
+        count_rows = [
+            _dashboard_row(index, item)
+            for index, item in enumerate(matched_items, start=1)
+        ]
+        todo, done, total = menu.count_statuses(count_rows)
+        visible_ids = {
+            item.task.id for item in items if item.task is not None
+        }
+        anchor_id = _nearest_visible_task_id(
+            selected_id,
+            visible_ids,
+            parent_ids,
+        )
+        start_index = _anchor_index(items, anchor_id, fallback_index)
 
         def handle(
             session: menu.InlineMenuSession,
             result: menu.MenuResult,
         ) -> None:
-            self._handle_task_result(session, items, result)
+            self._handle_task_result(
+                session,
+                items,
+                parent_ids,
+                child_ids,
+                included_ids,
+                result,
+            )
 
         def resume(session: menu.InlineMenuSession) -> None:
             old_view = session.current_view
@@ -785,6 +974,9 @@ class InteractiveTaskController:
         self,
         session: menu.InlineMenuSession,
         items: list[MenuItem],
+        parent_ids: dict[str, str],
+        child_ids: dict[str, list[str]],
+        included_ids: set[str],
         result: menu.MenuResult,
     ) -> None:
         index = result.index
@@ -792,6 +984,17 @@ class InteractiveTaskController:
         selected_id = self._task_id_at(items, index)
         fallback = index or 0
 
+        if result.action == "fold_all":
+            expandable_ids = set(child_ids)
+            if not expandable_ids:
+                session.set_message("No task subtrees to expand")
+                return
+            if expandable_ids <= self.expanded_task_ids:
+                self.expanded_task_ids.clear()
+            else:
+                self.expanded_task_ids.update(expandable_ids)
+            session.replace_view(self._task_view(selected_id, fallback))
+            return
         if result.action == "edit":
             line_num = item.line_num if item is not None else None
             self._suspend_for_editor(
@@ -807,6 +1010,47 @@ class InteractiveTaskController:
             session.replace_view(self._task_view(selected_id, fallback))
             return
         if item is None:
+            return
+        if result.action in {"fold", "tree_left", "tree_right"}:
+            if item.task is None:
+                session.set_message("This Org heading has no task subtree")
+                return
+            task_id = item.task.id
+            children = [
+                child_id
+                for child_id in child_ids.get(task_id, [])
+                if child_id in included_ids
+            ]
+            if result.action == "fold":
+                if not children:
+                    session.set_message(f"{task_id} has no visible subtasks")
+                    return
+                if task_id in self.expanded_task_ids:
+                    self.expanded_task_ids.remove(task_id)
+                else:
+                    self.expanded_task_ids.add(task_id)
+                session.replace_view(self._task_view(task_id, fallback))
+                return
+            if result.action == "tree_right":
+                if not children:
+                    session.set_message(f"{task_id} has no visible subtasks")
+                    return
+                if task_id not in self.expanded_task_ids:
+                    self.expanded_task_ids.add(task_id)
+                    target_id = task_id
+                else:
+                    target_id = children[0]
+                session.replace_view(self._task_view(target_id, fallback))
+                return
+            if task_id in self.expanded_task_ids and children:
+                self.expanded_task_ids.remove(task_id)
+                target_id = task_id
+            else:
+                target_id = parent_ids.get(task_id)
+            if target_id is None:
+                session.set_message(f"{task_id} is already at the tree root")
+                return
+            session.replace_view(self._task_view(target_id, fallback))
             return
         if result.action == "toggle":
             _toggle_state(self.buf, item)
