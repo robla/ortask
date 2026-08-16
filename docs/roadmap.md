@@ -9,23 +9,27 @@ the corresponding roadmap area by task ID.
 ### Goal
 
 `ortask.py -i` should behave as one compact terminal mini app. By default it
-should occupy a 20-row region at the bottom of the terminal, preserve the shell
-output above it, and repaint that same region when the user opens a task, Help,
-a priority picker, or another context. It should not leave every prior menu in
-scrollback while the session is still running.
+should fit its height to the current view, grow only as much as useful up to a
+20-row inline ceiling, preserve the shell output above it, and repaint that
+same region when the user opens a task, Help, a priority picker, or another
+context. A user who wants more room should be able to choose a fixed inline
+height or a deliberate full-screen mode. The application should not leave
+every prior menu in scrollback while the session is still running.
 
 The same application shell now serves `orgmgr.py -i`. The plain numbered menus
 remain the non-TTY fallback and are not part of this rendering change.
 
-**Status:** The main context migration is implemented. `ort -i` keeps its task
-list, task details, nested subtasks, Help, task confirmation, and priority
+**Status:** The main context migration is implemented at a fixed requested
+height of 20 rows. `ort -i` keeps its task list, task details, nested subtasks,
+Help, task confirmation, and priority
 picker inside one bounded `InlineMenuSession`. External-editor launch suspends
 and resumes that application. Dirty task sessions resolve Save,
 Discard, or Continue Editing inside the bounded view stack, and task sessions
 with recovery data begin with bounded Keep, Recover, and Discard choices. The
 `orgmgr.py -i` project list now serves as the root of that same view stack. The
 normal final-frame policy and PTY contract are covered; explicit cleanup and
-PTY coverage for abnormal exits remain.
+PTY coverage for abnormal exits remain. Adaptive sizing and optional
+full-screen presentation are planned as `t0018`.
 
 ### Original Cause
 
@@ -56,11 +60,12 @@ The ortask interaction should follow these rules:
 
 - One invocation owns one prompt_toolkit application until the user leaves its
   top-level interactive context.
-- The application uses `full_screen=False` and never enters the alternate
-  screen.
-- The requested total height defaults to 20 rows. The effective height is at
-  most `terminal_rows - 1`, leaving one row outside the application, and the
-  application reports a clean error if its minimum layout cannot fit.
+- Inline mode uses `full_screen=False`; only an explicit full-screen request
+  may enter the alternate screen.
+- The default requested height is content-driven and capped at 20 rows. The
+  effective inline height is at most `terminal_rows - 1`, leaving one row
+  outside the application, and the application reports a clean error if its
+  minimum layout cannot fit.
 - A fixed header and command footer surround one scrolling body. Long task
   lists scroll inside the body while the selected row remains visible.
 - Project lists, task lists, task details, Help, priority selection, recovery,
@@ -77,11 +82,54 @@ The ortask interaction should follow these rules:
   It must not retain a historical copy of every visited view. Failures erase a
   possibly misleading partial frame after restoring terminal modes.
 
-Twenty rows is a default, not a feature limit. Search, scrolling, nested views,
-contextual commands, editing, and Help should remain available within the
-bounded viewport. A later `--height` option or environment setting can be
-added if a real workflow needs it; configuration is not required for the first
-migration.
+Twenty rows is the normal inline ceiling, not a feature limit. Search,
+scrolling, nested views, contextual commands, editing, and Help should remain
+available within the bounded viewport, while explicit full-screen mode can use
+the terminal's remaining rows.
+
+### Adaptive Height and Presentation Modes
+
+Tracked as `t0018`. The fixed-height shell is the implementation baseline, not
+the desired default policy.
+
+The default `auto` policy should compute a preferred total height from the
+active view's visible rows plus its chrome. A compact task list can omit the
+otherwise blank header spacer, using two header rows and two footer rows; three
+tasks can therefore occupy seven rows instead of reserving 20. Expanding a
+subtree, opening Help, or entering a workspace should recompute the preference
+and grow the same application up to 20 rows. Collapsing or returning to a
+smaller view should contract it again, provided PTY tests show no stale lines
+or disruptive scrollback movement.
+
+Sizing needs three separate values:
+
+- the view's minimum and preferred body rows;
+- the session's requested mode and height (`auto` or a positive integer); and
+- the terminal-clamped effective height used by prompt_toolkit.
+
+Views should report their own sizing needs rather than teaching the session
+about tasks, Help, pickers, or editors. Explicit `--height N` should disable
+auto-fit for that invocation while preserving terminal clamping. A `fit`
+command can restore automatic sizing later.
+
+`--full-screen` should construct the same views in a prompt_toolkit
+`Application(full_screen=True)`. This is a distinct presentation mode, not a
+numeric height: it uses the alternate screen, fills the terminal, and restores
+the prior shell display on exit instead of retaining an inline final frame.
+The first implementation can select the mode at startup. A runtime `F11`
+toggle is reasonable later, following Emacs precedent, but only after a
+controlled application rebuild or another well-tested transition preserves
+view, focus, edits, and terminal state.
+
+Inedit's `Alt-Up` and `Alt-Down` one-row adjustments are reasonable for that
+standalone text editor, but they should not become Handrail defaults or orti
+bindings. Org assigns `M-Up` and `M-Down` to moving the current subtree, which
+is likely future orti behavior. Auto-fit, `--height`, and `--full-screen`
+should land first; manual grow, shrink, fit, maximize, and full-screen command
+IDs can be added without choosing conflicting keys prematurely. See
+[Org structure editing](https://orgmode.org/manual/Structure-Editing.html),
+[Emacs window resizing](https://www.gnu.org/software/emacs/manual/html_node/emacs/Change-Window.html),
+and [Emacs frame commands](https://www.gnu.org/software/emacs/manual/html_node/emacs/Frame-Commands.html).
 
 ### Application Shape
 
@@ -92,7 +140,8 @@ selector:
   stack, transient messages, movement, Help, terminal resize, external-command
   suspension, and the one call to `Application.run()`.
 - `menu.MenuView` describes a title, summary, rows, selected index, available
-  commands, optional detail text, and callbacks for actions and resume.
+  commands, optional detail text, sizing preferences, and callbacks for actions
+  and resume.
 - `projtui.InteractiveTaskController` constructs task-specific views and owns
   Org parsing, `OrgBuffer` edits, stable task selection, and task actions.
 
@@ -124,10 +173,11 @@ the cursor and next shell prompt end below the application.
 
 #### 2. Add the persistent bounded shell
 
-**Implemented.** `InlineMenuSession` supplies the 20-row dynamic
-header/body/footer layout and resize clamping for local task sessions and the
-registry-scoped project/task stack. Compatibility one-shot selectors remain
-available but are no longer used by production interactive paths.
+**Implemented as the fixed-height baseline.** `InlineMenuSession` supplies the
+20-row dynamic header/body/footer layout and resize clamping for local task
+sessions and the registry-scoped project/task stack. Compatibility one-shot
+selectors remain available but are no longer used by production interactive
+paths.
 
 The existing `select_menu()` API remains for compatibility and focused legacy
 tests, but production interactive paths no longer use repeated one-shot
@@ -233,15 +283,18 @@ extraction:
 The interactive UI work is complete when:
 
 - `ort -i` and `orgm -i` each run one prompt_toolkit application per session;
-- the live interface stays within its effective 20-row region through lists,
-  details, Help, pickers, prompts, and back navigation;
+- the default live interface fits compact views, grows through content changes,
+  and stays within its effective 20-row inline ceiling;
+- fixed-height and full-screen requests preserve the same navigation, editing,
+  and safety behavior, with alternate-screen use confined to full-screen mode;
 - returning from task details does not append another full task list;
 - long lists scroll without losing the selected row;
 - external editor handoff resumes the same session cleanly;
 - save, discard, cancellation, and recovery remain safe and visible;
 - non-TTY numbered behavior remains usable;
-- pipe-input and PTY tests defend repainting, resize, terminal restoration, and
-  absence of alternate-screen switching; and
+- pipe-input and PTY tests defend adaptive repainting, resize, terminal
+  restoration, inline alternate-screen avoidance, and full-screen entry/exit;
+  and
 - signals, unexpected exceptions, editor failures, and undersized terminals
   restore terminal state before reporting a clear failure.
 
@@ -388,8 +441,8 @@ space permits:
 Focus moves among editable regions without pushing a new view for each field.
 Finite choices such as a state picker, Help, or destructive confirmation may
 still use bounded overlays or child views. The workspace must adapt to the
-20-row default, scroll long content, and give the body more room when no
-subtasks exist.
+20-row inline ceiling, use additional rows in full-screen mode, scroll long
+content, and give the body more room when no subtasks exist.
 
 The subtask region shows all descendant tasks in source order, indented by Org
 depth, with its own highlight and scrolling. State and priority commands apply

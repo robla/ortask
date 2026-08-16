@@ -90,3 +90,30 @@ terminal-state set in =menu.py=. Keep parsing =SUPERSEDED= as a terminal alias
 so mixed tool versions cannot silently degrade the keyword into headline prose.
 Rationale and phasing in =castabout/docs/roadmap.md=; archive-history handling
 overlaps =t0010=.
+** TODO [#A] t0018 Make the orti viewport adaptive and optionally full-screen
+Fit short views to their content, grow richer views to the normal 20-row
+inline ceiling, and support deliberate fixed-height and full-screen modes as
+specified in =docs/roadmap.md=.
+*** TODO [#A] t0018.1 Extract and test a view-driven viewport policy
+Separate minimum/preferred body rows, requested auto or numeric height, chrome,
+terminal reserve, and effective height without adding task-specific rules to
+=InlineMenuSession=.
+*** TODO [#A] t0018.2 Fit compact lists and resize with visible content
+Use compact chrome so a three-task list can occupy about seven rows; grow when
+a subtree expands or a larger view opens, and safely contract after collapse
+or Back without leaving stale terminal rows.
+*** TODO [#A] t0018.3 Give each view explicit sizing preferences
+Define useful minimum and preferred body heights for task/project lists, Help,
+pickers, confirmations, text input, and the planned issue workspace.
+*** TODO [#B] t0018.4 Add explicit inline height controls
+Support =--height auto= and =--height N= with terminal clamping, then expose
+semantic grow, shrink, fit, and maximize commands without binding Org's
+=M-Up=/=M-Down= subtree-movement keys.
+*** TODO [#B] t0018.5 Add an explicit full-screen presentation mode
+Support =--full-screen= with the same views and commands in the alternate
+screen. Consider a later =F11= runtime toggle only after the transition can
+preserve stack, focus, buffered edits, and terminal state.
+*** TODO [#A] t0018.6 Cover adaptive and full-screen terminal behavior
+Add pure sizing tests, pipe-input view-transition tests, and PTY coverage for
+growth, contraction, resize, stale-line cleanup, inline final frames, and
+full-screen alternate-screen entry and restoration.
