@@ -116,20 +116,36 @@ command can restore automatic sizing later.
 `Application(full_screen=True)`. This is a distinct presentation mode, not a
 numeric height: it uses the alternate screen, fills the terminal, and restores
 the prior shell display on exit instead of retaining an inline final frame.
-The first implementation can select the mode at startup. A runtime `F11`
-toggle is reasonable later, following Emacs precedent, but only after a
-controlled application rebuild or another well-tested transition preserves
-view, focus, edits, and terminal state.
+The first implementation can select the mode at startup. Runtime switching is
+not required initially; when added, it should live in Handrail's Resize mode
+rather than depend on a function key that is difficult to generate on compact
+keyboards. A controlled application rebuild or another well-tested transition
+must preserve view, focus, edits, and terminal state.
 
-Inedit's `Alt-Up` and `Alt-Down` one-row adjustments are reasonable for that
-standalone text editor, but they should not become Handrail defaults or orti
-bindings. Org assigns `M-Up` and `M-Down` to moving the current subtree, which
-is likely future orti behavior. Auto-fit, `--height`, and `--full-screen`
-should land first; manual grow, shrink, fit, maximize, and full-screen command
-IDs can be added without choosing conflicting keys prematurely. See
-[Org structure editing](https://orgmode.org/manual/Structure-Editing.html),
-[Emacs window resizing](https://www.gnu.org/software/emacs/manual/html_node/emacs/Change-Window.html),
-and [Emacs frame commands](https://www.gnu.org/software/emacs/manual/html_node/emacs/Frame-Commands.html).
+Handrail's viewport convention should be consistent across orti and inedit:
+
+- `Alt-Up` and `Alt-Down` scroll the active viewport without changing the
+  logical selection or cursor. Scrolling stops before that anchor would leave
+  the visible region.
+- `C-^` enters Resize mode. Terminals encode this as the same control character
+  as `C-6`, so Help should teach both spellings and tests should feed the actual
+  `0x1e` byte.
+- Inside Resize mode, Up makes the bottom-anchored application taller, Down
+  makes it shorter, `a` restores automatic content-fit sizing, `m` maximizes
+  inline, and `f` enters or leaves full-screen presentation. `C-^`, Enter, or
+  Back leaves the mode.
+
+The live footer should identify Resize mode and its available commands. The
+first manual Up or Down disables auto-fit for the invocation; `a` restores it.
+This is a session presentation change, not a data mutation, so leaving the mode
+keeps the chosen size without creating a dirty task buffer.
+
+Nano uses `C-6` to set its mark, but Handrail deliberately gives CUA-style
+selection priority and uses this key for the less frequent layout mode. The
+binding remains a recognizable simplification of Emacs's `C-x ^` vertical
+window command without consuming `C-x`, which inedit and nano use for Exit.
+See [nano's mark command](https://www.nano-editor.org/dist/v5/nano.html) and
+[Emacs window resizing](https://www.gnu.org/software/emacs/manual/html_node/emacs/Change-Window.html).
 
 ### Application Shape
 

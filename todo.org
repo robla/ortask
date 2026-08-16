@@ -105,15 +105,16 @@ or Back without leaving stale terminal rows.
 *** TODO [#A] t0018.3 Give each view explicit sizing preferences
 Define useful minimum and preferred body heights for task/project lists, Help,
 pickers, confirmations, text input, and the planned issue workspace.
-*** TODO [#B] t0018.4 Add explicit inline height controls
-Support =--height auto= and =--height N= with terminal clamping, then expose
-semantic grow, shrink, fit, and maximize commands without binding Org's
-=M-Up=/=M-Down= subtree-movement keys.
+*** TODO [#B] t0018.4 Add Handrail viewport scrolling and Resize mode
+Support =--height auto= and =--height N= with terminal clamping. Use
+=Alt-Up=/=Alt-Down= to scroll the active viewport, and =C-^=/=C-6= to enter a
+mode with Up/Down height adjustment, =a= auto-fit, and =m= inline maximize.
 *** TODO [#B] t0018.5 Add an explicit full-screen presentation mode
 Support =--full-screen= with the same views and commands in the alternate
-screen. Consider a later =F11= runtime toggle only after the transition can
-preserve stack, focus, buffered edits, and terminal state.
+screen. Add =f= to Resize mode only after the runtime transition can preserve
+stack, focus, buffered edits, and terminal state; no function-key binding is
+required.
 *** TODO [#A] t0018.6 Cover adaptive and full-screen terminal behavior
 Add pure sizing tests, pipe-input view-transition tests, and PTY coverage for
-growth, contraction, resize, stale-line cleanup, inline final frames, and
-full-screen alternate-screen entry and restoration.
+growth, contraction, =C-^= input, Alt-arrow viewport scrolling, stale-line
+cleanup, inline final frames, and full-screen alternate-screen restoration.
