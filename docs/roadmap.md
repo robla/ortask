@@ -222,7 +222,10 @@ fallback deliberately retains its plain prompts.
 
 Keep the existing `OrgBuffer` safety contract: navigation is read-only, edits
 remain buffered and mirrored to the auto-save file, and the real Org file is
-written only through an explicit save path.
+written only through an explicit save path. State and priority actions are
+logical snapshot transactions: `C-/` undoes, `C-r` redoes, and `C-s` saves the
+whole file and resets both stacks. The task-list header keeps the file-level
+dirty count visible even when a transient footer message is present.
 
 #### 5. Suspend for the external editor
 
@@ -471,16 +474,22 @@ showing the parent and its subtasks together.
 
 All in-app mutations continue through `OrgBuffer`. Task-list state and priority
 actions remain buffered with auto-save recovery until the file-level save flow.
+Each action is one labeled full-text transaction. Undo and redo update recovery
+data and the header's `FILE MODIFIED` count; save, discard, recovery reload, and
+external-editor reload establish new history boundaries.
+
 The task workspace keeps one-line title and multiline body controls visible at
 the same time. Tab and Shift-Tab move focus; Enter moves from title to body or
 inserts a body newline. `Ctrl-S` validates both fields as one transaction,
 updates `OrgBuffer`, atomically saves the entire Org file, removes recovery
-data, and resets both field undo histories. This completes `t0016.2` without
-introducing field subcontexts or a second transaction-level undo system.
+data, resets both field undo histories, and clears the file transaction stacks.
+The prompt_toolkit field histories and `OrgBuffer` transaction history remain
+separate: typing is undone within a focused field, while task-list actions are
+undone as complete Org mutations.
 
 The workspace tracks title/body values against the last successful save and
-marks changed controls `UNSAVED` in the footer. Escape returns immediately when
-they are clean. When they differ, Escape opens Save and Return, Continue
+marks changed controls `TASK EDITED` in the footer. Escape returns immediately
+when they are clean. When they differ, Escape opens Save and Return, Continue
 Editing, and Discard and Return choices; Continue Editing is the safe default.
 Discard affects only unpersisted workspace controls, not older changes already
 held by `OrgBuffer`.

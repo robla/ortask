@@ -1369,6 +1369,9 @@ def test_selector_help_uses_action_metadata_once() -> None:
     assert text.count("Cycle the highlighted task's state") == 1
     assert "Raise the highlighted task's priority" in text
     assert "Choose the highlighted task's priority" in text
+    assert "Save all buffered edits to the Org file" in text
+    assert "Undo the most recent buffered task edit" in text
+    assert "Redo the most recently undone task edit" in text
     assert "Esc/b/q" in text and "C-g/Esc/b/q/Enter closes it" in text
 
 
@@ -1882,8 +1885,11 @@ def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) 
     assert "Subtasks: 1" in view.summary
     assert view.enter_moves_focus == frozenset({0})
     assert view.is_dirty is not None and view.is_dirty() is False
+    assert view.status_text is not None and view.status_text() == ""
     view.focus_targets[0].buffer.insert_text(" changed")
     assert view.is_dirty() is True
+    projtui._shift_priority(buf, parent, 1)
+    assert view.status_text() == "FILE MODIFIED: 1 edit"
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
@@ -1990,7 +1996,41 @@ def test_task_workspace_ctrl_s_saves_whole_file_and_resets_undo(tmp_path: Path) 
         "* Tasks\n** TODO [#C] t0001 Original saved\nBody\n"
     )
     assert buf.dirty is False
+    assert buf.can_undo is False
+    assert buf.can_redo is False
     assert not buf.autosave_path.exists()
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_task_list_undo_redo_and_save_shortcuts(tmp_path: Path) -> None:
+    # C-/, C-r, and C-s should undo, redo, and checkpoint logical list edits.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n** TODO t0001 Original\n",
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Change state and priority, undo/redo priority, save, then leave cleanly.
+            pin.send_text("\x1b[1;2C\x1b[1;2A\x1f\x12\x13q")
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == (
+        "* Tasks\n** DONE [#C] t0001 Original\n"
+    )
+    assert buf.dirty is False
+    assert buf.can_undo is False
+    assert buf.can_redo is False
+    assert not buf.autosave_path.exists()
+    assert controller.session is not None
+    assert controller.session.final_message == "Saved changes to tasks.org"
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
@@ -2707,6 +2747,7 @@ def test_org_buffer_apply_save_and_discard(tmp_path: Path) -> None:
     assert buf.dirty is False
     assert not buf.autosave_path.exists()
     assert org_file.read_text(encoding="utf-8") == original
+    assert buf.can_undo is False and buf.can_redo is False
 
     # apply then save commits to the real file and clears the auto-save.
     buf.apply(["* Tasks", "** DONE t0001 one"])
@@ -2714,6 +2755,60 @@ def test_org_buffer_apply_save_and_discard(tmp_path: Path) -> None:
     assert org_file.read_text(encoding="utf-8") == "* Tasks\n** DONE t0001 one\n"
     assert not buf.autosave_path.exists()
     assert buf.dirty is False
+    assert buf.can_undo is False and buf.can_redo is False
+
+
+def test_org_buffer_undo_redo_tracks_logical_edits_and_autosave(tmp_path: Path) -> None:
+    # History should reverse whole task actions and mirror every state to autosave.
+    original = "* Tasks\n** TODO t0001 one\n"
+    org_file = write(tmp_path / "todo.org", original)
+    buf = projtui.OrgBuffer(org_file)
+
+    buf.apply(
+        ["* Tasks", "** DONE t0001 one"],
+        description="Set t0001 state to DONE",
+    )
+    buf.apply(
+        ["* Tasks", "** DONE [#A] t0001 one"],
+        description="Set t0001 priority to A",
+    )
+
+    assert buf.undo_count == 2
+    assert buf.undo() == "Set t0001 priority to A"
+    assert buf.read() == "* Tasks\n** DONE t0001 one\n"
+    assert buf.autosave_path.read_text(encoding="utf-8") == buf.read()
+    assert buf.undo() == "Set t0001 state to DONE"
+    assert buf.read() == original
+    assert buf.dirty is False
+    assert not buf.autosave_path.exists()
+    assert buf.can_redo is True
+
+    assert buf.redo() == "Set t0001 state to DONE"
+    assert buf.redo() == "Set t0001 priority to A"
+    assert buf.read() == "* Tasks\n** DONE [#A] t0001 one\n"
+    assert buf.dirty is True
+
+    buf.save()
+    assert buf.can_undo is False and buf.can_redo is False
+    assert buf.undo() is None and buf.redo() is None
+
+
+def test_task_controller_reports_file_history_status(tmp_path: Path) -> None:
+    # Header status should distinguish modified data from clean redo history.
+    org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 one\n")
+    buf = projtui.OrgBuffer(org_file)
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    item = projtui.load_menu_items(buf)[0]
+    view = controller.initial_view()
+
+    assert view.status_text is not None and view.status_text() == ""
+    projtui._toggle_state(buf, item)
+    assert view.status_text() == "FILE MODIFIED: 1 edit"
+    assert buf.undo() == "Set t0001 state to DONE"
+    assert view.status_text() == "FILE CLEAN · Redo available"
+    assert buf.redo() == "Set t0001 state to DONE"
+    assert view.status_text() == "FILE MODIFIED: 1 edit"
 
 
 def test_org_buffer_apply_back_to_original_clears_autosave(tmp_path: Path) -> None:

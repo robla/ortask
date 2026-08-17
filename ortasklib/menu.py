@@ -108,6 +108,7 @@ class MenuView:
     selected_index: int = 0
     on_resume: Callable[["InlineMenuSession"], None] | None = None
     on_back: Callable[["InlineMenuSession"], bool] | None = None
+    status_text: Callable[[], str] | None = None
 
     def clamp_selection(self) -> None:
         if not self.rows:
@@ -158,6 +159,7 @@ class WorkspaceView:
     focused_index: int = 0
     is_dirty: Callable[[], bool] | None = None
     on_back: Callable[["InlineMenuSession"], bool] | None = None
+    status_text: Callable[[], str] | None = None
 
     def clamp_focus(self) -> None:
         if not self.focus_targets:
@@ -770,10 +772,13 @@ class InlineMenuSession:
 
     def _render_header(self) -> FormattedText:
         view = self.current_view
+        status_callback = getattr(view, "status_text", None)
+        status = status_callback() if status_callback is not None else ""
+        summary = " · ".join(part for part in (status, view.summary) if part)
         return FormattedText(
             [
                 ("class:title", view.title + "\n"),
-                ("class:summary", view.summary + "\n"),
+                ("class:summary", summary + "\n"),
                 ("", "\n"),
             ]
         )
@@ -819,7 +824,7 @@ class InlineMenuSession:
                 and view.is_dirty is not None
                 and view.is_dirty()
             ):
-                instruction = f"UNSAVED · {instruction}"
+                instruction = f"TASK EDITED · {instruction}"
         return FormattedText([("", "\n"), ("class:hint", instruction)])
 
     def _active_body(self):

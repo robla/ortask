@@ -59,14 +59,25 @@ def autosave_path_for(path: Path) -> Path:
     return path.parent / f"#{path.name}#"
 
 
+@dataclass(frozen=True)
+class BufferTransaction:
+    """One logical, reversible edit to an :class:`OrgBuffer`."""
+
+    before: str
+    after: str
+    description: str
+
+
 class OrgBuffer:
     """In-memory editing buffer for one Org file, with Emacs-style auto-save.
 
     Reads come from the in-memory text; :meth:`apply` updates it and mirrors the
     new content to the auto-save sibling (``#name#``) for crash recovery. The
-    real file is written only by :meth:`save`. :meth:`discard` drops the pending
-    changes (and the auto-save file) without touching the real file. This is the
-    interactive editing model (t0006); the one-shot CLI still writes immediately.
+    real file is written only by :meth:`save`. Each apply is one logical undo
+    transaction; save, discard, and reload clear history. :meth:`discard` drops
+    pending changes (and the auto-save file) without touching the real file.
+    This is the interactive editing model (t0006); the one-shot CLI still writes
+    immediately.
     """
 
     def __init__(self, path: Path) -> None:
@@ -75,17 +86,69 @@ class OrgBuffer:
         self._saved_text = path.read_text(encoding="utf-8")
         self._text = self._saved_text
         self.dirty = False
+        self._undo_stack: list[BufferTransaction] = []
+        self._redo_stack: list[BufferTransaction] = []
 
     def read(self) -> str:
         return self._text
 
-    def apply(self, new_lines: list[str]) -> None:
-        """Replace the buffer with ``new_lines`` and refresh the auto-save file."""
-        self._set_text(core.lines_to_text(new_lines))
+    @property
+    def can_undo(self) -> bool:
+        return bool(self._undo_stack)
+
+    @property
+    def can_redo(self) -> bool:
+        return bool(self._redo_stack)
+
+    @property
+    def undo_count(self) -> int:
+        return len(self._undo_stack)
+
+    def apply(
+        self,
+        new_lines: list[str],
+        *,
+        description: str = "Edit Org file",
+    ) -> bool:
+        """Record one logical edit and refresh the auto-save file."""
+        text = core.lines_to_text(new_lines)
+        if text == self._text:
+            return False
+        transaction = BufferTransaction(self._text, text, description)
+        self._undo_stack.append(transaction)
+        self._redo_stack.clear()
+        self._set_text(text)
+        return True
 
     def recover(self, text: str) -> None:
         """Adopt recovered auto-save ``text`` as the (dirty) buffer contents."""
-        self._set_text(text)
+        self._clear_history()
+        if text != self._text:
+            transaction = BufferTransaction(
+                self._text,
+                text,
+                "Recover auto-save data",
+            )
+            self._undo_stack.append(transaction)
+            self._set_text(text)
+
+    def undo(self) -> str | None:
+        """Undo one logical edit and return its description."""
+        if not self._undo_stack:
+            return None
+        transaction = self._undo_stack.pop()
+        self._redo_stack.append(transaction)
+        self._set_text(transaction.before)
+        return transaction.description
+
+    def redo(self) -> str | None:
+        """Redo one logical edit and return its description."""
+        if not self._redo_stack:
+            return None
+        transaction = self._redo_stack.pop()
+        self._undo_stack.append(transaction)
+        self._set_text(transaction.after)
+        return transaction.description
 
     def _set_text(self, text: str) -> None:
         self._text = text
@@ -100,12 +163,14 @@ class OrgBuffer:
         core.atomic_write(self.path, self._text)
         self._saved_text = self._text
         self.dirty = False
+        self._clear_history()
         self._remove_autosave()
 
     def discard(self) -> None:
         """Drop pending changes and the auto-save; leave the real file as-is."""
         self._text = self._saved_text
         self.dirty = False
+        self._clear_history()
         self._remove_autosave()
 
     def reload(self) -> None:
@@ -113,7 +178,12 @@ class OrgBuffer:
         self._saved_text = self.path.read_text(encoding="utf-8")
         self._text = self._saved_text
         self.dirty = False
+        self._clear_history()
         self._remove_autosave()
+
+    def _clear_history(self) -> None:
+        self._undo_stack.clear()
+        self._redo_stack.clear()
 
     def _remove_autosave(self) -> None:
         try:
@@ -488,8 +558,7 @@ def _task_menu_instruction(filter_mode: str) -> str:
     return (
         f"{_task_filter_label(filter_mode)} · ↑↓/jk move · Tab fold · "
         "←/→ tree · S-Tab all · ↵ open · C-g help · "
-        "Shift+←/→ state · Shift+↑/↓ priority · "
-        "C-t filter · p priority · e edit · Esc/b/q back"
+        "C-s save · C-/ undo · C-r redo · C-t filter · Esc/b/q back"
     )
 
 
@@ -511,6 +580,15 @@ _EDIT_MENU_ACTION = menu.MenuAction(
 _FOLD_MENU_ACTION = menu.MenuAction(
     "fold", "Tab", "Expand or collapse the highlighted task"
 )
+_SAVE_MENU_ACTION = menu.MenuAction(
+    "save", "C-s", "Save all buffered edits to the Org file"
+)
+_UNDO_MENU_ACTION = menu.MenuAction(
+    "undo", "C-/", "Undo the most recent buffered task edit"
+)
+_REDO_MENU_ACTION = menu.MenuAction(
+    "redo", "C-r", "Redo the most recently undone task edit"
+)
 TASK_MENU_ACTIONS = {
     "c-i": _FOLD_MENU_ACTION,
     "s-tab": menu.MenuAction(
@@ -531,6 +609,9 @@ TASK_MENU_ACTIONS = {
     "s-right": _TOGGLE_MENU_ACTION,
     "s-up": _RAISE_PRIORITY_ACTION,
     "s-down": _LOWER_PRIORITY_ACTION,
+    "c-s": _SAVE_MENU_ACTION,
+    "c-_": _UNDO_MENU_ACTION,
+    "c-r": _REDO_MENU_ACTION,
 }
 
 def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -> None:
@@ -623,7 +704,10 @@ def _toggle_state(buf: OrgBuffer, item: MenuItem) -> None:
     except tasks.TaskNotFound:
         new_lines = None
     if new_lines is not None:
-        buf.apply(new_lines)
+        buf.apply(
+            new_lines,
+            description=f"Set {item.task.id} state to {target}",
+        )
 
 
 def _refresh_item(buf: OrgBuffer, item: MenuItem) -> MenuItem:
@@ -650,7 +734,12 @@ def _set_priority(buf: OrgBuffer, item: MenuItem, priority: str | None) -> None:
     except tasks.TaskNotFound:
         new_lines = None
     if new_lines is not None:
-        buf.apply(new_lines)
+        description = (
+            f"Set {item.task.id} priority to {priority}"
+            if priority is not None
+            else f"Clear {item.task.id} priority"
+        )
+        buf.apply(new_lines, description=description)
 
 
 def _shift_priority(buf: OrgBuffer, item: MenuItem, direction: int) -> None:
@@ -707,7 +796,10 @@ def _mark_done(buf: OrgBuffer, item: MenuItem) -> None:
     except tasks.TaskNotFound:
         new_lines = None
     if new_lines is not None:
-        buf.apply(new_lines)
+        buf.apply(
+            new_lines,
+            description=f"Set {item.task.id} state to DONE",
+        )
     print(f"marked {item.task.id} DONE")
 
 
@@ -760,6 +852,18 @@ class InteractiveTaskController:
         """Push this task context onto an existing bounded session."""
         self.session = session
         session.push_view(self.initial_view())
+
+    def _buffer_status(self) -> str:
+        count = self.buf.undo_count
+        if self.buf.dirty:
+            noun = "edit" if count == 1 else "edits"
+            return f"FILE MODIFIED: {count} {noun}"
+        if self.buf.can_undo:
+            noun = "step" if count == 1 else "steps"
+            return f"FILE CLEAN · Undo: {count} {noun}"
+        if self.buf.can_redo:
+            return "FILE CLEAN · Redo available"
+        return ""
 
     def initial_view(self) -> menu.MenuView:
         recovered = _recovery_text(self.buf)
@@ -910,6 +1014,7 @@ class InteractiveTaskController:
             selected_index=start_index,
             on_resume=resume,
             on_back=self._handle_task_back,
+            status_text=self._buffer_status,
         )
 
     def _handle_task_back(self, session: menu.InlineMenuSession) -> bool:
@@ -974,6 +1079,31 @@ class InteractiveTaskController:
         item = items[index] if index is not None and index < len(items) else None
         selected_id = self._task_id_at(items, index)
         fallback = index or 0
+
+        if result.action == "save":
+            changed = self.buf.dirty
+            self.buf.save()
+            session.replace_view(self._task_view(selected_id, fallback))
+            message = (
+                f"Saved changes to {self.buf.path.name}"
+                if changed
+                else f"Saved {self.buf.path.name} (unchanged)"
+            )
+            session.set_outcome(message)
+            return
+        if result.action in {"undo", "redo"}:
+            description = (
+                self.buf.undo()
+                if result.action == "undo"
+                else self.buf.redo()
+            )
+            if description is None:
+                session.set_message(f"Nothing to {result.action}")
+                return
+            session.replace_view(self._task_view(selected_id, fallback))
+            verb = "Undid" if result.action == "undo" else "Redid"
+            session.set_message(f"{verb}: {description}")
+            return
 
         if result.action == "fold_all":
             expandable_ids = set(child_ids)
@@ -1176,12 +1306,17 @@ class InteractiveTaskController:
                 return False
 
             if changed_fields:
-                self.buf.apply(source.splitlines())
-            if self.buf.dirty:
-                self.buf.save()
+                fields = " and ".join(changed_fields)
+                self.buf.apply(
+                    source.splitlines(),
+                    description=f"Edit {task_id} {fields}",
+                )
+            changed = self.buf.dirty
+            self.buf.save()
+            if changed:
                 message = f"Saved changes to {self.buf.path.name}"
             else:
-                message = f"No changes to save in {self.buf.path.name}"
+                message = f"Saved {self.buf.path.name} (unchanged)"
             baseline["title"] = title_area.text
             baseline["body"] = body_area.text
             reset_workspace_undo()
@@ -1274,6 +1409,7 @@ class InteractiveTaskController:
             enter_moves_focus=frozenset({0}),
             is_dirty=is_dirty,
             on_back=back,
+            status_text=self._buffer_status,
         )
 
         def clear_saved_message(_buffer) -> None:
@@ -1317,6 +1453,7 @@ class InteractiveTaskController:
             instruction="↑↓/jk · ↵ set · C-g help · Esc/b/q cancel",
             select_help="Set the highlighted priority",
             selected_index=start_index,
+            status_text=self._buffer_status,
         )
 
     def _suspend_for_editor(

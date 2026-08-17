@@ -44,9 +44,11 @@ The task selector has two modes, chosen automatically by
   the focus view;
   Shift-Left/Right cycles the highlighted task through the `TODO`/`DONE` ring;
   Shift-Up/Down raises or lowers its priority; `p` opens an explicit priority
-  picker; `C-t` cycles the visibility filter (`all -> TODO -> DONE`); `e` opens
-  the editor at the highlighted task's line; `C-g` opens contextual command
-  help; and `Esc`, `b`, or `q` goes back exactly one level. In `orgmgr.py -i`,
+  picker; `C-/` undoes one logical task edit; `C-r` redoes it; `C-s` saves the
+  Org file and clears that history; `C-t` cycles the visibility filter (`all ->
+  TODO -> DONE`); `e` opens the editor at the highlighted task's line; `C-g`
+  opens contextual command help; and `Esc`, `b`, or `q` goes back exactly one
+  level. In `orgmgr.py -i`,
   leaving a task list returns to the project menu; in local `ortask.py -i`, that
   task list is the top level, so leaving it exits. The application renders
   inline (not full screen), defaults to 20 rows, and repaints that region as
@@ -57,10 +59,8 @@ The task selector has two modes, chosen automatically by
   Long lists scroll within the row body while the title, summary, and key hint
   remain fixed; the selector keeps one context row above and below the highlight
   when space permits.
-  The task detail view includes a `TEXT` row for editing only the heading text.
-  Its focused field uses normal prompt_toolkit editing: ordinary menu shortcut
-  letters type normally, `Enter` accepts, `Esc` cancels, and `C-g` opens Help
-  without losing unfinished input.
+  Selecting a task opens the title/body workspace described below; ordinary
+  menu shortcut letters type normally while either field has focus.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved as the scriptable fallback with the
   same `C-t` visibility cycle. It lists the complete filtered hierarchy because
@@ -96,9 +96,18 @@ Each file's task menu runs against a `projtui.OrgBuffer`, modeled on Emacs
 (t0006). Task-list edits are buffered, while an explicit task-workspace save
 writes the complete current buffer:
 
-- Task-list state and priority edits update an in-memory buffer and mirror it
-  to an **auto-save sibling** named `#todo.org#` (Emacs convention) for crash
-  recovery. The real file remains untouched until Save.
+- Each task-list state or priority action is one labeled `OrgBuffer`
+  transaction. It updates the in-memory buffer and mirrors it to an **auto-save
+  sibling** named `#todo.org#` (Emacs convention) for crash recovery. The real
+  file remains untouched until Save.
+- A task-list header shows `FILE MODIFIED: N edits` while buffered transactions
+  differ from disk. `C-/` (the same terminal event as `C-_`) undoes one
+  transaction and `C-r` redoes it. Undo and redo refresh the auto-save; undoing
+  back to disk removes it. A clean buffer with redo history says `FILE CLEAN ·
+  Redo available`.
+- `C-s` in the task list atomically saves the complete buffer and resets both
+  transaction stacks. Save, Discard, reload after an external editor, and a
+  successful task-workspace save are all history boundaries.
 - `Ctrl-S` in a task workspace validates title and body, applies them to the
   same buffer, atomically saves the entire Org file, and removes the auto-save.
   Thus it also commits state or priority edits made before entering the task.
@@ -297,6 +306,10 @@ Recommended task-list bindings:
   ends, and changing priority never reorders the task list.
 - `p` opens an explicit `A`/`B`/`C`/`none` picker. This is the discoverable path
   for users who do not want to memorize directional shortcuts.
+- `C-/` (`C-_` on the wire) undoes one buffered task-list transaction. `C-r`
+  redoes the most recently undone transaction; the redo stack is cleared by a
+  new mutation.
+- `C-s` writes the complete Org buffer to disk and starts a new history.
 - `e` opens the current Org file or selected task in the editor.
 - `C-t` cycles the task visibility filter: `all -> TODO -> DONE`. This is not
   an exact Emacs binding, but it keeps `C-c` and `C-x` open for future
@@ -392,7 +405,9 @@ Tab and Shift-Tab move between title and body. Enter moves from the one-line
 title into the body; within the body it inserts a newline. `Ctrl-S` validates
 and applies both fields atomically, saves the entire Org file, clears recovery
 data, resets both field undo histories, and leaves the workspace open at a new
-clean baseline. The footer shows `UNSAVED` after either control changes.
+clean baseline. The footer shows `TASK EDITED` after either control changes,
+while the header independently shows `FILE MODIFIED: N edits` when task-list
+transactions are pending.
 
 Escape returns directly when the controls are clean. When they differ from the
 last save, Escape opens Save and Return, Continue Editing, and Discard and
