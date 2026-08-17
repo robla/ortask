@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 import textwrap
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -331,6 +331,293 @@ def test_atomic_write_follows_symlink(tmp_path: Path) -> None:
     assert target.read_text(encoding="utf-8") == "new\n"
 
 
+def test_archive_done_subtrees_with_org_context(tmp_path: Path) -> None:
+    # A default sweep moves each outermost DONE subtree and records Org context.
+    source = textwrap.dedent(
+        """
+        #+TODO: TODO WAIT | DONE MOOT
+        #+CATEGORY: sample-project
+        #+FILETAGS: :team:
+        * Tasks
+        ** TODO t0001 Open parent  :parent:
+        *** DONE t0001.1 Finished child
+        Child body.
+        ** DONE t0002 Finished parent
+        Parent body.
+        *** DONE t0002.1 Finished descendant
+        *** TODO t0002.2 Open descendant carried with its parent
+        ** MOOT t0003 Terminal but not DONE
+        """
+    ).lstrip()
+
+    result = tasks.archive_tasks(
+        source,
+        "",
+        source_file=str(tmp_path / "tasks.org"),
+        archived_at=datetime(2026, 8, 17, 3, 5),
+    )
+
+    assert result.task_ids == ("t0001.1", "t0002")
+    assert "** TODO t0001 Open parent" in result.source_text
+    assert "t0001.1" not in result.source_text
+    assert "t0002" not in result.source_text
+    assert "** MOOT t0003 Terminal but not DONE" in result.source_text
+    assert result.archive_text.startswith(
+        "# -*- mode: org -*-\n#+TODO: TODO WAIT | DONE MOOT\n"
+    )
+    assert "* DONE t0001.1 Finished child" in result.archive_text
+    assert "* DONE t0002 Finished parent" in result.archive_text
+    assert "** DONE t0002.1 Finished descendant" in result.archive_text
+    assert "** TODO t0002.2 Open descendant carried with its parent" in result.archive_text
+    assert result.archive_text.count("* DONE t0002.1") == 1
+    assert ":ARCHIVE_TIME: [2026-08-17 Mon 03:05]" in result.archive_text
+    assert ":ARCHIVE_OLPATH: Tasks/t0001 Open parent" in result.archive_text
+    assert ":ARCHIVE_OLPATH: Tasks\n" in result.archive_text
+    assert ":ARCHIVE_CATEGORY: sample-project" in result.archive_text
+    assert ":ARCHIVE_ITAGS: team parent" in result.archive_text
+
+
+def test_archive_explicit_task_and_merge_todo_declaration(tmp_path: Path) -> None:
+    # An explicit ID archives an open subtree and unions workflow declarations.
+    source = textwrap.dedent(
+        """
+        #+TODO: TODO NEXT | DONE MOOT
+        * Tasks
+        ** NEXT Project heading
+        *** TODO t0001 Selected open task
+        :PROPERTIES:
+        :OWNER: robla
+        :END:
+        Body.
+        **** DONE t0001.1 Child
+        ** DONE t0002 Unselected task
+        """
+    ).lstrip()
+    archive = textwrap.dedent(
+        """
+        # -*- mode: org -*-
+        #+TODO: NEXT | DONE CANCELED
+
+        Archived entries from an older workflow
+
+        * CANCELED old001 Old entry
+        """
+    ).lstrip()
+
+    result = tasks.archive_tasks(
+        source,
+        archive,
+        source_file=str(tmp_path / "todo.org"),
+        task_id="1",
+        archived_at=datetime(2026, 8, 17, 4, 0),
+    )
+
+    assert result.task_ids == ("t0001",)
+    assert "t0001" not in result.source_text
+    assert "** DONE t0002 Unselected task" in result.source_text
+    assert "#+TODO: NEXT TODO | DONE CANCELED MOOT" in result.archive_text
+    assert result.archive_text.count("#+TODO:") == 1
+    assert "* CANCELED old001 Old entry" in result.archive_text
+    assert "* TODO t0001 Selected open task" in result.archive_text
+    assert ":OWNER: robla" in result.archive_text
+    assert result.archive_text.count(":PROPERTIES:") == 1
+    assert ":ARCHIVE_TODO: TODO" in result.archive_text
+    assert ":ARCHIVE_OLPATH: Tasks/Project heading" in result.archive_text
+
+
+def test_archive_recovers_custom_states_without_existing_declaration() -> None:
+    # A stock archive without #+TODO keeps historical custom states parseable.
+    source = "* Tasks\n** DONE t0001 New completed task\n"
+    archive = (
+        "# -*- mode: org -*-\n\n"
+        "Archived entries from an older workflow\n\n"
+        "* CANCELED t0099 Historical task\n"
+    )
+
+    result = tasks.archive_tasks(
+        source,
+        archive,
+        source_file="/tmp/tasks.org",
+        archived_at=datetime(2026, 8, 17, 4, 5),
+    )
+
+    assert "#+TODO: TODO | DONE CANCELED" in result.archive_text
+    assert "* CANCELED t0099 Historical task" in result.archive_text
+
+
+def test_archive_no_done_tasks_is_an_exact_noop() -> None:
+    # A bare archive with no DONE headings does not create or rewrite anything.
+    source = "* Tasks\n** TODO t0001 Still open\n** MOOT t0002 Not a DONE task\n"
+
+    result = tasks.archive_tasks(
+        source,
+        "",
+        source_file="/tmp/tasks.org",
+        archived_at=datetime(2026, 8, 17, 4, 10),
+    )
+
+    assert result.task_ids == ()
+    assert result.source_text == source
+    assert result.archive_text == ""
+
+
+def test_archive_rejects_unknown_explicit_id() -> None:
+    # Explicit archive requests fail rather than silently falling back to a sweep.
+    source = "* Tasks\n** DONE t0001 Existing task\n"
+
+    with pytest.raises(tasks.TaskNotFound, match="t9999"):
+        tasks.archive_tasks(
+            source,
+            "",
+            source_file="/tmp/tasks.org",
+            task_id="9999",
+        )
+
+
+def test_add_reserves_archived_subtask_ids() -> None:
+    # Archived child suffixes remain unavailable beneath a live parent.
+    source = "* Tasks\n** TODO t0001 Parent\n*** TODO t0001.1 Live child\n"
+
+    lines, task_id = tasks.add_task(
+        source,
+        "New child",
+        "t0001",
+        reserved_ids={"t0001.4"},
+    )
+
+    assert task_id == "t0001.5"
+    assert "*** TODO t0001.5 New child" in lines
+
+    weekly_lines, weekly_id = tasks.add_task(
+        "* Tasks\n** TODO tw26W34 Weekly parent\n",
+        "New weekly child",
+        "tw26W34",
+        reserved_ids={"tw2026w34.3"},
+    )
+    assert weekly_id == "tw26W34.4"
+    assert "*** TODO tw26W34.4 New weekly child" in weekly_lines
+
+
+def test_atomic_write_pair_rolls_back_first_file(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A failed destructive second write restores the archive destination.
+    archive = write(tmp_path / "tasks.org_archive", "old archive\n")
+    source = write(tmp_path / "tasks.org", "old source\n")
+    real_atomic_write = core.atomic_write
+
+    def fail_source(path: Path, content: str) -> None:
+        if path == source:
+            raise OSError("simulated source failure")
+        real_atomic_write(path, content)
+
+    monkeypatch.setattr(core, "atomic_write", fail_source)
+
+    with pytest.raises(OSError, match="simulated source failure"):
+        core.atomic_write_pair(
+            archive,
+            "new archive\n",
+            source,
+            "new source\n",
+        )
+
+    assert archive.read_text(encoding="utf-8") == "old archive\n"
+    assert source.read_text(encoding="utf-8") == "old source\n"
+
+
+def test_atomic_write_pair_removes_new_file_during_rollback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A failed source replacement also removes a newly created archive.
+    archive = tmp_path / "tasks.org_archive"
+    source = write(tmp_path / "tasks.org", "old source\n")
+    real_atomic_write = core.atomic_write
+
+    def fail_source(path: Path, content: str) -> None:
+        if path == source:
+            raise OSError("simulated source failure")
+        real_atomic_write(path, content)
+
+    monkeypatch.setattr(core, "atomic_write", fail_source)
+
+    with pytest.raises(OSError, match="simulated source failure"):
+        core.atomic_write_pair(
+            archive,
+            "new archive\n",
+            source,
+            "new source\n",
+        )
+
+    assert not archive.exists()
+    assert source.read_text(encoding="utf-8") == "old source\n"
+
+
+def test_archive_cli_uses_canonical_path_and_reserves_ids(tmp_path: Path) -> None:
+    # CLI archiving follows a source symlink and add never reuses archived IDs.
+    project = tmp_path / "project"
+    source = write(
+        project / "tasks.org",
+        (
+            "#+TODO: TODO | DONE CANCELED\n"
+            "* Tasks\n"
+            "** DONE t0007 Completed\n"
+            "** DONE t0008 Retained\n"
+        ),
+    )
+    registry = tmp_path / "registry"
+    registry.mkdir()
+    source_link = registry / "tasks.org"
+    source_link.symlink_to(source)
+
+    archived = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "ortask.py"),
+            "--file",
+            str(source_link),
+            "archive",
+            "t0007",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert archived.returncode == 0
+    assert "archived 1 subtree (t0007)" in archived.stdout
+    assert archived.stderr == ""
+    assert source_link.is_symlink()
+    archive = project / "tasks.org_archive"
+    assert archive.exists()
+    assert not (registry / "tasks.org_archive").exists()
+    assert "** DONE t0008 Retained" in source.read_text(encoding="utf-8")
+    archive.write_text(
+        archive.read_text(encoding="utf-8")
+        + "\n* CANCELED t0009 Archived under an older keyword\n",
+        encoding="utf-8",
+    )
+
+    added = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "ortask.py"),
+            "--file",
+            str(source_link),
+            "add",
+            "New task",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert added.returncode == 0
+    assert "added t0010" in added.stdout
+    assert "** TODO t0010 New task" in source.read_text(encoding="utf-8")
+
+
 def test_list_and_done_without_tasks_section(tmp_path: Path, capsys) -> None:
     # t0003: list/done operate on valid task headings even without * Tasks.
     org_file = write(
@@ -646,6 +933,7 @@ def test_cli_subcommands_are_registered_alphabetically() -> None:
         "ort": [
             "add",
             "apply",
+            "archive",
             "done",
             "help",
             "list",
@@ -707,6 +995,7 @@ def test_bash_completion_for_ortask_and_alias() -> None:
         ("_ortask_complete", "COMP_WORDS=(ort ad); COMP_CWORD=1", "add"),
         ("_ortask_complete", "COMP_WORDS=(ort --in); COMP_CWORD=1", "--interactive"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py app); COMP_CWORD=1", "apply"),
+        ("_ortask_complete", "COMP_WORDS=(ort ar); COMP_CWORD=1", "archive"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py list --fo); COMP_CWORD=2", "--format"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py apply --te); COMP_CWORD=2", "--template"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py apply --template w); COMP_CWORD=3", "weekly"),
@@ -741,7 +1030,17 @@ def test_bash_completion_lists_subcommands_alphabetically() -> None:
         (
             "_ortask_complete",
             "ort",
-            ["add", "apply", "done", "help", "list", "open", "repair", "show"],
+            [
+                "add",
+                "apply",
+                "archive",
+                "done",
+                "help",
+                "list",
+                "open",
+                "repair",
+                "show",
+            ],
         ),
         ("_orgmgr_complete", "orgm", ["help", "list", "migrate", "projadd"]),
     ]

@@ -36,6 +36,10 @@ Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
 # add a subtask
 ./ortask.py add "Check Glassdoor reviews" --parent t0003
 
+# archive all DONE task subtrees (or provide one task ID)
+./ortask.py archive
+./ortask.py archive t0002
+
 # mark a task done
 ./ortask.py done t0002
 
@@ -70,7 +74,7 @@ alias ort='/path/to/ortask.py'
 alias orgm='/path/to/orgmgr.py'
 #+end_src
 
-Then: =ort list=, =ort add "Do the thing"=, =ort done t0004=, =ort -i=,
+Then: =ort list=, =ort add "Do the thing"=, =ort archive=, =ort done t0004=, =ort -i=,
 and =orgm -i=.
 
 * Bash completion

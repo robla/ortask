@@ -10,6 +10,7 @@ ortask.py - inspect and update org-mode TODO tasks in local Org files
 ortask.py [<subcommand>] [<options>]
 ortask.py add <title> [--parent ID] [--file FILE]
 ortask.py apply [--template NAME] [--week WEEK] [--date YYYY-MM-DD] [--dry-run] [--file FILE]
+ortask.py archive [<id>] [--file FILE]
 ortask.py done <id> [--file FILE]
 ortask.py help
 ortask.py list [--todo | --done | --all] [--root-only] [--items N] [--format FORMAT] [--file FILE]
@@ -88,6 +89,31 @@ the placeholder set and insertion rules.
 
 **--dry-run**
 :   Print the Org content that would be inserted without modifying the file.
+
+### archive
+
+```
+ortask.py archive
+ortask.py archive t0007
+```
+
+With no ID, move every `DONE` task subtree to the stock Org archive path:
+`tasks.org` becomes `tasks.org_archive`, `todo.org` becomes
+`todo.org_archive`, and so on. `MOOT` and `SUPERSEDED` are not selected by the
+default sweep. When a DONE parent and its descendants are all candidates, the
+parent subtree is moved once. A DONE child of an open parent is archived on its
+own.
+
+With an ID, move only that task's whole subtree, regardless of its current
+state. Archived roots become level-1 headings because the stock `%s_archive::`
+location has no container heading. Ortask adds Org's standard archive-context
+properties, including the time, source file, former outline path, category,
+TODO state, and inherited tags.
+
+New archives include an Org mode line and the source file's `#+TODO:` workflow
+declaration. Existing declarations are merged so old and current workflow
+keywords remain parseable. The destination is written first and restored if
+the source write fails. Archived IDs remain reserved by later `add` commands.
 
 ### done
 
@@ -254,7 +280,8 @@ filtering with `--state` or `--root-only`).
 
 ## FILE MODIFICATION
 
-Write operations (`add`, `done`, `open`, `repair --fix`) follow these rules:
+Write operations (`add`, `apply`, `archive`, `done`, `open`, `repair --fix`)
+follow these rules:
 
 - Edits touch only selected task headings, inserted task headings, or the
   `* Tasks` subtree when a command explicitly inserts there; all other content
@@ -262,6 +289,9 @@ Write operations (`add`, `done`, `open`, `repair --fix`) follow these rules:
 - For state changes, only the matched heading line is rewritten.
 - For `add`, the new heading is appended at the end of the task subtree
   (or after the last sibling under the parent for subtasks).
+- For `archive`, complete subtrees move to the adjacent `.org_archive` file;
+  both replacements are atomic and the archive write is rolled back if the
+  source replacement fails.
 - For `repair --fix`, only lines with detected problems are rewritten.
 - Writes go to a temporary file first, then atomically replace the original.
 

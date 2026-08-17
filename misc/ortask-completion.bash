@@ -20,7 +20,7 @@ _ortask_complete()
         cword=$COMP_CWORD
     fi
 
-    local subcommands="add apply done help list open repair show"
+    local subcommands="add apply archive done help list open repair show"
     local global_opts="-i --interactive --file --help"
     local list_opts="--todo --done --all --root-only --items --format --file --help"
     local add_opts="--parent --file --help"
@@ -82,7 +82,7 @@ _ortask_complete()
             apply)
                 COMPREPLY=( $(compgen -W "$apply_opts" -- "$cur") )
                 ;;
-            done|open|show)
+            archive|done|open|show)
                 COMPREPLY=( $(compgen -W "$id_opts" -- "$cur") )
                 ;;
             list)

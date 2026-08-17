@@ -14,7 +14,7 @@ Use the script directly:
 
 The repository is stdlib-only; there is no build step or dependency install.
 
-Do not run newly created or modified commands against real repository files if the command can mutate data unless the user explicitly asks for that run. Implementing a command is not permission to execute it on the user's files. Use `--help`, syntax checks, tests with temporary fixtures, or documented dry runs for verification. Ask first before running commands such as `./ortask.py add`, `./ortask.py done`, `./ortask.py repair`, or any sorter/rewrite command on real data.
+Do not run newly created or modified commands against real repository files if the command can mutate data unless the user explicitly asks for that run. Implementing a command is not permission to execute it on the user's files. Use `--help`, syntax checks, tests with temporary fixtures, or documented dry runs for verification. Ask first before running commands such as `./ortask.py add`, `./ortask.py archive`, `./ortask.py done`, `./ortask.py repair`, or any sorter/rewrite command on real data.
 
 ## Current State & Contribution Priorities
 This repo is specification-first: the docs describe an Org-heading task manager, while `ortask.py` still parses the older checkbox format and supports only listing plus `--items`. Treat `README.org` as the main fixture, and treat the design docs as guidance rather than executable truth.

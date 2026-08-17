@@ -57,6 +57,7 @@ reference alphabetized by subcommand name.
 | :--- | :--- | :--- |
 | `add <title>` | Implemented | Append a new task with the next available ID; supports `--parent <id>`. |
 | `apply` | Implemented | Instantiate the weekly `* Template` subtree as new tasks. |
+| `archive [<id>]` | Implemented | Move all DONE subtrees, or one selected subtree, to the adjacent `.org_archive` file. |
 | `context` | Planned | **LLM Special**: Output a compact summary for prompt context. |
 | `done <id>` | Implemented | Mark a task as DONE. |
 | `help` | Implemented | Show command help. |

@@ -26,6 +26,7 @@ from ortasklib.core import (  # noqa: F401 — re-exported for tooling/tests
     TASKS_HEADING_RE,
     OrgFileDiscoveryError,
     TodoItem,
+    atomic_write_pair,
     build_org_heading as _build_org_heading,
     canonical_id,
     filter_items,
@@ -57,6 +58,12 @@ def _is_dedicated_task_file(path: Path) -> bool:
 def _can_create_tasks_section(path: Path, text: str) -> bool:
     """Only bootstrap empty files that are clearly intended to be task files."""
     return not text.strip() and _is_dedicated_task_file(path)
+
+
+def _archive_path(path: Path) -> Path:
+    """Return the stock Org archive path beside the canonical source file."""
+    source = path.expanduser().resolve()
+    return source.with_name(source.name + "_archive")
 
 
 # ---------------------------------------------------------------------------
@@ -113,12 +120,19 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 def cmd_add(args: argparse.Namespace) -> int:
     text = args.file.read_text(encoding="utf-8")
+    archive_path = _archive_path(args.file)
+    archive_text = (
+        archive_path.read_text(encoding="utf-8")
+        if archive_path.exists()
+        else ""
+    )
     try:
         new_lines, new_id = tasks.add_task(
             text,
             args.title,
             args.parent,
             allow_create_section=_can_create_tasks_section(args.file, text),
+            reserved_ids=tasks.task_ids_in_headings(archive_text),
         )
     except tasks.MissingTasksSection:
         print(
@@ -132,6 +146,53 @@ def cmd_add(args: argparse.Namespace) -> int:
         return 1
     _write_lines(args.file, new_lines)
     print(f"added {new_id} \"{args.title}\" to {args.file}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: archive
+# ---------------------------------------------------------------------------
+
+def cmd_archive(args: argparse.Namespace) -> int:
+    source_path = args.file.expanduser().resolve()
+    archive_path = _archive_path(args.file)
+    try:
+        source_text = source_path.read_text(encoding="utf-8")
+        archive_text = (
+            archive_path.read_text(encoding="utf-8")
+            if archive_path.exists()
+            else ""
+        )
+        result = tasks.archive_tasks(
+            source_text,
+            archive_text,
+            source_file=str(source_path),
+            task_id=args.id,
+        )
+        if not result.task_ids:
+            print(f"no DONE tasks to archive in {source_path}")
+            return 0
+        atomic_write_pair(
+            archive_path,
+            result.archive_text,
+            source_path,
+            result.source_text,
+        )
+    except tasks.TaskNotFound as exc:
+        print(f"task not found: {exc}", file=sys.stderr)
+        return 1
+    except tasks.ArchiveError as exc:
+        print(f"archive: {exc}", file=sys.stderr)
+        return 1
+    except (OSError, RuntimeError) as exc:
+        print(f"archive: {exc}", file=sys.stderr)
+        return 1
+
+    noun = "subtree" if len(result.task_ids) == 1 else "subtrees"
+    print(
+        f"archived {len(result.task_ids)} {noun} "
+        f"({', '.join(result.task_ids)}) to {archive_path}"
+    )
     return 0
 
 
@@ -255,6 +316,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_apply.add_argument("--dry-run", action="store_true",
                          help="print the tasks that would be inserted without writing")
 
+    p_archive = sub.add_parser(
+        "archive", help="move DONE tasks or one task subtree to the archive")
+    p_archive.add_argument("id", metavar="ID", nargs="?", default=None)
+
     p_done = sub.add_parser("done", help="mark a task DONE")
     p_done.add_argument("id", metavar="ID")
 
@@ -338,6 +403,7 @@ def main() -> int:
     dispatch = {
         "add": cmd_add,
         "apply": cmd_apply,
+        "archive": cmd_archive,
         "done": cmd_done,
         "list": cmd_list,
         "open": cmd_open,

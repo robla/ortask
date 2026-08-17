@@ -35,7 +35,7 @@ Retain at most one factual final frame, erase misleading failure output, and
 restore the terminal after signals, exceptions, and resize failures.
 **** DONE [#B] t0009.6.1 Define and test controlled normal-exit retention
 **** TODO [#B] t0009.6.2 Harden signal, exception, and terminal-failure cleanup
-** TODO t0010 Archive completed tasks into a separate org file
+** DONE t0010 Archive completed tasks into a separate org file
 Implement the =todo.org_archive= archiving behavior described in =docs/roadmap.md=.
 ** TODO t0011 Remove obsolete one-shot interactive selector code
 Delete =_run_selector=, =select_menu=, =select_project_menu=, and their

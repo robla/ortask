@@ -326,7 +326,8 @@ The interactive UI work is complete when:
 
 Tracked as `t0010`. This is a separate area from the interactive-UI work above.
 
-**Status:** Specified; implementation has not started.
+**Status:** Implemented in `ortask.py archive`; interactive archive actions and
+custom destinations remain future work.
 
 ### Goal
 
@@ -370,9 +371,9 @@ into the heading title instead. Archiving ElectoramaWeekly's four terminal
 weeks produced an archive in which only 23 of 64 headings still read as
 complete, until the declaration was added by hand.
 
-### Direction for ortask
+### Implemented Direction
 
-Add an `archive` verb to `ortask.py` that moves one or more DONE subtrees to
+The `archive` verb moves one or more DONE subtrees to
 the archive file and writes the documented stock-compatible context
 properties. The archive target derives from the task file's own name, so
 `tasks.org` archives to `tasks.org_archive`; a later config key or `--to`
@@ -383,7 +384,8 @@ Constraints that follow from existing project rules:
 - IDs are permanent and never reused, so archived tasks keep their IDs and ID
   allocation must continue to account for them.
 - Archiving moves a whole subtree; archiving a parent takes its subtasks with
-  it. Archiving a subtask while its parent stays open needs an explicit answer.
+  it. Archiving a subtask while its parent stays open is supported as described
+  below.
 - The archive file is a destination, not a task file. It must not be picked up
   by `ortask.py`'s discovery order, and it must not appear as a project's task
   file in `orgmgr.py`. Reading it — `ort list --archived` or similar — is a
@@ -401,10 +403,19 @@ Constraints that follow from existing project rules:
   archive accumulates across renames, so its declaration is the union over
   time, not a snapshot of current vocabulary.
 
-### Open Questions
+The implemented command resolves the original selection questions as follows:
 
-- Whether `archive` takes explicit IDs, a `--done` sweep, or both.
-- Whether MOOT and compatibility-alias SUPERSEDED subtrees are eligible.
+- Bare `ort archive` selects literal `DONE` headings in source order. It does
+  not sweep `MOOT` or compatibility-alias `SUPERSEDED` headings.
+- `ort archive ID` moves only that task's whole subtree, regardless of state.
+- A selected DONE child can move while its parent remains open. If a selected
+  ancestor already contains other DONE candidates, the subtree moves once.
+- Both files use atomic replacement. The archive is written first and restored
+  if replacing the source fails.
+- `add` includes IDs found in the adjacent archive when allocating new IDs.
+
+### Remaining Questions
+
 - Whether the TUI gets an archive action, and whether it needs confirmation
   given that archiving is reversible only by editing two files.
 - Whether ortask should recognize an existing `#+ARCHIVE:` keyword or an

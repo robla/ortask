@@ -349,6 +349,41 @@ def atomic_write(path: Path, content: str) -> None:
         raise
 
 
+def atomic_write_pair(
+    first_path: Path,
+    first_content: str,
+    second_path: Path,
+    second_content: str,
+) -> None:
+    """Replace two files, restoring the first if the second write fails.
+
+    Callers should put the copy/destination first and the destructive source
+    edit second. A process crash can still interrupt two filesystem replaces,
+    but ordinary write failures cannot lose or duplicate the moved content.
+    """
+    first_target = first_path.resolve() if first_path.is_symlink() else first_path
+    first_existed = first_target.exists()
+    previous_first = (
+        first_target.read_text(encoding="utf-8") if first_existed else None
+    )
+
+    atomic_write(first_path, first_content)
+    try:
+        atomic_write(second_path, second_content)
+    except BaseException:
+        try:
+            if first_existed:
+                assert previous_first is not None
+                atomic_write(first_path, previous_first)
+            else:
+                first_target.unlink(missing_ok=True)
+        except BaseException as rollback_error:
+            raise RuntimeError(
+                f"second write failed and rollback of {first_path} also failed"
+            ) from rollback_error
+        raise
+
+
 def lines_to_text(lines: list[str]) -> str:
     """Join task lines into file text with a single trailing newline."""
     return "\n".join(lines) + "\n" if lines else ""

@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from .core import (
     BARE_HEADING_RE,
     HEADING_RE,
     NUMERIC_ID_RE,
     ORG_HEADING_RE,
+    TASK_ID_PATTERN,
     TASK_STATES,
     WEEK_ID_PARTS_RE,
     TodoItem,
@@ -52,6 +55,19 @@ class TemplateError(Exception):
 
 class TodoStateError(Exception):
     """Raised when an Org TODO declaration cannot be updated safely."""
+
+
+class ArchiveError(Exception):
+    """Raised when task subtrees cannot be archived safely."""
+
+
+@dataclass(frozen=True)
+class ArchiveResult:
+    """The in-memory result of moving task subtrees into an archive."""
+
+    source_text: str
+    archive_text: str
+    task_ids: tuple[str, ...]
 
 
 # ---------------------------------------------------------------------------
@@ -139,22 +155,31 @@ def show_lines(text: str, task_id: str) -> list[str]:
 # ID allocation
 # ---------------------------------------------------------------------------
 
-def next_toplevel_id(items: list[TodoItem]) -> str:
+def next_toplevel_id(
+    items: list[TodoItem], reserved_ids: set[str] | None = None
+) -> str:
     max_num = 0
-    for item in items:
+    task_ids = {item.id for item in items} | (reserved_ids or set())
+    for task_id in task_ids:
         # Only consider top-level IDs (no dots)
-        if "." not in item.id and NUMERIC_ID_RE.match(item.id):
-            num = int(item.id[1:])
+        if "." not in task_id and NUMERIC_ID_RE.match(task_id):
+            num = int(task_id[1:])
             max_num = max(max_num, num)
     return f"t{max_num + 1:04d}"
 
 
-def next_subtask_id(items: list[TodoItem], parent_id: str) -> str:
+def next_subtask_id(
+    items: list[TodoItem],
+    parent_id: str,
+    reserved_ids: set[str] | None = None,
+) -> str:
     max_sub = 0
-    prefix = parent_id + "."
-    for item in items:
-        if item.id.startswith(prefix):
-            suffix = item.id[len(prefix):]
+    prefix = canonical_id(parent_id) + "."
+    task_ids = {item.id for item in items} | (reserved_ids or set())
+    for task_id in task_ids:
+        canonical_task_id = canonical_id(task_id)
+        if canonical_task_id.startswith(prefix):
+            suffix = canonical_task_id[len(prefix):]
             # Only direct children (no further dots)
             if "." not in suffix:
                 try:
@@ -174,6 +199,7 @@ def add_task(
     parent: str | None = None,
     *,
     allow_create_section: bool = False,
+    reserved_ids: set[str] | None = None,
 ) -> tuple[list[str], str]:
     """Insert a new task and return ``(new_lines, new_id)``.
 
@@ -182,7 +208,8 @@ def add_task(
     descendants with the next dotted child ID. Raises ``TaskNotFound`` if
     ``parent`` is given but does not resolve; raises ``MissingTasksSection`` if
     a top-level add would need to create ``* Tasks`` and section creation is not
-    explicitly enabled.
+    explicitly enabled. ``reserved_ids`` participate in allocation but are not
+    valid insertion parents.
     """
     lines = text.splitlines()
     items = parse_org(text)
@@ -194,7 +221,7 @@ def add_task(
         if parent_item is None:
             raise TaskNotFound(parent)
         parent_id = parent_item.id
-        new_id = next_subtask_id(items, parent_id)
+        new_id = next_subtask_id(items, parent_id, reserved_ids)
         new_level = parent_item.level + 1
         # Insert after the last sibling/descendant of the parent
         insert_at = parent_item.line_num + 1
@@ -213,7 +240,7 @@ def add_task(
             lines.append("* Tasks")
             start = len(lines) - 1
             end = len(lines)
-        new_id = next_toplevel_id(items)
+        new_id = next_toplevel_id(items, reserved_ids)
         new_level = 2
         insert_at = end
 
@@ -454,6 +481,451 @@ def change_subtree_state(
         if note not in root.body_lines:
             lines.insert(insert_at, note)
     return _restore_final_newline(lines, text), changed
+
+
+# ---------------------------------------------------------------------------
+# Archiving
+# ---------------------------------------------------------------------------
+
+_ANY_HEADING_RE = re.compile(r"^(?P<stars>\*+)\s+(?P<title>.*)$")
+_HEADING_TAGS_RE = re.compile(r"(?:\s+|^):(?P<tags>[\w@#%:]+):\s*$")
+_PROPERTY_RE = re.compile(r"^\s*:(?P<name>[A-Za-z0-9_]+):\s*(?P<value>.*?)\s*$")
+_PLANNING_RE = re.compile(
+    r"^\s*(?:(?:CLOSED|DEADLINE|SCHEDULED):\s*[\[<][^]>]+[]>]\s*)+$"
+)
+_CATEGORY_RE = re.compile(r"^#\+CATEGORY:\s*(.*?)\s*$", re.IGNORECASE)
+_FILETAGS_RE = re.compile(r"^#\+FILETAGS:\s*(.*?)\s*$", re.IGNORECASE)
+_KEYWORD_RE = re.compile(r"^(?P<keyword>[A-Za-z][A-Za-z0-9_-]*)")
+_ARCHIVED_ID_RE = re.compile(
+    rf"^\*+\s+(?:(?P<state>[A-Z][A-Z0-9_-]*)\s+)?"
+    rf"(?:\[#[A-C]\]\s+)?(?P<id>{TASK_ID_PATTERN})(?:\s+|$)"
+)
+
+
+@dataclass(frozen=True)
+class _ArchiveSelection:
+    item: TodoItem
+    start: int
+    end: int
+    outline_path: str
+    inherited_tags: tuple[str, ...]
+
+
+def task_ids_in_headings(text: str) -> set[str]:
+    """Return stable IDs from headings without assuming a workflow keyword."""
+    return {
+        match.group("id")
+        for line in text.splitlines()
+        if (match := _ARCHIVED_ID_RE.match(line))
+    }
+
+
+def _workflow_states_in_headings(text: str) -> set[str]:
+    return {
+        match.group("state")
+        for line in text.splitlines()
+        if (match := _ARCHIVED_ID_RE.match(line)) and match.group("state")
+    }
+
+
+def _subtree_end(lines: list[str], start: int, level: int) -> int:
+    for index in range(start + 1, len(lines)):
+        match = _ANY_HEADING_RE.match(lines[index])
+        if match and len(match.group("stars")) <= level:
+            return index
+    return len(lines)
+
+
+def _split_heading_title(
+    raw: str, workflow_keywords: set[str]
+) -> tuple[str, tuple[str, ...]]:
+    """Return an Org outline title and local tags without TODO decoration."""
+    tags: tuple[str, ...] = ()
+    tag_match = _HEADING_TAGS_RE.search(raw)
+    if tag_match:
+        tags = tuple(tag for tag in tag_match.group("tags").split(":") if tag)
+        raw = raw[:tag_match.start()].rstrip()
+    words = raw.split()
+    if words and words[0] in workflow_keywords:
+        words.pop(0)
+    if words and re.fullmatch(r"\[#[A-Z]\]", words[0]):
+        words.pop(0)
+    return " ".join(words), tags
+
+
+def _file_tags(lines: list[str]) -> tuple[str, ...]:
+    tags: list[str] = []
+    for line in lines:
+        match = _FILETAGS_RE.match(line)
+        if not match:
+            continue
+        for tag in match.group(1).strip().strip(":").split(":"):
+            if tag and tag not in tags:
+                tags.append(tag)
+    return tuple(tags)
+
+
+def _context_before(
+    lines: list[str],
+    line_num: int,
+    level: int,
+    base_tags: tuple[str, ...],
+    workflow_keywords: set[str],
+) -> tuple[str, tuple[str, ...]]:
+    stack: list[tuple[int, str, tuple[str, ...]]] = []
+    for line in lines[:line_num]:
+        match = _ANY_HEADING_RE.match(line)
+        if not match:
+            continue
+        heading_level = len(match.group("stars"))
+        while stack and stack[-1][0] >= heading_level:
+            stack.pop()
+        title, tags = _split_heading_title(
+            match.group("title"), workflow_keywords
+        )
+        stack.append((heading_level, title, tags))
+
+    while stack and stack[-1][0] >= level:
+        stack.pop()
+
+    inherited = list(base_tags)
+    for _, _, tags in stack:
+        for tag in tags:
+            if tag not in inherited:
+                inherited.append(tag)
+    return "/".join(title for _, title, _ in stack), tuple(inherited)
+
+
+def _source_category(lines: list[str], source_file: str) -> str:
+    for line in lines:
+        match = _CATEGORY_RE.match(line)
+        if match and match.group(1):
+            return match.group(1)
+    return Path(source_file).stem
+
+
+def _abbreviate_home(path: str) -> str:
+    resolved = Path(path).expanduser().resolve()
+    try:
+        relative = resolved.relative_to(Path.home().resolve())
+    except ValueError:
+        return str(resolved)
+    return "~" if not relative.parts else f"~/{relative.as_posix()}"
+
+
+def _archive_properties(
+    selection: _ArchiveSelection,
+    *,
+    source_file: str,
+    category: str,
+    archived_at: datetime,
+) -> list[tuple[str, str]]:
+    properties = [
+        ("ARCHIVE_TIME", archived_at.strftime("[%Y-%m-%d %a %H:%M]")),
+        ("ARCHIVE_FILE", _abbreviate_home(source_file)),
+    ]
+    if selection.outline_path:
+        properties.append(("ARCHIVE_OLPATH", selection.outline_path))
+    if category:
+        properties.append(("ARCHIVE_CATEGORY", category))
+    if selection.item.state:
+        properties.append(("ARCHIVE_TODO", selection.item.state))
+    if selection.inherited_tags:
+        properties.append(("ARCHIVE_ITAGS", " ".join(selection.inherited_tags)))
+    return properties
+
+
+def _add_archive_drawer(
+    subtree: list[str], properties: list[tuple[str, str]]
+) -> list[str]:
+    """Add or update stock ARCHIVE_* properties on the subtree root."""
+    child_at = len(subtree)
+    root_match = _ANY_HEADING_RE.match(subtree[0])
+    if root_match is None:
+        raise ArchiveError("selected task does not begin with an Org heading")
+    root_level = len(root_match.group("stars"))
+    for index in range(1, len(subtree)):
+        match = _ANY_HEADING_RE.match(subtree[index])
+        if match and len(match.group("stars")) > root_level:
+            child_at = index
+            break
+
+    drawer_start = None
+    drawer_end = None
+    candidate = 1
+    if (
+        candidate < child_at
+        and subtree[candidate].strip().upper() != ":PROPERTIES:"
+    ):
+        while candidate < child_at and _PLANNING_RE.match(subtree[candidate]):
+            candidate += 1
+    if candidate < child_at and subtree[candidate].strip().upper() == ":PROPERTIES:":
+        drawer_start = candidate
+        for end in range(candidate + 1, child_at):
+            if subtree[end].strip().upper() == ":END:":
+                drawer_end = end
+                break
+
+    if drawer_start is not None and drawer_end is None:
+        raise ArchiveError("unterminated property drawer in task subtree")
+
+    property_lines = [f":{name}: {value}" for name, value in properties]
+    if drawer_start is None:
+        insert_at = 1
+        while insert_at < child_at and _PLANNING_RE.match(subtree[insert_at]):
+            insert_at += 1
+        return [
+            *subtree[:insert_at],
+            ":PROPERTIES:",
+            *property_lines,
+            ":END:",
+            *subtree[insert_at:],
+        ]
+
+    replacements = {name: value for name, value in properties}
+    updated: list[str] = []
+    seen: set[str] = set()
+    assert drawer_end is not None
+    for line in subtree[drawer_start + 1:drawer_end]:
+        match = _PROPERTY_RE.match(line)
+        name = match.group("name").upper() if match else ""
+        if name in replacements:
+            updated.append(f":{name}: {replacements[name]}")
+            seen.add(name)
+        else:
+            updated.append(line)
+    updated.extend(
+        f":{name}: {value}" for name, value in properties if name not in seen
+    )
+    return [
+        *subtree[:drawer_start + 1],
+        *updated,
+        *subtree[drawer_end:],
+    ]
+
+
+def _normalize_archive_levels(subtree: list[str], root_level: int) -> list[str]:
+    shift = root_level - 1
+    if shift == 0:
+        return subtree
+    normalized: list[str] = []
+    for line in subtree:
+        match = _ANY_HEADING_RE.match(line)
+        if not match:
+            normalized.append(line)
+            continue
+        level = len(match.group("stars"))
+        normalized.append("*" * (level - shift) + line[level:])
+    return normalized
+
+
+def _todo_tokens(text: str) -> tuple[int | None, list[str], list[str]]:
+    matches = [
+        (index, match)
+        for index, line in enumerate(text.splitlines())
+        if (match := TODO_DIRECTIVE_RE.match(line))
+    ]
+    if len(matches) > 1:
+        raise ArchiveError("multiple #+TODO declarations; merge them manually")
+    if not matches:
+        return None, ["TODO"], ["DONE"]
+    index, match = matches[0]
+    body = match.group(1)
+    if body.count("|") != 1:
+        raise ArchiveError("ambiguous #+TODO declaration; expected one '|' separator")
+    active, terminal = (part.split() for part in body.split("|", 1))
+    if not active or not terminal:
+        raise ArchiveError("ambiguous #+TODO declaration; both sides must contain keywords")
+    return index, active, terminal
+
+
+def _keyword(token: str) -> str:
+    match = _KEYWORD_RE.match(token)
+    if not match:
+        raise ArchiveError(f"cannot parse TODO keyword token: {token!r}")
+    return match.group("keyword")
+
+
+def _merged_todo_line(
+    source_text: str, archive_text: str, moved_states: set[str]
+) -> tuple[int | None, str]:
+    _, source_active, source_terminal = _todo_tokens(source_text)
+    archive_index, archive_active, archive_terminal = _todo_tokens(archive_text)
+    if archive_index is None:
+        archive_active = []
+        archive_terminal = []
+
+    active_tokens = list(archive_active)
+    terminal_tokens = list(archive_terminal)
+    active_names = {_keyword(token) for token in active_tokens}
+    terminal_names = {_keyword(token) for token in terminal_tokens}
+    overlap = active_names & terminal_names
+    if overlap:
+        names = ", ".join(sorted(overlap))
+        raise ArchiveError(f"archive TODO keyword is both active and terminal: {names}")
+
+    for token in source_active:
+        name = _keyword(token)
+        if name in terminal_names:
+            raise ArchiveError(f"TODO keyword {name} changed from terminal to active")
+        if name not in active_names:
+            active_tokens.append(token)
+            active_names.add(name)
+    for token in source_terminal:
+        name = _keyword(token)
+        if name in active_names:
+            raise ArchiveError(f"TODO keyword {name} changed from active to terminal")
+        if name not in terminal_names:
+            terminal_tokens.append(token)
+            terminal_names.add(name)
+    historical_states = _workflow_states_in_headings(archive_text)
+    for state in sorted(historical_states):
+        if state in active_names or state in terminal_names:
+            continue
+        if state == "TODO":
+            active_tokens.append(state)
+            active_names.add(state)
+        else:
+            terminal_tokens.append(state)
+            terminal_names.add(state)
+    for state in sorted(moved_states):
+        if state == "TODO":
+            if state not in active_names:
+                active_tokens.append(state)
+                active_names.add(state)
+        elif state not in terminal_names:
+            if state in active_names:
+                raise ArchiveError(f"TODO keyword {state} is configured as active")
+            terminal_tokens.append(state)
+            terminal_names.add(state)
+
+    return archive_index, f"#+TODO: {' '.join(active_tokens)} | {' '.join(terminal_tokens)}"
+
+
+def _append_archive(
+    archive_text: str,
+    blocks: list[list[str]],
+    *,
+    source_text: str,
+    source_file: str,
+    moved_states: set[str],
+) -> str:
+    directive_index, directive = _merged_todo_line(
+        source_text, archive_text, moved_states
+    )
+    if archive_text:
+        lines = archive_text.splitlines()
+        if directive_index is None:
+            insert_at = 1 if lines and "-*- mode: org -*-" in lines[0] else 0
+            lines.insert(insert_at, directive)
+        else:
+            lines[directive_index] = directive
+    else:
+        lines = [
+            "# -*- mode: org -*-",
+            directive,
+            "",
+            f"Archived entries from file {_abbreviate_home(source_file)}",
+        ]
+
+    while lines and not lines[-1].strip():
+        lines.pop()
+    for block in blocks:
+        lines.extend(["", *block])
+    return "\n".join(lines) + "\n"
+
+
+def archive_tasks(
+    source_text: str,
+    archive_text: str,
+    *,
+    source_file: str,
+    task_id: str | None = None,
+    archived_at: datetime | None = None,
+) -> ArchiveResult:
+    """Move selected task subtrees into a stock-shaped ``.org_archive`` file.
+
+    With no ID, every ``DONE`` heading is selected, pruning descendants when a
+    selected ancestor already moves them. With an ID, that subtree is selected
+    regardless of state. The returned texts are not written by this helper.
+    """
+    lines = source_text.splitlines()
+    items = parse_org(source_text)
+    if task_id is not None:
+        normalized = normalize_id(task_id)
+        item = find_by_id(items, normalized)
+        if item is None:
+            raise TaskNotFound(normalized)
+        candidates = [item]
+    else:
+        candidates = [item for item in items if item.state == "DONE"]
+
+    if not candidates:
+        return ArchiveResult(source_text, archive_text, ())
+
+    _, active_tokens, terminal_tokens = _todo_tokens(source_text)
+    workflow_keywords = set(TASK_STATES) | {
+        _keyword(token) for token in [*active_tokens, *terminal_tokens]
+    }
+
+    base_tags = _file_tags(lines)
+    selections: list[_ArchiveSelection] = []
+    for item in candidates:
+        end = _subtree_end(lines, item.line_num, item.level)
+        if any(
+            selection.start <= item.line_num < selection.end
+            for selection in selections
+        ):
+            continue
+        outline_path, inherited_tags = _context_before(
+            lines,
+            item.line_num,
+            item.level,
+            base_tags,
+            workflow_keywords,
+        )
+        selections.append(
+            _ArchiveSelection(
+                item=item,
+                start=item.line_num,
+                end=end,
+                outline_path=outline_path,
+                inherited_tags=inherited_tags,
+            )
+        )
+
+    now = archived_at or datetime.now().astimezone()
+    category = _source_category(lines, source_file)
+    blocks: list[list[str]] = []
+    for selection in selections:
+        subtree = lines[selection.start:selection.end]
+        subtree = _add_archive_drawer(
+            subtree,
+            _archive_properties(
+                selection,
+                source_file=source_file,
+                category=category,
+                archived_at=now,
+            ),
+        )
+        blocks.append(_normalize_archive_levels(subtree, selection.item.level))
+
+    source_lines = list(lines)
+    for selection in reversed(selections):
+        del source_lines[selection.start:selection.end]
+    updated_source = _restore_final_newline(source_lines, source_text)
+    updated_archive = _append_archive(
+        archive_text,
+        blocks,
+        source_text=source_text,
+        source_file=source_file,
+        moved_states={selection.item.state for selection in selections},
+    )
+    return ArchiveResult(
+        updated_source,
+        updated_archive,
+        tuple(selection.item.id for selection in selections),
+    )
 
 
 # Order of the keyword cycle, mirroring Emacs org-mode's TODO fast-cycling.
