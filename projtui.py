@@ -16,6 +16,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from prompt_toolkit.formatted_text import FormattedText
+    from prompt_toolkit.layout import FormattedTextControl, HSplit, Window
+    from prompt_toolkit.widgets import TextArea
+except ImportError:  # pragma: no cover - optional interactive dependency
+    FormattedText = None
+    FormattedTextControl = None
+    HSplit = None
+    Window = None
+    TextArea = None
+
 # Make ``ortasklib`` importable regardless of the working directory.
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
@@ -31,7 +42,6 @@ from ortasklib.manager import (
 
 
 DETAIL_LINE_LIMIT = 20
-INLINE_DETAIL_LINE_LIMIT = 8
 
 
 @dataclass(frozen=True)
@@ -521,25 +531,6 @@ TASK_MENU_ACTIONS = {
     "s-down": _LOWER_PRIORITY_ACTION,
 }
 
-FOCUS_MENU_ACTIONS = {
-    "e": menu.MenuAction("edit", "e", "Open the current task in the editor"),
-    "p": menu.MenuAction("priority", "p", "Choose the current task's priority"),
-    "d": menu.MenuAction("done", "d", "Mark the current task DONE"),
-    "s-left": menu.MenuAction(
-        "toggle", "Shift+←/→", "Cycle the current task's state"
-    ),
-    "s-right": menu.MenuAction(
-        "toggle", "Shift+←/→", "Cycle the current task's state"
-    ),
-    "s-up": menu.MenuAction(
-        "priority_up", "Shift+↑", "Raise the current task's priority"
-    ),
-    "s-down": menu.MenuAction(
-        "priority_down", "Shift+↓", "Lower the current task's priority"
-    ),
-}
-
-
 def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -> None:
     org_file = canonical_org_file(project)
     buf = OrgBuffer(org_file)
@@ -750,9 +741,7 @@ class InteractiveTaskController:
 
     @staticmethod
     def action_keys() -> tuple[str, ...]:
-        return tuple(
-            dict.fromkeys([*TASK_MENU_ACTIONS, *FOCUS_MENU_ACTIONS])
-        )
+        return tuple(TASK_MENU_ACTIONS)
 
     def run(self) -> None:
         session = menu.InlineMenuSession(
@@ -1069,179 +1058,132 @@ class InteractiveTaskController:
     def _focus_view(
         self,
         item: MenuItem,
-        selected_index: int = 0,
-    ) -> menu.MenuView:
+    ) -> menu.InlineView:
         item = _refresh_item(self.buf, item)
-        subtasks = _direct_subtasks(self.buf, item)
-        rows, targets = _focus_rows(item, subtasks)
-        if item.task is not None:
-            title = f"Edit {item.task.id}: {item.task.text}"
-            summary = (
-                f"State: {item.task.state} · Priority: "
-                f"{item.task.priority or 'none'} · Line: {item.task.line_num + 1}"
-            )
-            actions = FOCUS_MENU_ACTIONS
-        else:
-            title = "Org heading"
-            summary = item.label
-            actions = {"e": _EDIT_MENU_ACTION}
+        if item.task is None:
+            rows = [menu.MenuRow(1, "EDIT", "Open heading in external editor")]
 
-        def handle(
-            session: menu.InlineMenuSession,
-            result: menu.MenuResult,
-        ) -> None:
-            self._handle_focus_result(session, item, targets, result)
-
-        def resume(session: menu.InlineMenuSession) -> None:
-            index = session.current_view.selected_index
-            session.replace_view(self._focus_view(item, index))
-
-        return menu.MenuView(
-            rows=rows,
-            on_result=handle,
-            title=title,
-            summary=summary,
-            preamble="\n".join(
-                _context_lines(
-                    self.buf,
-                    item,
-                    limit=INLINE_DETAIL_LINE_LIMIT,
+            def handle_heading(
+                session: menu.InlineMenuSession,
+                result: menu.MenuResult,
+            ) -> None:
+                if result.action not in {"select", "edit"}:
+                    return
+                self._suspend_for_editor(
+                    session,
+                    item.line_num,
+                    lambda: session.replace_view(self._focus_view(item)),
                 )
+
+            return menu.MenuView(
+                rows=rows,
+                on_result=handle_heading,
+                title="Org heading",
+                summary=item.label,
+                instruction="↵/e editor · C-g help · Esc/b/q back",
+                actions={"e": _EDIT_MENU_ACTION},
+                select_help="Open this heading in the external editor",
+            )
+
+        assert all(
+            dependency is not None
+            for dependency in (
+                FormattedText,
+                FormattedTextControl,
+                HSplit,
+                Window,
+                TextArea,
+            )
+        )
+        task_id = item.task.id
+        title_area = TextArea(
+            text=item.task.text,
+            multiline=False,
+            wrap_lines=False,
+            height=1,
+            dont_extend_height=True,
+        )
+        title_area.buffer.cursor_position = len(title_area.text)
+        body_area = TextArea(
+            text="\n".join(item.task.body_lines),
+            multiline=True,
+            wrap_lines=False,
+            scrollbar=True,
+        )
+        body_area.buffer.cursor_position = len(body_area.text)
+
+        def label(text: str):
+            return Window(
+                FormattedTextControl(
+                    FormattedText([("class:field.label", text)])
+                ),
+                height=1,
+                always_hide_cursor=True,
+            )
+
+        container = HSplit(
+            [
+                label("Title"),
+                title_area,
+                label("Body"),
+                body_area,
+            ]
+        )
+
+        def apply(session: menu.InlineMenuSession) -> None:
+            source = self.buf.read()
+            changed_fields: list[str] = []
+            try:
+                new_lines = tasks.change_text(source, task_id, title_area.text)
+                if new_lines is not None:
+                    source = core.lines_to_text(new_lines)
+                    changed_fields.append("title")
+                new_lines = tasks.change_body(source, task_id, body_area.text)
+                if new_lines is not None:
+                    source = core.lines_to_text(new_lines)
+                    changed_fields.append("body")
+            except tasks.TaskNotFound:
+                session.set_message(f"task {task_id} no longer exists")
+                return
+            except ValueError as exc:
+                session.set_message(str(exc))
+                return
+
+            if not changed_fields:
+                session.set_message(f"No title or body change for {task_id}")
+                return
+            self.buf.apply(source.splitlines())
+            fields = " and ".join(changed_fields)
+            message = f"Updated {fields} for {task_id}"
+            session.set_message(message)
+
+        priority = item.task.priority or "none"
+        tags = item.task.tags or "none"
+        subtask_count = len(_direct_subtasks(self.buf, item))
+        return menu.WorkspaceView(
+            container=container,
+            focus_targets=[title_area, body_area],
+            on_apply=apply,
+            title=f"Edit {task_id}",
+            summary=(
+                f"State: {item.task.state} · Priority: {priority} · "
+                f"Tags: {tags} · Subtasks: {subtask_count} · "
+                f"Line: {item.task.line_num + 1}"
             ),
             instruction=(
-                "↑↓/jk · ↵ choose · C-g help · Shift+←/→ state · "
-                "Shift+↑/↓ priority · p priority · e editor · Esc/b/q back"
+                "Tab/S-Tab fields · Enter title→body/newline · "
+                "Ctrl-S apply · C-g help · Esc back"
             ),
-            actions=actions,
-            select_help="Edit the highlighted field or open the subtask",
-            selected_index=selected_index,
-            on_resume=resume,
-        )
-
-    def _handle_focus_result(
-        self,
-        session: menu.InlineMenuSession,
-        item: MenuItem,
-        targets: list[tuple[str, MenuItem | None]],
-        result: menu.MenuResult,
-    ) -> None:
-        selected_index = result.index or 0
-        if result.action == "edit":
-            self._suspend_for_editor(
-                session,
-                item.line_num,
-                lambda: session.replace_view(
-                    self._focus_view(item, selected_index)
-                ),
-            )
-            return
-        if item.task is None:
-            return
-        if result.action == "toggle":
-            _toggle_state(self.buf, item)
-            session.replace_view(self._focus_view(item, selected_index))
-            return
-        if result.action == "priority_up":
-            _shift_priority(self.buf, item, 1)
-            session.replace_view(self._focus_view(item, selected_index))
-            return
-        if result.action == "priority_down":
-            _shift_priority(self.buf, item, -1)
-            session.replace_view(self._focus_view(item, selected_index))
-            return
-        if result.action == "priority":
-            session.push_view(self._priority_view(item))
-            return
-        if result.action == "done":
-            session.push_view(self._done_confirmation_view(item))
-            return
-        if result.action != "select" or result.index is None:
-            return
-
-        action, target = targets[result.index]
-        if action == "state":
-            _toggle_state(self.buf, item)
-            session.replace_view(self._focus_view(item, result.index))
-        elif action == "priority":
-            session.push_view(self._priority_view(item))
-        elif action == "text":
-            session.push_view(self._text_input_view(item))
-        elif action == "body":
-            session.push_view(self._body_input_view(item))
-        elif action == "edit":
-            self._suspend_for_editor(
-                session,
-                item.line_num,
-                lambda: session.replace_view(
-                    self._focus_view(item, result.index or 0)
-                ),
-            )
-        elif action == "subtask" and target is not None:
-            session.push_view(self._focus_view(target))
-
-    def _text_input_view(self, item: MenuItem) -> menu.TextInputView:
-        item = _refresh_item(self.buf, item)
-        assert item.task is not None
-        task_id = item.task.id
-
-        def accept(session: menu.InlineMenuSession, text: str) -> None:
-            try:
-                new_lines = tasks.change_text(self.buf.read(), task_id, text)
-            except tasks.TaskNotFound:
-                session.set_message(f"task {task_id} no longer exists")
-                return
-            except ValueError as exc:
-                session.set_message(str(exc))
-                return
-
-            if new_lines is None:
-                message = f"No text change for {task_id}"
-            else:
-                self.buf.apply(new_lines)
-                message = f"Updated text for {task_id}"
-            session.pop_view()
-            session.set_message(message)
-
-        return menu.TextInputView(
-            text=item.task.text,
-            on_accept=accept,
-            title=f"Edit task text: {task_id}",
-            summary="Only the heading text will change",
-            prompt="Task text> ",
-            accept_help="Apply the heading-text edit",
-            cancel_help="Return to task details without changing text",
-        )
-
-    def _body_input_view(self, item: MenuItem) -> menu.MultilineInputView:
-        item = _refresh_item(self.buf, item)
-        assert item.task is not None
-        task_id = item.task.id
-
-        def accept(session: menu.InlineMenuSession, text: str) -> None:
-            try:
-                new_lines = tasks.change_body(self.buf.read(), task_id, text)
-            except tasks.TaskNotFound:
-                session.set_message(f"task {task_id} no longer exists")
-                return
-            except ValueError as exc:
-                session.set_message(str(exc))
-                return
-
-            if new_lines is None:
-                message = f"No body change for {task_id}"
-            else:
-                self.buf.apply(new_lines)
-                message = f"Updated body for {task_id}"
-            session.pop_view()
-            session.set_message(message)
-
-        return menu.MultilineInputView(
-            text="\n".join(item.task.body_lines),
-            on_accept=accept,
-            title=f"Edit task body: {task_id}",
-            summary="Descendant and sibling headings are outside this editor",
-            accept_help="Apply the body edit to the task buffer",
-            cancel_help="Return to task details without changing the body",
+            help_entries=[
+                ("Typing", "Edit the focused title or body"),
+                ("Tab/Shift-Tab", "Move between title and body"),
+                ("Enter (title)", "Move focus to the body"),
+                ("Enter (body)", "Insert a newline"),
+                ("Ctrl-S", "Apply title and body edits to the task buffer"),
+                ("Esc", "Return without applying newer field edits"),
+                ("C-g", "Show or close this help"),
+            ],
+            enter_moves_focus=frozenset({0}),
         )
 
     def _priority_view(self, item: MenuItem) -> menu.MenuView:
@@ -1277,42 +1219,6 @@ class InteractiveTaskController:
             instruction="↑↓/jk · ↵ set · C-g help · Esc/b/q cancel",
             select_help="Set the highlighted priority",
             selected_index=start_index,
-        )
-
-    def _done_confirmation_view(self, item: MenuItem) -> menu.MenuView:
-        assert item.task is not None
-        rows = [
-            menu.MenuRow(1, "YES", "Mark the task DONE"),
-            menu.MenuRow(2, "NO", "Cancel and return to the task"),
-        ]
-
-        def handle(
-            session: menu.InlineMenuSession,
-            result: menu.MenuResult,
-        ) -> None:
-            if result.action != "select" or result.index is None:
-                return
-            if result.index == 0:
-                try:
-                    new_lines = tasks.change_state(
-                        self.buf.read(),
-                        item.task.id,
-                        "DONE",
-                    )
-                except tasks.TaskNotFound:
-                    new_lines = None
-                if new_lines is not None:
-                    self.buf.apply(new_lines)
-            session.pop_view()
-
-        return menu.MenuView(
-            rows=rows,
-            on_result=handle,
-            title=f"Mark {item.task.id} DONE?",
-            summary=item.task.text,
-            instruction="↑↓/jk · ↵ choose · Esc/b/q cancel",
-            select_help="Confirm or cancel the state change",
-            selected_index=1,
         )
 
     def _suspend_for_editor(
@@ -1375,45 +1281,6 @@ def local_file_menu(org_file: Path, include_done: bool = True) -> int:
     )
     task_menu(project, include_done, dashboard=True)
     return 0
-
-
-def _focus_rows(
-    item: MenuItem, subtasks: list[MenuItem]
-) -> tuple[list[menu.MenuRow], list[tuple[str, MenuItem | None]]]:
-    rows: list[menu.MenuRow] = []
-    targets: list[tuple[str, MenuItem | None]] = []
-
-    def add(
-        status: str,
-        text: str,
-        action: str,
-        target: MenuItem | None = None,
-    ) -> None:
-        rows.append(menu.MenuRow(len(rows) + 1, status, text))
-        targets.append((action, target))
-
-    if item.task is not None:
-        add("STATE", item.task.state, "state")
-        add("PRIOR", item.task.priority or "none", "priority")
-        add("TITLE", item.task.text, "text")
-        body_lines = item.task.body_lines
-        body_summary = (
-            f"{len(body_lines)} line{'s' if len(body_lines) != 1 else ''}"
-            if body_lines
-            else "(empty)"
-        )
-        add("BODY", body_summary, "body")
-    add("EDIT", "Open task in external editor", "edit")
-    for subtask in subtasks:
-        assert subtask.task is not None
-        priority = f" [#{subtask.task.priority}]" if subtask.task.priority else ""
-        add(
-            subtask.task.state,
-            f"{subtask.task.id}{priority} {subtask.task.text}",
-            "subtask",
-            subtask,
-        )
-    return rows, targets
 
 
 def _numbered_focus_menu(buf: OrgBuffer, item: MenuItem) -> None:

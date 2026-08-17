@@ -418,8 +418,9 @@ application. The Org file remains the authoritative, human-editable backend.
 The external editor is still important for arbitrary Org restructuring, but
 it is an escape hatch rather than a peer of every in-app edit. The task view
 must therefore stop presenting synthetic `TEXT`, `EDIT`, `STATE`, or `PRIOR`
-rows. `e` should remain a documented command that suspends the bounded session
-and opens the current task at its source line.
+rows. `e` remains a documented task-list command that suspends the bounded
+session and opens the highlighted task at its source line. Once an editable
+field has focus, printable letters are text; Escape returns to the task list.
 
 ### Org Issue Boundary
 
@@ -447,11 +448,10 @@ parents and children. Collapsed and expanded parents show `▸` and `▾`
 respectively. Folding preserves Org file order and is independent from state
 filtering and summary counts.
 
-The issue workspace should keep these regions visible together when terminal
-space permits:
+The issue workspace keeps these regions visible together:
 
 - the actual title and compact state, priority, identifier, and tag metadata;
-- a multiline description/body editor; and
+- a multiline description/body editor; and, after `t0016.4`,
 - an embedded subtask list.
 
 Focus moves among editable regions without pushing a new view for each field.
@@ -471,28 +471,25 @@ showing the parent and its subtasks together.
 
 All in-app mutations continue through `OrgBuffer`: edits remain buffered,
 auto-save recovery remains available, and the source file changes only after
-the existing save flow. Body mutation needs a pure, surgical helper with tests
-covering drawers, planning lines, blank lines, nested tasks, sibling tasks, and
-unrelated prose. Title editing from `t0014` remains useful groundwork, but its
-action-row presentation is transitional UI.
+the existing save flow. The implemented workspace keeps one-line title and
+multiline body controls visible at the same time. Tab and Shift-Tab move focus;
+Enter moves from title to body or inserts a body newline; `Ctrl-S` validates and
+applies both fields as one transaction; Escape returns without applying newer
+control edits. This completes `t0016.2` without introducing field subcontexts.
 
-The transitional detail view now exposes `TITLE` and `BODY` rows. Title editing
-remains single-line and applies with Enter. Body editing uses a bounded
-multiline `TextArea`: Enter inserts a newline, `Ctrl-S` applies the edit to
-`OrgBuffer`, and Escape cancels it. `tasks.change_body()` replaces only the
-non-heading lines after the selected task heading and before the next Org
-heading; text that would create a heading is rejected so descendants, siblings,
-and unrelated sections cannot be absorbed accidentally. These controls satisfy
-`t0016.1` and `t0016.3`, but remain staging UI until `t0016.2` places title and
-body editing directly in the issue workspace and removes the pseudo-rows.
+`tasks.change_body()` replaces only the non-heading lines after the selected
+task heading and before the next Org heading. Text that would create a heading
+is rejected so descendants, siblings, and unrelated sections cannot be
+absorbed accidentally. Applied edits remain in `OrgBuffer` until the existing
+file-level save/discard decision.
 
 ### Architecture Direction
 
-Build an application-specific `TaskWorkspaceView` and controller in the
-ortask codebase on top of `InlineMenuSession`. Reuse the existing focused input
-and prompt_toolkit controls, extending the one bounded `Application` to host
-multiple focusable regions and a multiline text area. Do not start a second
-prompt_toolkit application for editing.
+`projtui.py` composes application-specific title and body `TextArea` controls
+inside the generic `menu.WorkspaceView` lifecycle seam. `InlineMenuSession`
+owns focus switching, Help, apply, Back, and terminal lifecycle while remaining
+agnostic about task fields and mutation. Editing stays inside the same bounded
+`Application`; do not start a second prompt_toolkit application.
 
 This is proto-Handrail work, but extracting a shared package is premature.
 Keep reusable seams clear and compare them with inedit; extract only after a
@@ -505,6 +502,7 @@ second adopter exposes stable shared behavior or duplicated bugs.
 2. Define and test the task-own-body boundary and surgical mutation helper.
    (Completed by `t0016.1`.)
 3. Replace the action-row detail menu with a persistent issue-workspace shell.
+   (Completed by `t0016.2`.)
 4. Add multiline body editing within the existing buffer and save contract.
    (Completed by `t0016.3`.)
 5. Complete direct state and priority actions in both list and workspace views.

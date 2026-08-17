@@ -68,9 +68,10 @@ hatch.
 Add a surgical helper for replacing a task's own body without crossing into
 its heading, descendant or sibling subtrees, or unrelated prose. Cover bodies
 that contain drawers, planning lines, and blank lines.
-*** TODO [#A] t0016.2 Replace the action-row detail menu with a persistent workspace
-Show title, compact metadata, body, and subtask regions together; remove the
-synthetic =TEXT=, =EDIT=, =STATE=, and =PRIOR= rows while retaining =e=.
+*** DONE [#A] t0016.2 Replace the action-row detail menu with a persistent workspace
+Show title, compact metadata, and body together; remove synthetic =TEXT=,
+=EDIT=, =STATE=, and =PRIOR= rows. Keep =e= on the parent task list while
+=t0016.4= adds the independently focusable subtask region.
 *** DONE [#A] t0016.3 Add multiline task-body editing
 Edit the task's own body inside the existing bounded application and route
 changes through =OrgBuffer=, auto-save recovery, and save/discard handling.

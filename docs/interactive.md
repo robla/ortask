@@ -367,43 +367,35 @@ re-anchors the highlight to the nearest visible ancestor.
 
 ## Task Editor
 
-Selecting a task opens a highlight-bar editor over the same buffered Org file.
-It shows a compact task heading/body/descendant excerpt followed by selectable
-State, Priority, Title, Body, external-editor, and direct-subtask rows. The
-bounded session currently caps that excerpt at eight lines so both details and
-controls fit its 15-row body; the numbered fallback retains the older 20-line
-detail cap:
+Selecting a task opens a workspace over the same buffered Org file. The title
+and complete body are editable controls on one screen rather than menu rows or
+child contexts. Compact metadata stays visible in the header:
 
 ```text
-Edit tw26W26.0.3: Post to reddit (/r/electorama)
-State: TODO · Priority: B · Line: 18
+Edit tw26W26.0.3
+State: TODO · Priority: B · Tags: promo · Subtasks: 0 · Line: 18
 
-** TODO [#B] tw26W26.0.3 Post to reddit (/r/electorama)
+Title
+Post to reddit (/r/electorama)
+Body
 https://www.reddit.com/r/electorama/submit
 
-  1  STATE   TODO
-  2  PRIOR   B
-  3  TITLE   Post to reddit (/r/electorama)
-  4  BODY    1 line
-  5  EDIT    Open task in external editor
+Tab/S-Tab fields · Enter title→body/newline · Ctrl-S apply · C-g help · Esc back
 ```
 
-Enter on State cycles the state; Enter on Priority opens the priority picker;
-Enter on Title opens a single-line editor where Enter applies the change. Enter
-on Body opens a multiline editor where Enter inserts a newline, `Ctrl-S` applies
-the change to the task buffer, and Escape cancels. The body boundary ends at the
-next Org heading, so child and sibling headings cannot be changed from the body
-editor. Enter on EDIT launches the configured editor at the heading line; Enter
-on a subtask pushes its editor onto the menu stack. The same Shift-arrow, `p`,
-`e`, `C-g`, and back keys work without first moving to a field row. The numbered
-fallback keeps `d`, `p`, `e`, and numbered subtask selection. Plain body URLs
-remain visible before any action prompt.
+Tab and Shift-Tab move between title and body. Enter moves from the one-line
+title into the body; within the body it inserts a newline. `Ctrl-S` validates
+and applies both fields atomically to `OrgBuffer`, leaving the workspace open.
+Escape returns to the task list and discards any control edits made after the
+last apply. The file-level save/discard flow still decides when buffered edits
+reach the real Org file.
 
-Title and body changes use the same `OrgBuffer`, auto-save recovery, and
-save/discard flow as state and priority changes. Tags and structural Org edits
-still require the external editor. The Title and Body rows are transitional;
-the planned issue workspace will make both fields directly focusable without
-presenting actions as pseudo-fields.
+The body boundary ends at the next Org heading, so child and sibling headings
+cannot be changed from the body control. The header reports the direct-subtask
+count; `t0016.4` will add the embedded, independently focusable subtask list.
+State and priority remain direct task-list actions for now. `e` opens the
+external editor from the task list; printable letters type normally inside the
+workspace. The numbered fallback retains its older detail/action workflow.
 
 Workflow-specific tools such as castabout may add domain actions such as "copy
 draft", "open destination", or "record result". Those actions should still use

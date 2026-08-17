@@ -1515,7 +1515,7 @@ def test_inline_task_contexts_share_one_bounded_application(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    # Task, subtask, Help, and priority views should repaint one 20-row app.
+    # Task workspace, Help, and priority views should repaint one 20-row app.
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
@@ -1540,8 +1540,8 @@ def test_inline_task_contexts_share_one_bounded_application(
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            # Include a canceled picker, then discard the buffered priority edit.
-            pin.send_text("\rjjjjj\rq\x07qpqpk\rqqj\r")
+            # Visit workspace Help, cancel a picker, then discard a priority edit.
+            pin.send_text("\r\x07q\x1bpq\x1b[1;2Aqj\r")
             controller.run()
 
     assert len(applications) == 1
@@ -1776,6 +1776,43 @@ def test_inline_multiline_input_uses_enter_for_lines_and_ctrl_s_to_apply() -> No
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_workspace_keeps_multiple_fields_visible_and_focusable() -> None:
+    # Workspace Tab, Help, multiline entry, and apply should share one application.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.layout import HSplit
+    from prompt_toolkit.output import DummyOutput
+    from prompt_toolkit.widgets import TextArea
+
+    title = TextArea("Old title", multiline=False, height=1)
+    body = TextArea("Old body", multiline=True)
+    title.buffer.cursor_position = len(title.text)
+    body.buffer.cursor_position = len(body.text)
+    applied: list[tuple[str, str]] = []
+
+    def apply(_session: menu.InlineMenuSession) -> None:
+        applied.append((title.text, body.text))
+
+    view = menu.WorkspaceView(
+        HSplit([title, body]),
+        [title, body],
+        apply,
+        enter_moves_focus=frozenset({0}),
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text(
+                "\x15New title\r"
+                "\x15First body line\rSecond body line"
+                "\x07\x07\x13\x1b"
+            )
+            menu.InlineMenuSession(view).run()
+
+    assert applied == [("New title", "First body line\nSecond body line")]
+    assert view.focused_index == 1
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_inline_menu_session_suspends_external_command(monkeypatch) -> None:
     # External commands should run through terminal handoff and resume one app.
     from prompt_toolkit.application import create_app_session
@@ -1817,8 +1854,8 @@ def test_inline_menu_session_suspends_external_command(monkeypatch) -> None:
     assert calls == ["external", "resumed"]
 
 
-def test_focus_editor_exposes_fields_and_subtasks(tmp_path: Path) -> None:
-    # The interactive task editor should expose editable fields before child tasks.
+def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) -> None:
+    # The task workspace should show title and body controls on the same screen.
     org_file = write(
         tmp_path / "tasks.org",
         """
@@ -1835,28 +1872,20 @@ def test_focus_editor_exposes_fields_and_subtasks(tmp_path: Path) -> None:
 
     view = controller._focus_view(parent)
 
-    assert [row.status for row in view.rows] == [
-        "STATE",
-        "PRIOR",
-        "TITLE",
-        "BODY",
-        "EDIT",
-        "TODO",
-    ]
-    assert [row.text for row in view.rows[:5]] == [
-        "TODO",
-        "B",
+    assert isinstance(view, menu.WorkspaceView)
+    assert [control.text for control in view.focus_targets] == [
         "Parent",
-        "1 line",
-        "Open task in external editor",
+        "Body line",
     ]
-    assert "Body line" in view.preamble
-    assert "t0001.1 Child" in view.preamble
+    assert "State: TODO" in view.summary
+    assert "Priority: B" in view.summary
+    assert "Subtasks: 1" in view.summary
+    assert view.enter_moves_focus == frozenset({0})
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_bounded_task_text_edit_validates_buffers_and_saves(tmp_path: Path) -> None:
-    # A task rename should stay in one app, reject empty text, and save explicitly.
+    # Workspace apply should reject an empty title, then buffer and save a rename.
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
@@ -1871,9 +1900,8 @@ def test_bounded_task_text_edit_validates_buffers_and_saves(tmp_path: Path) -> N
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            # Open details/Text, reject an empty value, type shortcut letters,
-            # accept, leave details/tasks, then accept the default Save choice.
-            pin.send_text("\rjj\r\x15\rbqjkped renamed\rqq\r")
+            # Open the workspace, reject empty TITLE, apply a rename, and save.
+            pin.send_text("\r\x15\x13bqjkped renamed\x13\x1bq\r")
             controller.run()
 
     assert org_file.read_text(encoding="utf-8") == (
@@ -1911,11 +1939,11 @@ def test_bounded_task_editor_updates_title_and_multiline_body(tmp_path: Path) ->
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            # Open details, edit TITLE, edit BODY, then save on leaving the file.
+            # Edit TITLE and BODY together, apply once, then save the task buffer.
             pin.send_text(
-                "\rjj\r\x15Renamed title\r"
-                "j\r\x15First body line\rSecond body line\x13"
-                "qq\r"
+                "\r\x15Renamed title\r"
+                "\x15First body line\rSecond body line\x13"
+                "\x1bq\r"
             )
             controller.run()
 
@@ -2056,8 +2084,8 @@ def test_project_menu_uses_one_application_for_nested_task_views(
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            # Open project/task, visit Help and priority, then pop every context.
-            pin.send_text("\r\r\x07qpqqqq")
+            # Open project/workspace, visit Help, then use task-list priority/back.
+            pin.send_text("\r\r\x07q\x1bpqqq")
             assert projtui.project_menu(
                 tmp_path / "registry",
                 include_done=True,

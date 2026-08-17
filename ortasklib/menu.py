@@ -143,7 +143,27 @@ class MultilineInputView:
     cancel_help: str = "Cancel without changing the task"
 
 
-InlineView = MenuView | TextInputView | MultilineInputView
+@dataclass
+class WorkspaceView:
+    """A persistent view composed from application-owned focusable controls."""
+
+    container: Any
+    focus_targets: list[Any]
+    on_apply: Callable[["InlineMenuSession"], None]
+    title: str = ""
+    summary: str = ""
+    instruction: str = "Tab fields · Ctrl-S apply · Esc back · C-g help"
+    help_entries: list[tuple[str, str]] = field(default_factory=list)
+    enter_moves_focus: frozenset[int] = frozenset()
+    focused_index: int = 0
+
+    def clamp_focus(self) -> None:
+        if not self.focus_targets:
+            raise ValueError("workspace view requires at least one focus target")
+        self.focused_index %= len(self.focus_targets)
+
+
+InlineView = MenuView | TextInputView | MultilineInputView | WorkspaceView
 
 
 class ContextCancelled(Exception):
@@ -183,6 +203,7 @@ SELECT_STYLE = (
             "project.name": "ansicyan",
             "help.heading": "bold",
             "help.key": "ansicyan bold",
+            "field.label": "ansicyan bold",
             "input.prompt": "ansicyan bold",
             "hint": "ansibrightblack",
             "dim": "ansibrightblack",
@@ -345,6 +366,17 @@ def _text_input_help(
     )
 
 
+def _workspace_help(view: WorkspaceView) -> FormattedText:
+    entries = view.help_entries or [
+        ("Typing", "Edit the focused field"),
+        ("Tab/Shift-Tab", "Move between fields"),
+        ("Ctrl-S", "Apply workspace edits"),
+        ("Esc", "Return without applying newer edits"),
+        ("C-g", "Show or close this help"),
+    ]
+    return _command_help(entries)
+
+
 def _command_help(entries: list[tuple[str, str]]) -> FormattedText:
     key_width = max(len(key) for key, _ in entries)
     fragments: list[tuple[str, str]] = [
@@ -413,6 +445,8 @@ class InlineMenuSession:
 
         if isinstance(initial_view, MenuView):
             initial_view.clamp_selection()
+        elif isinstance(initial_view, WorkspaceView):
+            initial_view.clamp_focus()
         self.views: list[InlineView] = [initial_view]
         self.requested_height = max(height, self.MINIMUM_HEIGHT)
         self.effective_height = self.requested_height
@@ -433,6 +467,16 @@ class InlineMenuSession:
         multiline_input_active = Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, MultilineInputView)
+        )
+        workspace_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, WorkspaceView)
+        )
+        workspace_enter_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, WorkspaceView)
+            and self.current_view.focused_index
+            in self.current_view.enter_moves_focus
         )
         input_active = Condition(
             lambda: not self.help_visible
@@ -488,6 +532,36 @@ class InlineMenuSession:
 
         @bindings.add("escape", filter=input_active, eager=True)
         def cancel_text(_event) -> None:
+            self.pop_view()
+
+        def move_workspace_focus(delta: int) -> None:
+            view = self.current_view
+            assert isinstance(view, WorkspaceView)
+            view.focused_index = (
+                view.focused_index + delta
+            ) % len(view.focus_targets)
+            self._focus_current_view()
+
+        @bindings.add("c-i", filter=workspace_active, eager=True)
+        def next_workspace_field(_event) -> None:
+            move_workspace_focus(1)
+
+        @bindings.add("s-tab", filter=workspace_active, eager=True)
+        def previous_workspace_field(_event) -> None:
+            move_workspace_focus(-1)
+
+        @bindings.add("enter", filter=workspace_enter_active, eager=True)
+        def enter_workspace_field(_event) -> None:
+            move_workspace_focus(1)
+
+        @bindings.add("c-s", filter=workspace_active, eager=True)
+        def apply_workspace(_event) -> None:
+            view = self.current_view
+            assert isinstance(view, WorkspaceView)
+            view.on_apply(self)
+
+        @bindings.add("escape", filter=workspace_active, eager=True)
+        def leave_workspace(_event) -> None:
             self.pop_view()
 
         @bindings.add("q", filter=help_active, eager=True)
@@ -573,7 +647,11 @@ class InlineMenuSession:
         focused_element = (
             self._input_area(initial_view)
             if isinstance(initial_view, (TextInputView, MultilineInputView))
-            else body_control
+            else (
+                initial_view.focus_targets[initial_view.focused_index]
+                if isinstance(initial_view, WorkspaceView)
+                else body_control
+            )
         )
         self.application = Application(
             layout=Layout(root, focused_element=focused_element),
@@ -595,6 +673,8 @@ class InlineMenuSession:
     def push_view(self, view: InlineView) -> None:
         if isinstance(view, MenuView):
             view.clamp_selection()
+        elif isinstance(view, WorkspaceView):
+            view.clamp_focus()
         self.views.append(view)
         self.help_visible = False
         self.message = None
@@ -604,6 +684,8 @@ class InlineMenuSession:
     def replace_view(self, view: InlineView) -> None:
         if isinstance(view, MenuView):
             view.clamp_selection()
+        elif isinstance(view, WorkspaceView):
+            view.clamp_focus()
         self.views[-1] = view
         self.help_visible = False
         self._activate_current_view()
@@ -698,6 +780,8 @@ class InlineMenuSession:
         if self.help_visible:
             if isinstance(view, (TextInputView, MultilineInputView)):
                 return _text_input_help(view)
+            if isinstance(view, WorkspaceView):
+                return _workspace_help(view)
             return _selector_help(
                 view.actions,
                 select_help=view.select_help,
@@ -730,6 +814,8 @@ class InlineMenuSession:
     def _active_body(self):
         if self.help_visible or isinstance(self.current_view, MenuView):
             return self.body_window
+        if isinstance(self.current_view, WorkspaceView):
+            return self.current_view.container
         return self._input_area(self.current_view)
 
     def _input_changed(self, buffer) -> None:
@@ -758,6 +844,11 @@ class InlineMenuSession:
     def _focus_current_view(self) -> None:
         if self.help_visible or isinstance(self.current_view, MenuView):
             self.application.layout.focus(self.body_control)
+        elif isinstance(self.current_view, WorkspaceView):
+            self.current_view.clamp_focus()
+            self.application.layout.focus(
+                self.current_view.focus_targets[self.current_view.focused_index]
+            )
         else:
             self.application.layout.focus(self._input_area(self.current_view))
 
