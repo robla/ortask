@@ -59,8 +59,8 @@ The task selector has two modes, chosen automatically by
   Long lists scroll within the row body while the title, summary, and key hint
   remain fixed; the selector keeps one context row above and below the highlight
   when space permits.
-  Selecting a task opens the title/body workspace described below; ordinary
-  menu shortcut letters type normally while either field has focus.
+  Selecting a task opens the task workspace described below; ordinary menu
+  shortcut letters type normally while a text field has focus.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved as the scriptable fallback with the
   same `C-t` visibility cycle. It lists the complete filtered hierarchy because
@@ -108,8 +108,9 @@ writes the complete current buffer:
 - `C-s` in the task list atomically saves the complete buffer and resets both
   transaction stacks. Save, Discard, reload after an external editor, and a
   successful task-workspace save are all history boundaries.
-- `Ctrl-S` in a task workspace validates title and body, applies them to the
-  same buffer, atomically saves the entire Org file, and removes the auto-save.
+- `Ctrl-S` in a task workspace validates title, body, state, and priority,
+  applies them to the same buffer, atomically saves the entire Org file, and
+  removes the auto-save.
   Thus it also commits state or priority edits made before entering the task.
 - On leaving the file's editing context (`b`/`q`/Esc), a dirty highlight-bar
   session pushes a bounded Save/Discard/Continue Editing view. Save is selected
@@ -385,42 +386,48 @@ re-anchors the highlight to the nearest visible ancestor.
 
 ## Task Editor
 
-Selecting a task opens a workspace over the same buffered Org file. The title
-and complete body are editable controls on one screen rather than menu rows or
-child contexts. Compact metadata stays visible in the header:
+Selecting a task opens a workspace over the same buffered Org file. State,
+priority, title, and the complete body are editable on one screen rather than
+menu rows or child contexts. State and priority use one compact control row:
 
 ```text
 Edit tw26W26.0.3
-State: TODO · Priority: B · Tags: promo · Subtasks: 0 · Line: 18
+Tags: promo · Subtasks: 0 · Line: 18
 
+ State [TODO]       Priority [B]
 Title
 Post to reddit (/r/electorama)
 Body
 https://www.reddit.com/r/electorama/submit
 
-Tab/S-Tab fields · Enter title→body/newline · Ctrl-S save · C-g help · Esc back
+Tab/S-Tab fields · ←/→ choice · Enter title→body/newline · Ctrl-S save · Esc back
 ```
 
-Tab and Shift-Tab move between title and body. Enter moves from the one-line
-title into the body; within the body it inserts a newline. `Ctrl-S` validates
-and applies both fields atomically, saves the entire Org file, clears recovery
-data, resets both field undo histories, and leaves the workspace open at a new
-clean baseline. The footer shows `TASK EDITED` after either control changes,
+Title has initial focus. Tab and Shift-Tab move among all four fields. On State
+or Priority, Left/Right changes the value and Enter advances it. State cycles
+through `TODO`, `DONE`, and `MOOT`; a parsed `SUPERSEDED` remains visible until
+changed, then follows the canonical `MOOT` position. Priority stops at the ends
+of `none -> C -> B -> A`. Enter moves from Title into Body; within Body it
+inserts a newline. `Ctrl-S` validates and applies all four fields atomically,
+saves the entire Org file, clears recovery data and transaction history, resets
+both text-field undo histories, and leaves the workspace open at a new clean
+baseline. The footer shows `TASK EDITED` after any field changes,
 while the header independently shows `FILE MODIFIED: N edits` when task-list
 transactions are pending.
 
-Escape returns directly when the controls are clean. When they differ from the
-last save, Escape opens Save and Return, Continue Editing, and Discard and
-Return choices. Continue Editing is selected by default. Discard drops only
-the title/body text typed since the last workspace save; it does not discard
-older edits already buffered from the task list.
+Escape returns directly when the fields match the workspace baseline. When
+they differ, Escape opens Save and Return, Continue Editing, and Discard and
+Return choices. Continue Editing is selected by default. Discard restores all
+four fields to the values loaded when the workspace opened or last saved; it
+does not discard older edits already buffered from the task list.
 
 The body boundary ends at the next Org heading, so child and sibling headings
 cannot be changed from the body control. The header reports the direct-subtask
 count; `t0016.4` will add the embedded, independently focusable subtask list.
-State and priority remain direct task-list actions for now. `e` opens the
-external editor from the task list; printable letters type normally inside the
-workspace. The numbered fallback retains its older detail/action workflow.
+State and priority remain directly editable from the task list as well. `e`
+opens the external editor from the task list; printable letters type normally
+inside text fields. The numbered fallback retains its older detail/action
+workflow.
 
 Workflow-specific tools such as castabout may add domain actions such as "copy
 draft", "open destination", or "record result". Those actions should still use

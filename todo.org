@@ -64,6 +64,9 @@ issue workspace rather than representing them as pseudo-field rows.
 *** TODO [#A] t0015.2 Add plain-key state and priority commands
 Keep Shift-arrow aligned with Org while providing discoverable alternatives
 for terminals that do not reliably report those chords.
+*** DONE [#A] t0015.3 Add compact state and priority workspace controls
+Keep both choices visible beside the title and body, use Left/Right while a
+choice has focus, and stage all task fields behind one save/discard boundary.
 ** TODO [#A] t0016 Build the full orti issue-editing workspace
 Turn =ortask.py -i= into the compact Org-backed issue editor described in
 =docs/roadmap.md=, with the external editor retained as a secondary escape

@@ -458,10 +458,12 @@ The issue workspace keeps these regions visible together:
 - an embedded subtask list.
 
 Focus moves among editable regions without pushing a new view for each field.
-Finite choices such as a state picker, Help, or destructive confirmation may
-still use bounded overlays or child views. The workspace must adapt to the
-20-row inline ceiling, use additional rows in full-screen mode, scroll long
-content, and give the body more room when no subtasks exist.
+State and priority use compact, focusable controls in one row; Left/Right
+changes the focused value without opening another view. Optional pickers, Help,
+or destructive confirmation may still use bounded overlays or child views. The
+workspace must adapt to the 20-row inline ceiling, use additional rows in
+full-screen mode, scroll long content, and give the body more room when no
+subtasks exist.
 
 The subtask region shows all descendant tasks in source order, indented by Org
 depth, with its own highlight and scrolling. State and priority commands apply
@@ -478,21 +480,23 @@ Each action is one labeled full-text transaction. Undo and redo update recovery
 data and the header's `FILE MODIFIED` count; save, discard, recovery reload, and
 external-editor reload establish new history boundaries.
 
-The task workspace keeps one-line title and multiline body controls visible at
-the same time. Tab and Shift-Tab move focus; Enter moves from title to body or
-inserts a body newline. `Ctrl-S` validates both fields as one transaction,
-updates `OrgBuffer`, atomically saves the entire Org file, removes recovery
-data, resets both field undo histories, and clears the file transaction stacks.
+The task workspace keeps compact state and priority controls, a one-line title,
+and a multiline body visible at the same time. Tab and Shift-Tab move focus;
+Left/Right changes a focused choice, and Enter advances a choice, moves from
+title to body, or inserts a body newline. `Ctrl-S` validates all four fields as
+one transaction, updates `OrgBuffer`, atomically saves the entire Org file,
+removes recovery data, resets both field undo histories, and clears the file
+transaction stacks.
 The prompt_toolkit field histories and `OrgBuffer` transaction history remain
 separate: typing is undone within a focused field, while task-list actions are
 undone as complete Org mutations.
 
-The workspace tracks title/body values against the last successful save and
-marks changed controls `TASK EDITED` in the footer. Escape returns immediately
-when they are clean. When they differ, Escape opens Save and Return, Continue
-Editing, and Discard and Return choices; Continue Editing is the safe default.
-Discard affects only unpersisted workspace controls, not older changes already
-held by `OrgBuffer`.
+The workspace tracks all four fields against the values loaded on entry or at
+the last successful save and marks changed controls `TASK EDITED` in the
+footer. Escape returns immediately when they match that baseline. When they
+differ, Escape opens Save and Return, Continue Editing, and Discard and Return
+choices; Continue Editing is the safe default. Discard affects only unpersisted
+workspace controls, not older changes already held by `OrgBuffer`.
 
 `tasks.change_body()` replaces only the non-heading lines after the selected
 task heading and before the next Org heading. Text that would create a heading
@@ -501,10 +505,11 @@ absorbed accidentally.
 
 ### Architecture Direction
 
-`projtui.py` composes application-specific title and body `TextArea` controls
-inside the generic `menu.WorkspaceView` lifecycle seam. `InlineMenuSession`
-owns focus switching, Help, save dispatch, dirty presentation, guarded Back,
-and terminal lifecycle while remaining agnostic about task fields and mutation.
+`projtui.py` composes application-specific title/body `TextArea` controls and
+compact state/priority windows inside the generic `menu.WorkspaceView`
+lifecycle seam. `InlineMenuSession` owns focus switching, Help, save dispatch,
+dirty presentation, guarded Back, and terminal lifecycle while remaining
+agnostic about task fields and mutation.
 Editing stays inside the same bounded `Application`; do not start a second
 prompt_toolkit application.
 
@@ -523,6 +528,8 @@ second adopter exposes stable shared behavior or duplicated bugs.
 4. Add multiline body editing within the existing buffer and save contract.
    (Completed by `t0016.3`.)
 5. Complete direct state and priority actions in both list and workspace views.
+   (Compact workspace controls completed by `t0015.3`; optional picker and
+   plain-key list aliases remain separate follow-ups.)
 6. Add the hierarchical, independently scrollable subtask region.
 7. Add tag editing and terminal, recovery, resize, and performance coverage.
 

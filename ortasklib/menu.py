@@ -160,6 +160,10 @@ class WorkspaceView:
     is_dirty: Callable[[], bool] | None = None
     on_back: Callable[["InlineMenuSession"], bool] | None = None
     status_text: Callable[[], str] | None = None
+    choice_focus_indices: frozenset[int] = frozenset()
+    on_choice_change: (
+        Callable[["InlineMenuSession", int, int], None] | None
+    ) = None
 
     def clamp_focus(self) -> None:
         if not self.focus_targets:
@@ -208,6 +212,7 @@ SELECT_STYLE = (
             "help.heading": "bold",
             "help.key": "ansicyan bold",
             "field.label": "ansicyan bold",
+            "choice.focused": "bg:#00afaf fg:#000000 bold",
             "input.prompt": "ansicyan bold",
             "hint": "ansibrightblack",
             "dim": "ansibrightblack",
@@ -482,6 +487,13 @@ class InlineMenuSession:
             and self.current_view.focused_index
             in self.current_view.enter_moves_focus
         )
+        workspace_choice_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, WorkspaceView)
+            and self.current_view.on_choice_change is not None
+            and self.current_view.focused_index
+            in self.current_view.choice_focus_indices
+        )
         input_active = Condition(
             lambda: not self.help_visible
             and isinstance(
@@ -557,6 +569,21 @@ class InlineMenuSession:
         @bindings.add("enter", filter=workspace_enter_active, eager=True)
         def enter_workspace_field(_event) -> None:
             move_workspace_focus(1)
+
+        def change_workspace_choice(delta: int) -> None:
+            view = self.current_view
+            assert isinstance(view, WorkspaceView)
+            assert view.on_choice_change is not None
+            view.on_choice_change(self, view.focused_index, delta)
+
+        @bindings.add("left", filter=workspace_choice_active, eager=True)
+        def previous_workspace_choice(_event) -> None:
+            change_workspace_choice(-1)
+
+        @bindings.add("right", filter=workspace_choice_active, eager=True)
+        @bindings.add("enter", filter=workspace_choice_active, eager=True)
+        def next_workspace_choice(_event) -> None:
+            change_workspace_choice(1)
 
         @bindings.add("c-s", filter=workspace_active, eager=True)
         def save_workspace(_event) -> None:

@@ -1876,17 +1876,18 @@ def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) 
     view = controller._focus_view(parent)
 
     assert isinstance(view, menu.WorkspaceView)
-    assert [control.text for control in view.focus_targets] == [
+    assert [control.text for control in view.focus_targets[2:]] == [
         "Parent",
         "Body line",
     ]
-    assert "State: TODO" in view.summary
-    assert "Priority: B" in view.summary
+    assert len(view.focus_targets) == 4
     assert "Subtasks: 1" in view.summary
-    assert view.enter_moves_focus == frozenset({0})
+    assert view.focused_index == 2
+    assert view.choice_focus_indices == frozenset({0, 1})
+    assert view.enter_moves_focus == frozenset({2})
     assert view.is_dirty is not None and view.is_dirty() is False
     assert view.status_text is not None and view.status_text() == ""
-    view.focus_targets[0].buffer.insert_text(" changed")
+    view.focus_targets[2].buffer.insert_text(" changed")
     assert view.is_dirty() is True
     projtui._shift_priority(buf, parent, 1)
     assert view.status_text() == "FILE MODIFIED: 1 edit"
@@ -1999,6 +2000,59 @@ def test_task_workspace_ctrl_s_saves_whole_file_and_resets_undo(tmp_path: Path) 
     assert buf.can_undo is False
     assert buf.can_redo is False
     assert not buf.autosave_path.exists()
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_task_workspace_compact_controls_save_state_and_priority(tmp_path: Path) -> None:
+    # Staged compact choices should save with the rest of the task workspace.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n** TODO t0001 Original\nBody\n",
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Use Right for Priority and Right/Enter for the State choice, then save.
+            pin.send_text("\r\x1b[Z\x1b[C\x1b[Z\x1b[C\r\x13\x1bq")
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == (
+        "* Tasks\n** MOOT [#C] t0001 Original\nBody\n"
+    )
+    assert buf.dirty is False
+    assert buf.can_undo is False
+    assert not buf.autosave_path.exists()
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_task_workspace_compact_controls_discard_with_other_fields(tmp_path: Path) -> None:
+    # Dirty-exit Discard should restore staged metadata as well as title and body.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    original = "* Tasks\n** TODO t0001 Original\n"
+    org_file = write(tmp_path / "tasks.org", original)
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Change Priority, Escape, choose Discard below Continue, then quit.
+            pin.send_text("\r\x1b[Z\x1b[C\x1bj\rq")
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == original
+    assert buf.read() == original
+    assert buf.dirty is False
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")

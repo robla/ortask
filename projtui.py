@@ -19,13 +19,14 @@ from pathlib import Path
 try:
     from prompt_toolkit.document import Document
     from prompt_toolkit.formatted_text import FormattedText
-    from prompt_toolkit.layout import FormattedTextControl, HSplit, Window
+    from prompt_toolkit.layout import FormattedTextControl, HSplit, VSplit, Window
     from prompt_toolkit.widgets import TextArea
 except ImportError:  # pragma: no cover - optional interactive dependency
     Document = None
     FormattedText = None
     FormattedTextControl = None
     HSplit = None
+    VSplit = None
     Window = None
     TextArea = None
 
@@ -756,6 +757,9 @@ PRIORITY_OPTIONS = (
     ("C", "Lowest explicit priority"),
     (None, "No explicit priority"),
 )
+WORKSPACE_STATE_OPTIONS = tuple(
+    state for state in core.TASK_STATES if state != "SUPERSEDED"
+)
 
 
 def _priority_picker(buf: OrgBuffer, item: MenuItem) -> None:
@@ -1224,6 +1228,7 @@ class InteractiveTaskController:
                 FormattedTextControl,
                 HSplit,
                 Window,
+                VSplit,
                 TextArea,
                 Document,
             )
@@ -1244,15 +1249,24 @@ class InteractiveTaskController:
             scrollbar=True,
         )
         body_area.buffer.cursor_position = len(body_area.text)
+        draft: dict[str, str | None] = {
+            "state": item.task.state,
+            "priority": item.task.priority,
+        }
         baseline = {
             "title": title_area.text,
             "body": body_area.text,
+            "state": draft["state"],
+            "priority": draft["priority"],
         }
+        workspace: menu.WorkspaceView | None = None
 
         def is_dirty() -> bool:
             return (
                 title_area.text != baseline["title"]
                 or body_area.text != baseline["body"]
+                or draft["state"] != baseline["state"]
+                or draft["priority"] != baseline["priority"]
             )
 
         def reset_control(control, text: str) -> None:
@@ -1267,6 +1281,8 @@ class InteractiveTaskController:
         def discard_workspace_edits() -> None:
             reset_control(title_area, baseline["title"])
             reset_control(body_area, baseline["body"])
+            draft["state"] = baseline["state"]
+            draft["priority"] = baseline["priority"]
 
         def label(text: str):
             return Window(
@@ -1277,8 +1293,55 @@ class InteractiveTaskController:
                 always_hide_cursor=True,
             )
 
+        def compact_choice(
+            label_text: str,
+            key: str,
+            focus_index: int,
+            width: int,
+        ):
+            def render():
+                value = draft[key] or "none"
+                text = f" {label_text} [{value}] "
+                focused = (
+                    workspace is not None
+                    and workspace.focused_index == focus_index
+                )
+                if focused:
+                    fragments = [("class:choice.focused", text)]
+                else:
+                    fragments = [
+                        ("class:field.label", f" {label_text} "),
+                        ("", f"[{value}] "),
+                    ]
+                return FormattedText(
+                    [
+                        ("[SetCursorPosition]", ""),
+                        *fragments,
+                    ]
+                )
+
+            return Window(
+                FormattedTextControl(
+                    render,
+                    focusable=True,
+                    show_cursor=False,
+                ),
+                width=width,
+                height=1,
+                dont_extend_width=True,
+                always_hide_cursor=True,
+            )
+
+        state_control = compact_choice("State", "state", 0, 22)
+        priority_control = compact_choice("Priority", "priority", 1, 20)
+        compact_controls = VSplit(
+            [state_control, Window(width=1), priority_control],
+            height=1,
+        )
+
         container = HSplit(
             [
+                compact_controls,
                 label("Title"),
                 title_area,
                 label("Body"),
@@ -1298,6 +1361,24 @@ class InteractiveTaskController:
                 if new_lines is not None:
                     source = core.lines_to_text(new_lines)
                     changed_fields.append("body")
+                target_state = draft["state"]
+                assert target_state is not None
+                new_lines = tasks.change_state(
+                    source,
+                    task_id,
+                    target_state,
+                )
+                if new_lines is not None:
+                    source = core.lines_to_text(new_lines)
+                    changed_fields.append("state")
+                new_lines = tasks.change_priority(
+                    source,
+                    task_id,
+                    draft["priority"],
+                )
+                if new_lines is not None:
+                    source = core.lines_to_text(new_lines)
+                    changed_fields.append("priority")
             except tasks.TaskNotFound:
                 session.set_message(f"task {task_id} no longer exists")
                 return False
@@ -1319,6 +1400,8 @@ class InteractiveTaskController:
                 message = f"Saved {self.buf.path.name} (unchanged)"
             baseline["title"] = title_area.text
             baseline["body"] = body_area.text
+            baseline["state"] = draft["state"]
+            baseline["priority"] = draft["priority"]
             reset_workspace_undo()
             session.set_outcome(message)
             return True
@@ -1334,7 +1417,7 @@ class InteractiveTaskController:
                 menu.MenuRow(
                     3,
                     "DISCARD",
-                    "Discard unsaved title/body edits and return",
+                    "Discard unsaved task-field edits and return",
                 ),
             ]
 
@@ -1365,7 +1448,7 @@ class InteractiveTaskController:
                 rows=rows,
                 on_result=handle_exit,
                 title=f"Unsaved task edits: {task_id}",
-                summary="The title or body differs from the last save",
+                summary="One or more task fields differ from the workspace baseline",
                 instruction=(
                     "↑↓/jk · ↵ choose · Esc/b/q continue editing"
                 ),
@@ -1380,36 +1463,64 @@ class InteractiveTaskController:
             session.push_view(exit_warning_view())
             return False
 
-        priority = item.task.priority or "none"
+        def change_choice(
+            session: menu.InlineMenuSession,
+            focus_index: int,
+            direction: int,
+        ) -> None:
+            if focus_index == 0:
+                current = draft["state"]
+                assert current is not None
+                canonical = "MOOT" if current == "SUPERSEDED" else current
+                index = WORKSPACE_STATE_OPTIONS.index(canonical)
+                draft["state"] = WORKSPACE_STATE_OPTIONS[
+                    (index + direction) % len(WORKSPACE_STATE_OPTIONS)
+                ]
+            else:
+                draft["priority"] = tasks.shift_priority(
+                    draft["priority"],
+                    direction,
+                )
+            session.set_message(None)
+
         tags = item.task.tags or "none"
         subtask_count = len(_direct_subtasks(self.buf, item))
         workspace = menu.WorkspaceView(
             container=container,
-            focus_targets=[title_area, body_area],
+            focus_targets=[
+                state_control,
+                priority_control,
+                title_area,
+                body_area,
+            ],
             on_save=save_workspace,
             title=f"Edit {task_id}",
             summary=(
-                f"State: {item.task.state} · Priority: {priority} · "
                 f"Tags: {tags} · Subtasks: {subtask_count} · "
                 f"Line: {item.task.line_num + 1}"
             ),
             instruction=(
-                "Tab/S-Tab fields · Enter title→body/newline · "
+                "Tab/S-Tab fields · ←/→ choice · Enter title→body/newline · "
                 "Ctrl-S save · C-g help · Esc back"
             ),
             help_entries=[
                 ("Typing", "Edit the focused title or body"),
-                ("Tab/Shift-Tab", "Move between title and body"),
+                ("Tab/Shift-Tab", "Move among all task fields"),
+                ("Left/Right", "Change the focused state or priority"),
+                ("Enter (choice)", "Choose the next value"),
                 ("Enter (title)", "Move focus to the body"),
                 ("Enter (body)", "Insert a newline"),
                 ("Ctrl-S", f"Save the entire {self.buf.path.name} file"),
                 ("Esc", "Return, warning first if edits are unsaved"),
                 ("C-g", "Show or close this help"),
             ],
-            enter_moves_focus=frozenset({0}),
+            enter_moves_focus=frozenset({2}),
+            focused_index=2,
             is_dirty=is_dirty,
             on_back=back,
             status_text=self._buffer_status,
+            choice_focus_indices=frozenset({0, 1}),
+            on_choice_change=change_choice,
         )
 
         def clear_saved_message(_buffer) -> None:
