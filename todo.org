@@ -72,6 +72,9 @@ that contain drawers, planning lines, and blank lines.
 Show title, compact metadata, and body together; remove synthetic =TEXT=,
 =EDIT=, =STATE=, and =PRIOR= rows. Keep =e= on the parent task list while
 =t0016.4= adds the independently focusable subtask region.
+**** DONE [#A] t0016.2.1 Save workspace edits safely
+Make =Ctrl-S= save the entire Org file and reset field undo history. Warn on
+dirty workspace exit with Save, Continue Editing, and explicit Discard choices.
 *** DONE [#A] t0016.3 Add multiline task-body editing
 Edit the task's own body inside the existing bounded application and route
 changes through =OrgBuffer=, auto-save recovery, and save/discard handling.

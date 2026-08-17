@@ -469,27 +469,35 @@ showing the parent and its subtasks together.
 
 ### Editing and Safety
 
-All in-app mutations continue through `OrgBuffer`: edits remain buffered,
-auto-save recovery remains available, and the source file changes only after
-the existing save flow. The implemented workspace keeps one-line title and
-multiline body controls visible at the same time. Tab and Shift-Tab move focus;
-Enter moves from title to body or inserts a body newline; `Ctrl-S` validates and
-applies both fields as one transaction; Escape returns without applying newer
-control edits. This completes `t0016.2` without introducing field subcontexts.
+All in-app mutations continue through `OrgBuffer`. Task-list state and priority
+actions remain buffered with auto-save recovery until the file-level save flow.
+The task workspace keeps one-line title and multiline body controls visible at
+the same time. Tab and Shift-Tab move focus; Enter moves from title to body or
+inserts a body newline. `Ctrl-S` validates both fields as one transaction,
+updates `OrgBuffer`, atomically saves the entire Org file, removes recovery
+data, and resets both field undo histories. This completes `t0016.2` without
+introducing field subcontexts or a second transaction-level undo system.
+
+The workspace tracks title/body values against the last successful save and
+marks changed controls `UNSAVED` in the footer. Escape returns immediately when
+they are clean. When they differ, Escape opens Save and Return, Continue
+Editing, and Discard and Return choices; Continue Editing is the safe default.
+Discard affects only unpersisted workspace controls, not older changes already
+held by `OrgBuffer`.
 
 `tasks.change_body()` replaces only the non-heading lines after the selected
 task heading and before the next Org heading. Text that would create a heading
 is rejected so descendants, siblings, and unrelated sections cannot be
-absorbed accidentally. Applied edits remain in `OrgBuffer` until the existing
-file-level save/discard decision.
+absorbed accidentally.
 
 ### Architecture Direction
 
 `projtui.py` composes application-specific title and body `TextArea` controls
 inside the generic `menu.WorkspaceView` lifecycle seam. `InlineMenuSession`
-owns focus switching, Help, apply, Back, and terminal lifecycle while remaining
-agnostic about task fields and mutation. Editing stays inside the same bounded
-`Application`; do not start a second prompt_toolkit application.
+owns focus switching, Help, save dispatch, dirty presentation, guarded Back,
+and terminal lifecycle while remaining agnostic about task fields and mutation.
+Editing stays inside the same bounded `Application`; do not start a second
+prompt_toolkit application.
 
 This is proto-Handrail work, but extracting a shared package is premature.
 Keep reusable seams clear and compare them with inedit; extract only after a

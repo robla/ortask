@@ -1777,7 +1777,7 @@ def test_inline_multiline_input_uses_enter_for_lines_and_ctrl_s_to_apply() -> No
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_inline_workspace_keeps_multiple_fields_visible_and_focusable() -> None:
-    # Workspace Tab, Help, multiline entry, and apply should share one application.
+    # Workspace Tab, Help, multiline entry, and save should share one application.
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.layout import HSplit
@@ -1788,15 +1788,15 @@ def test_inline_workspace_keeps_multiple_fields_visible_and_focusable() -> None:
     body = TextArea("Old body", multiline=True)
     title.buffer.cursor_position = len(title.text)
     body.buffer.cursor_position = len(body.text)
-    applied: list[tuple[str, str]] = []
+    saved: list[tuple[str, str]] = []
 
-    def apply(_session: menu.InlineMenuSession) -> None:
-        applied.append((title.text, body.text))
+    def save(_session: menu.InlineMenuSession) -> None:
+        saved.append((title.text, body.text))
 
     view = menu.WorkspaceView(
         HSplit([title, body]),
         [title, body],
-        apply,
+        save,
         enter_moves_focus=frozenset({0}),
     )
     with create_pipe_input() as pin:
@@ -1808,7 +1808,7 @@ def test_inline_workspace_keeps_multiple_fields_visible_and_focusable() -> None:
             )
             menu.InlineMenuSession(view).run()
 
-    assert applied == [("New title", "First body line\nSecond body line")]
+    assert saved == [("New title", "First body line\nSecond body line")]
     assert view.focused_index == 1
 
 
@@ -1881,6 +1881,9 @@ def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) 
     assert "Priority: B" in view.summary
     assert "Subtasks: 1" in view.summary
     assert view.enter_moves_focus == frozenset({0})
+    assert view.is_dirty is not None and view.is_dirty() is False
+    view.focus_targets[0].buffer.insert_text(" changed")
+    assert view.is_dirty() is True
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
@@ -1960,6 +1963,116 @@ def test_bounded_task_editor_updates_title_and_multiline_body(tmp_path: Path) ->
     assert not buf.autosave_path.exists()
     assert controller.session is not None
     assert controller.session.final_message == "Saved changes to tasks.org"
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_task_workspace_ctrl_s_saves_whole_file_and_resets_undo(tmp_path: Path) -> None:
+    # Ctrl-S should flush prior buffered edits and make pre-save undo unavailable.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n** TODO t0001 Original\nBody\n",
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Raise priority in the list, edit title, save, try undo, then leave.
+            pin.send_text("\x1b[1;2A\r saved\x13\x1f\x1bq")
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == (
+        "* Tasks\n** TODO [#C] t0001 Original saved\nBody\n"
+    )
+    assert buf.dirty is False
+    assert not buf.autosave_path.exists()
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_dirty_workspace_escape_continues_by_default(tmp_path: Path) -> None:
+    # The dirty-exit warning should default to continuing without losing controls.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n** TODO t0001 Original\n",
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = projtui.InteractiveTaskController(
+        project,
+        projtui.OrgBuffer(org_file),
+        include_done=True,
+    )
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Escape, accept default Continue, then save the still-present edit.
+            pin.send_text("\r continued\x1b\r\x13\x1bq")
+            controller.run()
+
+    assert "** TODO t0001 Original continued" in org_file.read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_dirty_workspace_escape_can_save_and_return(tmp_path: Path) -> None:
+    # Choosing Save in the dirty-exit warning should write the file and leave.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n** TODO t0001 Original\n",
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = projtui.InteractiveTaskController(
+        project,
+        projtui.OrgBuffer(org_file),
+        include_done=True,
+    )
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Escape opens warning; Up selects Save and returns to the task list.
+            pin.send_text("\r saved-on-exit\x1bk\rq")
+            controller.run()
+
+    assert "** TODO t0001 Original saved-on-exit" in org_file.read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_dirty_workspace_escape_can_discard_unapplied_edits(tmp_path: Path) -> None:
+    # Choosing Discard should leave the saved Org file and OrgBuffer unchanged.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    original = "* Tasks\n** TODO t0001 Original\n"
+    org_file = write(tmp_path / "tasks.org", original)
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Escape opens warning; Down selects explicit Discard, then quit.
+            pin.send_text("\r discarded\x1bj\rq")
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == original
+    assert buf.read() == original
+    assert buf.dirty is False
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")

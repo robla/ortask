@@ -17,10 +17,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
+    from prompt_toolkit.document import Document
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.layout import FormattedTextControl, HSplit, Window
     from prompt_toolkit.widgets import TextArea
 except ImportError:  # pragma: no cover - optional interactive dependency
+    Document = None
     FormattedText = None
     FormattedTextControl = None
     HSplit = None
@@ -1093,6 +1095,7 @@ class InteractiveTaskController:
                 HSplit,
                 Window,
                 TextArea,
+                Document,
             )
         )
         task_id = item.task.id
@@ -1111,6 +1114,29 @@ class InteractiveTaskController:
             scrollbar=True,
         )
         body_area.buffer.cursor_position = len(body_area.text)
+        baseline = {
+            "title": title_area.text,
+            "body": body_area.text,
+        }
+
+        def is_dirty() -> bool:
+            return (
+                title_area.text != baseline["title"]
+                or body_area.text != baseline["body"]
+            )
+
+        def reset_control(control, text: str) -> None:
+            control.buffer.reset(
+                Document(text, cursor_position=len(text))
+            )
+
+        def reset_workspace_undo() -> None:
+            reset_control(title_area, title_area.text)
+            reset_control(body_area, body_area.text)
+
+        def discard_workspace_edits() -> None:
+            reset_control(title_area, baseline["title"])
+            reset_control(body_area, baseline["body"])
 
         def label(text: str):
             return Window(
@@ -1130,7 +1156,7 @@ class InteractiveTaskController:
             ]
         )
 
-        def apply(session: menu.InlineMenuSession) -> None:
+        def save_workspace(session: menu.InlineMenuSession) -> bool:
             source = self.buf.read()
             changed_fields: list[str] = []
             try:
@@ -1144,26 +1170,88 @@ class InteractiveTaskController:
                     changed_fields.append("body")
             except tasks.TaskNotFound:
                 session.set_message(f"task {task_id} no longer exists")
-                return
+                return False
             except ValueError as exc:
                 session.set_message(str(exc))
-                return
+                return False
 
-            if not changed_fields:
-                session.set_message(f"No title or body change for {task_id}")
-                return
-            self.buf.apply(source.splitlines())
-            fields = " and ".join(changed_fields)
-            message = f"Updated {fields} for {task_id}"
-            session.set_message(message)
+            if changed_fields:
+                self.buf.apply(source.splitlines())
+            if self.buf.dirty:
+                self.buf.save()
+                message = f"Saved changes to {self.buf.path.name}"
+            else:
+                message = f"No changes to save in {self.buf.path.name}"
+            baseline["title"] = title_area.text
+            baseline["body"] = body_area.text
+            reset_workspace_undo()
+            session.set_outcome(message)
+            return True
+
+        def exit_warning_view() -> menu.MenuView:
+            rows = [
+                menu.MenuRow(
+                    1,
+                    "SAVE",
+                    f"Save all changes to {self.buf.path.name} and return",
+                ),
+                menu.MenuRow(2, "CONTINUE", "Return to the task workspace"),
+                menu.MenuRow(
+                    3,
+                    "DISCARD",
+                    "Discard unsaved title/body edits and return",
+                ),
+            ]
+
+            def handle_exit(
+                session: menu.InlineMenuSession,
+                result: menu.MenuResult,
+            ) -> None:
+                if result.action != "select" or result.index is None:
+                    return
+                if result.index == 1:
+                    session.pop_view()
+                    return
+                if result.index == 2:
+                    discard_workspace_edits()
+                    session.pop_view()
+                    session.pop_view(
+                        message=f"Discarded unsaved edits to {task_id}"
+                    )
+                    return
+
+                session.pop_view()
+                if save_workspace(session):
+                    session.pop_view(
+                        message=f"Saved changes to {self.buf.path.name}"
+                    )
+
+            return menu.MenuView(
+                rows=rows,
+                on_result=handle_exit,
+                title=f"Unsaved task edits: {task_id}",
+                summary="The title or body differs from the last save",
+                instruction=(
+                    "↑↓/jk · ↵ choose · Esc/b/q continue editing"
+                ),
+                select_help="Choose how to handle unsaved task edits",
+                back_help="Continue editing without saving or discarding",
+                selected_index=1,
+            )
+
+        def back(session: menu.InlineMenuSession) -> bool:
+            if not is_dirty():
+                return True
+            session.push_view(exit_warning_view())
+            return False
 
         priority = item.task.priority or "none"
         tags = item.task.tags or "none"
         subtask_count = len(_direct_subtasks(self.buf, item))
-        return menu.WorkspaceView(
+        workspace = menu.WorkspaceView(
             container=container,
             focus_targets=[title_area, body_area],
-            on_apply=apply,
+            on_save=save_workspace,
             title=f"Edit {task_id}",
             summary=(
                 f"State: {item.task.state} · Priority: {priority} · "
@@ -1172,19 +1260,29 @@ class InteractiveTaskController:
             ),
             instruction=(
                 "Tab/S-Tab fields · Enter title→body/newline · "
-                "Ctrl-S apply · C-g help · Esc back"
+                "Ctrl-S save · C-g help · Esc back"
             ),
             help_entries=[
                 ("Typing", "Edit the focused title or body"),
                 ("Tab/Shift-Tab", "Move between title and body"),
                 ("Enter (title)", "Move focus to the body"),
                 ("Enter (body)", "Insert a newline"),
-                ("Ctrl-S", "Apply title and body edits to the task buffer"),
-                ("Esc", "Return without applying newer field edits"),
+                ("Ctrl-S", f"Save the entire {self.buf.path.name} file"),
+                ("Esc", "Return, warning first if edits are unsaved"),
                 ("C-g", "Show or close this help"),
             ],
             enter_moves_focus=frozenset({0}),
+            is_dirty=is_dirty,
+            on_back=back,
         )
+
+        def clear_saved_message(_buffer) -> None:
+            if self.session is not None and is_dirty():
+                self.session.message = None
+
+        title_area.buffer.on_text_changed += clear_saved_message
+        body_area.buffer.on_text_changed += clear_saved_message
+        return workspace
 
     def _priority_view(self, item: MenuItem) -> menu.MenuView:
         assert item.task is not None

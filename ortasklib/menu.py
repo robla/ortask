@@ -149,13 +149,15 @@ class WorkspaceView:
 
     container: Any
     focus_targets: list[Any]
-    on_apply: Callable[["InlineMenuSession"], None]
+    on_save: Callable[["InlineMenuSession"], None]
     title: str = ""
     summary: str = ""
-    instruction: str = "Tab fields · Ctrl-S apply · Esc back · C-g help"
+    instruction: str = "Tab fields · Ctrl-S save · Esc back · C-g help"
     help_entries: list[tuple[str, str]] = field(default_factory=list)
     enter_moves_focus: frozenset[int] = frozenset()
     focused_index: int = 0
+    is_dirty: Callable[[], bool] | None = None
+    on_back: Callable[["InlineMenuSession"], bool] | None = None
 
     def clamp_focus(self) -> None:
         if not self.focus_targets:
@@ -370,8 +372,8 @@ def _workspace_help(view: WorkspaceView) -> FormattedText:
     entries = view.help_entries or [
         ("Typing", "Edit the focused field"),
         ("Tab/Shift-Tab", "Move between fields"),
-        ("Ctrl-S", "Apply workspace edits"),
-        ("Esc", "Return without applying newer edits"),
+        ("Ctrl-S", "Save workspace edits"),
+        ("Esc", "Return, warning first if edits are unsaved"),
         ("C-g", "Show or close this help"),
     ]
     return _command_help(entries)
@@ -555,10 +557,10 @@ class InlineMenuSession:
             move_workspace_focus(1)
 
         @bindings.add("c-s", filter=workspace_active, eager=True)
-        def apply_workspace(_event) -> None:
+        def save_workspace(_event) -> None:
             view = self.current_view
             assert isinstance(view, WorkspaceView)
-            view.on_apply(self)
+            view.on_save(self)
 
         @bindings.add("escape", filter=workspace_active, eager=True)
         def leave_workspace(_event) -> None:
@@ -695,11 +697,12 @@ class InlineMenuSession:
         self.help_visible = False
         self.message = None
         active = self.current_view
-        if (
-            isinstance(active, MenuView)
-            and active.on_back is not None
-            and not active.on_back(self)
-        ):
+        on_back = (
+            active.on_back
+            if isinstance(active, (MenuView, WorkspaceView))
+            else None
+        )
+        if on_back is not None and not on_back(self):
             self.application.invalidate()
             return
         if message is not None:
@@ -809,6 +812,14 @@ class InlineMenuSession:
             instruction = "C-g/Esc/b/q/Enter close help"
         else:
             instruction = self.message or self.current_view.instruction
+            view = self.current_view
+            if (
+                self.message is None
+                and isinstance(view, WorkspaceView)
+                and view.is_dirty is not None
+                and view.is_dirty()
+            ):
+                instruction = f"UNSAVED · {instruction}"
         return FormattedText([("", "\n"), ("class:hint", instruction)])
 
     def _active_body(self):

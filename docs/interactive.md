@@ -78,8 +78,9 @@ Treat the interactive UI as a stack. Outside a focused text field, `Esc`, `b`,
 and `q` are synonyms for popping its top layer: help returns to the underlying
 menu, a subtask returns to its parent task, a task focus view returns to its
 task list, and a project task list returns to the project list. In a text field,
-only `Esc` pops; `b` and `q` insert text. Popping the root local-task or
-project-list layer exits the program; no key should skip intermediate layers.
+only `Esc` requests Back; `b` and `q` insert text. A dirty task workspace warns
+before leaving. Popping the root local-task or project-list layer exits the
+program; no key should skip intermediate layers.
 
 Unselected rows show task state through the label color (TODO yellow, DONE
 green). The highlighted row instead becomes a single continuous bar in the
@@ -91,12 +92,16 @@ the triangle is part of the highlight bar when that task is selected.
 
 ### Editing buffer (auto-save and save-on-exit)
 
-Interactive edits do not touch the real Org file immediately. Each file's task
-menu runs against a `projtui.OrgBuffer`, modeled on Emacs (t0006):
+Each file's task menu runs against a `projtui.OrgBuffer`, modeled on Emacs
+(t0006). Task-list edits are buffered, while an explicit task-workspace save
+writes the complete current buffer:
 
-- Edits (heading text, state, priority, or a focus-view `mark DONE`) update an
-  in-memory buffer and mirror it to an **auto-save sibling** named `#todo.org#`
-  (Emacs convention) for crash recovery. The real file is untouched.
+- Task-list state and priority edits update an in-memory buffer and mirror it
+  to an **auto-save sibling** named `#todo.org#` (Emacs convention) for crash
+  recovery. The real file remains untouched until Save.
+- `Ctrl-S` in a task workspace validates title and body, applies them to the
+  same buffer, atomically saves the entire Org file, and removes the auto-save.
+  Thus it also commits state or priority edits made before entering the task.
 - On leaving the file's editing context (`b`/`q`/Esc), a dirty highlight-bar
   session pushes a bounded Save/Discard/Continue Editing view. Save is selected
   by default; use Up/Down and `Enter` to choose. Save writes the real file
@@ -380,15 +385,20 @@ Post to reddit (/r/electorama)
 Body
 https://www.reddit.com/r/electorama/submit
 
-Tab/S-Tab fields · Enter title→body/newline · Ctrl-S apply · C-g help · Esc back
+Tab/S-Tab fields · Enter title→body/newline · Ctrl-S save · C-g help · Esc back
 ```
 
 Tab and Shift-Tab move between title and body. Enter moves from the one-line
 title into the body; within the body it inserts a newline. `Ctrl-S` validates
-and applies both fields atomically to `OrgBuffer`, leaving the workspace open.
-Escape returns to the task list and discards any control edits made after the
-last apply. The file-level save/discard flow still decides when buffered edits
-reach the real Org file.
+and applies both fields atomically, saves the entire Org file, clears recovery
+data, resets both field undo histories, and leaves the workspace open at a new
+clean baseline. The footer shows `UNSAVED` after either control changes.
+
+Escape returns directly when the controls are clean. When they differ from the
+last save, Escape opens Save and Return, Continue Editing, and Discard and
+Return choices. Continue Editing is selected by default. Discard drops only
+the title/body text typed since the last workspace save; it does not discard
+older edits already buffered from the task list.
 
 The body boundary ends at the next Org heading, so child and sibling headings
 cannot be changed from the body control. The header reports the direct-subtask
