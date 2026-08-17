@@ -28,7 +28,7 @@ When extending the tool, work in this order:
 - defer repair/sync-style commands until parse and write paths are tested
 
 ## Coding Style & Naming Conventions
-Follow existing Python style: 4-space indentation, type hints, `dataclass` models where helpful, and small functions with explicit names. Prefer `snake_case` for functions and variables, `UPPER_SNAKE_CASE` for module constants, and short imperative subcommand names such as `list` or `done`. Keep a parser/query-writer split and prefer minimal line-level rewrites over reserializing the whole file.
+Follow existing Python style: 4-space indentation, type hints, `dataclass` models where helpful, and small functions with explicit names. Prefer `snake_case` for functions and variables, `UPPER_SNAKE_CASE` for module constants, and short imperative subcommand names such as `list` or `done`. Register subcommands alphabetically and keep dispatch tables, shell completion lists, help output, and command-reference sections in the same order. Keep a parser/query-writer split and prefer minimal line-level rewrites over reserializing the whole file.
 
 ## Testing Guidelines
 There is no committed test suite yet. New behavior should include `pytest` tests with small fixture Org documents that cover parsing, item limits, ID handling, and round-trip edits. Name tests by behavior, for example `test_limit_items_rejects_negative_values`. Prioritize mixed old/new heading parsing, ID allocation, and edits that preserve surrounding prose, drawers, blank lines, and non-task sections. Until CI exists, include the exact manual commands you ran in the change description.

@@ -50,17 +50,22 @@ Since this project uses only the Python standard library, there is no build or i
 
 ### Subcommands (`ortask.py`)
 
+Keep registered subcommands, dispatch/completion tables, help output, and this
+reference alphabetized by subcommand name.
+
 | Subcommand | Status | Description |
 | :--- | :--- | :--- |
-| `list` | Implemented | Print tasks (filter by state, limit N, multiple formats). Default when no subcommand is specified. |
-| `show <id>` | Implemented | Detailed view of a task including body, properties, and subtasks. |
 | `add <title>` | Implemented | Append a new task with the next available ID; supports `--parent <id>`. |
-| `done <id>` | Implemented | Mark a task as DONE. |
-| `open <id>` | Implemented | Reopen a DONE task (sets state back to TODO). |
-| `repair` | Implemented | Validate and fix ID integrity and tree structure (supports `--dry-run`). |
-| `rename <id>`| Planned | Change a task's title while preserving ID and state. |
+| `apply` | Implemented | Instantiate the weekly `* Template` subtree as new tasks. |
 | `context` | Planned | **LLM Special**: Output a compact summary for prompt context. |
+| `done <id>` | Implemented | Mark a task as DONE. |
+| `help` | Implemented | Show command help. |
+| `list` | Implemented | Print tasks (filter by state, limit N, multiple formats). Default when no subcommand is specified. |
 | `next` | Planned | Print the next ID that `add` would assign. |
+| `open <id>` | Implemented | Reopen a DONE task (sets state back to TODO). |
+| `rename <id>`| Planned | Change a task's title while preserving ID and state. |
+| `repair` | Implemented | Validate and fix ID integrity and tree structure (supports `--dry-run`). |
+| `show <id>` | Implemented | Detailed view of a task including body, properties, and subtasks. |
 
 ## Development Conventions
 
@@ -82,6 +87,6 @@ The parser matches the following structure:
 - **Atomic Writes:** Write to a temporary file, then rename to prevent data loss.
 
 ## Roadmap & Next Steps
-1. Implement the planned subcommands: `context`, `rename`, and `next`.
+1. Implement the planned subcommands: `context`, `next`, and `rename`.
 2. Implement `orgmgr.py` to support global Org project operations (first verb: `list`).
 3. Add a test suite (`tests/`) using `pytest` to cover file parsing, filters, ID allocation, and editing safety.

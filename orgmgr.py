@@ -190,9 +190,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub = parser.add_subparsers(dest="command")
+    # Keep subparser registration alphabetical; argparse preserves this order.
     sub.add_parser("help", help="show this help message")
 
-    # list subcommand
     p_list = sub.add_parser("list", help="list projects and top-level tasks")
     p_list.add_argument(
         "--all",
@@ -206,7 +206,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="output format (plain or json)",
     )
 
-    # projadd subcommand
+    p_mig = sub.add_parser(
+        "migrate",
+        help="record the registry directory in ortask.ini",
+    )
+    # SUPPRESS default so this subparser does not clobber a global override.
+    p_mig.add_argument("--registry", default=argparse.SUPPRESS,
+                       help="registry directory to record")
+    p_mig.add_argument("--force", action="store_true",
+                       help="use the default even if ortask.ini already has one")
+    p_mig.add_argument("--dry-run", action="store_true",
+                       help="show what would be written and removed")
+
     p_add = sub.add_parser(
         "projadd",
         help="add one project to the registry (creates a symlink subdir)",
@@ -229,19 +240,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--dry-run", action="store_true",
                        help="show what would be created without changing anything")
 
-    # migrate subcommand
-    p_mig = sub.add_parser(
-        "migrate",
-        help="record the registry directory in ortask.ini",
-    )
-    # SUPPRESS default so this subparser does not clobber a global override.
-    p_mig.add_argument("--registry", default=argparse.SUPPRESS,
-                       help="registry directory to record")
-    p_mig.add_argument("--force", action="store_true",
-                       help="use the default even if ortask.ini already has one")
-    p_mig.add_argument("--dry-run", action="store_true",
-                       help="show what would be written and removed")
-
     return parser
 
 
@@ -260,8 +258,8 @@ def main() -> int:
 
     dispatch = {
         "list": cmd_list,
-        "projadd": cmd_projadd,
         "migrate": cmd_migrate,
+        "projadd": cmd_projadd,
     }
 
     handler = dispatch.get(cmd)

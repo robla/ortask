@@ -8,13 +8,14 @@ ortask.py - inspect and update org-mode TODO tasks in local Org files
 
 ```
 ortask.py [<subcommand>] [<options>]
-ortask.py list [--todo | --done | --all] [--root-only] [--items N] [--format FORMAT] [--file FILE]
-ortask.py show <id> [--file FILE]
 ortask.py add <title> [--parent ID] [--file FILE]
+ortask.py apply [--template NAME] [--week WEEK] [--date YYYY-MM-DD] [--dry-run] [--file FILE]
 ortask.py done <id> [--file FILE]
+ortask.py help
+ortask.py list [--todo | --done | --all] [--root-only] [--items N] [--format FORMAT] [--file FILE]
 ortask.py open <id> [--file FILE]
 ortask.py repair [--dry-run | --fix] [--file FILE]
-ortask.py apply [--template NAME] [--week WEEK] [--date YYYY-MM-DD] [--dry-run] [--file FILE]
+ortask.py show <id> [--file FILE]
 ortask.py -i | --interactive [--file FILE]
 ```
 
@@ -37,38 +38,8 @@ When invoked with no subcommand, **list** is assumed.
 
 ## SUBCOMMANDS
 
-### list
-
-Print tasks.  With no flags, prints all tasks in indented plain text.
-
-**--todo**
-:   Show only open tasks (default).
-
-**--done**
-:   Show only completed tasks.
-
-**--all**
-:   Show all tasks regardless of state.
-
-**--root-only**
-:   Show only top-level parsed tasks, hiding subtasks. In a `* Tasks` file this
-    means direct children of `* Tasks`; otherwise it means the shallowest parsed
-    task heading level.
-
-**--items** *N*
-:   Limit output to the first *N* matching tasks.
-
-**--format** *FORMAT*
-:   Output format: `plain` (default), `json`, or `org`.
-
-### show
-
-```
-ortask.py show t0001
-```
-
-Print a single task by ID, including its body text, properties drawer,
-deadlines, and any subtasks.
+Subcommands are registered and documented alphabetically. Keep parser help,
+dispatch tables, shell completions, and this reference in the same order.
 
 ### add
 
@@ -91,6 +62,33 @@ If no task file is discovered and no `--file` is supplied, `add` creates
 :   Create a subtask under the given parent instead of a top-level task.
     The subtask ID is derived from the parent (e.g. `t0003.1`, `t0003.2`).
 
+### apply
+
+```
+ortask.py apply
+ortask.py apply --week 2026W26 --dry-run
+ortask.py apply --date 2026-06-25
+```
+
+Instantiate the file's single top-level `* Template` subtree as new tasks under
+`* Tasks`, substituting weekly placeholders (`twYYWNN`, `Month Day`, etc.) for a
+target week. Existing tasks are left untouched. See `docs/templates.md` for
+the placeholder set and insertion rules.
+
+**--template** *NAME*
+:   Template profile to apply. Defaults to `weekly`, currently the only
+    supported profile.
+
+**--week** *WEEK*
+:   Target ISO week, e.g. `2026W26` or `26W26`. Defaults to the current week.
+
+**--date** *YYYY-MM-DD*
+:   Target date. Derives the ISO week when `--week` is omitted; when both are
+    given the date must fall inside the week.
+
+**--dry-run**
+:   Print the Org content that would be inserted without modifying the file.
+
 ### done
 
 ```
@@ -99,6 +97,35 @@ ortask.py done t0002
 
 Change a task's keyword from TODO to DONE.  Only the matched heading
 line is modified; all other file content is preserved.
+
+### help
+
+Print the top-level command help. Bare `ortask.py` still defaults to `list`;
+use `ortask.py help` or `ortask.py --help` to display the command inventory.
+
+### list
+
+Print tasks. With no flags, prints all tasks in indented plain text.
+
+**--todo**
+:   Show only open tasks (default).
+
+**--done**
+:   Show only completed tasks.
+
+**--all**
+:   Show all tasks regardless of state.
+
+**--root-only**
+:   Show only top-level parsed tasks, hiding subtasks. In a `* Tasks` file this
+    means direct children of `* Tasks`; otherwise it means the shallowest parsed
+    task heading level.
+
+**--items** *N*
+:   Limit output to the first *N* matching tasks.
+
+**--format** *FORMAT*
+:   Output format: `plain` (default), `json`, or `org`.
 
 ### open
 
@@ -126,32 +153,14 @@ subtask IDs that don't match their parent heading, or headings under
 **--dry-run**
 :   Report what would be changed without modifying the file.
 
-### apply
+### show
 
 ```
-ortask.py apply
-ortask.py apply --week 2026W26 --dry-run
-ortask.py apply --date 2026-06-25
+ortask.py show t0001
 ```
 
-Instantiate the file's single top-level `* Template` subtree as new tasks under
-`* Tasks`, substituting weekly placeholders (`twYYWNN`, `Month Day`, etc.) for a
-target week.  Existing tasks are left untouched.  See `docs/templates.md` for
-the placeholder set and insertion rules.
-
-**--template** *NAME*
-:   Template profile to apply.  Defaults to `weekly`, currently the only
-    supported profile.
-
-**--week** *WEEK*
-:   Target ISO week, e.g. `2026W26` or `26W26`.  Defaults to the current week.
-
-**--date** *YYYY-MM-DD*
-:   Target date.  Derives the ISO week when `--week` is omitted; when both are
-    given the date must fall inside the week.
-
-**--dry-run**
-:   Print the Org content that would be inserted without modifying the file.
+Print a single task by ID, including its body text, properties drawer,
+deadlines, and any subtasks.
 
 ## GLOBAL OPTIONS
 

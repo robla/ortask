@@ -102,9 +102,9 @@ Use =argparse= with subparsers.  Implementation order:
 
 | Subcommand  | Purpose                                     |
 |-------------+---------------------------------------------|
+| =context=   | Compact summary for LLM prompt injection     |
 | =list=      | Print tasks (default if no subcommand given) |
 | =show ID=   | Show detail for a single task (incl. body)   |
-| =context=   | Compact summary for LLM prompt injection     |
 
 =list= flags:
 - =--items N= to cap output
@@ -127,10 +127,10 @@ JSON output makes the tool immediately useful for LLMs and scripts.
 
 | Subcommand   | Purpose                               |
 |--------------+---------------------------------------|
-| =todo ID=    | Reopen a completed task               |
+| =next=       | Print the next available task ID      |
 | =rename ID=  | Change a task's title                 |
 | =sync=       | Verify IDs, check for duplicates      |
-| =next=       | Print the next available task ID      |
+| =todo ID=    | Reopen a completed task               |
 
 ** ID allocation
 

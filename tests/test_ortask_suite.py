@@ -640,6 +640,37 @@ def test_orgmgr_no_args_and_help_show_help() -> None:
         assert result.stderr == ""
 
 
+def test_cli_subcommands_are_registered_alphabetically() -> None:
+    # Argparse preserves registration order in usage and command help.
+    expected = {
+        "ort": [
+            "add",
+            "apply",
+            "done",
+            "help",
+            "list",
+            "open",
+            "repair",
+            "show",
+        ],
+        "orgm": ["help", "list", "migrate", "projadd"],
+    }
+    parsers = {
+        "ort": ortask.build_parser(),
+        "orgm": orgmgr.build_parser(),
+    }
+
+    for command, parser in parsers.items():
+        subparsers = next(
+            action
+            for action in parser._actions
+            if isinstance(action, argparse._SubParsersAction)
+        )
+        registered = list(subparsers.choices)
+        assert registered == expected[command]
+        assert registered == sorted(registered)
+
+
 def test_orgmgr_interactive_uses_registry_project_menu(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -701,6 +732,41 @@ def test_bash_completion_for_ortask_and_alias() -> None:
         assert result.returncode == 0
         assert result.stderr == ""
         assert result.stdout.strip() == expected
+
+
+def test_bash_completion_lists_subcommands_alphabetically() -> None:
+    # Empty-prefix completion presents each command inventory in policy order.
+    script = ROOT / "misc" / "ortask-completion.bash"
+    cases = [
+        (
+            "_ortask_complete",
+            "ort",
+            ["add", "apply", "done", "help", "list", "open", "repair", "show"],
+        ),
+        ("_orgmgr_complete", "orgm", ["help", "list", "migrate", "projadd"]),
+    ]
+
+    for function, executable, expected in cases:
+        result = subprocess.run(
+            [
+                "bash",
+                "--noprofile",
+                "--norc",
+                "-c",
+                (
+                    f"source {script}; COMP_WORDS=({executable} ''); "
+                    f"COMP_CWORD=1; {function}; "
+                    "printf '%s\\n' \"${COMPREPLY[@]}\""
+                ),
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert result.stderr == ""
+        assert result.stdout.splitlines()[:len(expected)] == expected
 
 
 def test_add_rejects_existing_org_file_without_tasks_section(

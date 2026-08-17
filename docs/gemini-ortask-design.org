@@ -26,15 +26,15 @@ Originally conceived as =status.py= (a simple checkbox viewer), the project has 
 
 | Subcommand | Description | Gemini's Take |
 |------------+-------------+---------------|
-| =list=     | List tasks (filter by state/limit). | Support =--state= (todo/done) and =--format= (plain/json). |
-| =show ID=  | Detailed view of a task. | Include body text, properties, and subtasks. |
 | =add=      | Create a new task. | Automatically assign the next available ID; support =--parent=. |
-| =done ID=  | Mark task as DONE. | Update the heading state while preserving everything else. |
-| =todo ID=  | Reopen a task (alias =open=).| Revert state to TODO. |
-| =rename ID=| Change task title. | Preserve the ID and state while updating the text. |
 | =context=  | Summarize for LLMs. | *LLM Special*: Output a compact summary for prompt context. |
-| =repair=    | Validate IDs/structure. | Check for duplicate IDs or broken hierarchies. |
+| =done ID=  | Mark task as DONE. | Update the heading state while preserving everything else. |
+| =list=     | List tasks (filter by state/limit). | Support =--state= (todo/done) and =--format= (plain/json). |
 | =next=     | Preview next ID. | Useful for scripting and manual entry. |
+| =rename ID=| Change task title. | Preserve the ID and state while updating the text. |
+| =repair=    | Validate IDs/structure. | Check for duplicate IDs or broken hierarchies. |
+| =show ID=  | Detailed view of a task. | Include body text, properties, and subtasks. |
+| =todo ID=  | Reopen a task (alias =open=).| Revert state to TODO. |
 
 ** LLM-Specific Features
 

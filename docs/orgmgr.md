@@ -3,6 +3,8 @@
 `orgmgr.py` is the global operations command for the ortask suite. It is
 distinct from `ortask.py`: `ortask.py` operates on one local Org task file,
 while `orgmgr.py` manages a registry of project Org files across the filesystem.
+Registered subcommands, help output, completions, and command-reference sections
+remain alphabetical.
 
 ## Registry Model
 
@@ -118,6 +120,26 @@ visibility through `all -> TODO -> DONE`, or start with:
 orgmgr.py -i --todo-only
 ```
 
+## `migrate`
+
+`orgmgr.py migrate` now only writes the registry path into `ortask.ini`. It does
+not read or delete `projtui.ini`.
+
+```sh
+orgmgr.py migrate --registry ~/tmpsorta/proj2026
+orgmgr.py migrate --dry-run
+```
+
+Behavior:
+
+- Use `--registry` when provided.
+- Otherwise keep the existing `[projects] registry` value when present.
+- Otherwise record the default `~/Projects`.
+- Write only `ortask.ini` atomically.
+
+This command is still useful for bootstrapping a fresh config, but it is no
+longer a compatibility bridge from the old projtui-specific config.
+
 ## `projadd`
 
 `orgmgr.py projadd` adds exactly one project to the registry by creating a
@@ -146,32 +168,12 @@ Behavior:
 An existing `<registry>/<name>/` is an error unless `--force` is given. `--force`
 repoints the known symlinks but leaves unrelated contents alone.
 
-## `migrate`
-
-`orgmgr.py migrate` now only writes the registry path into `ortask.ini`. It does
-not read or delete `projtui.ini`.
-
-```sh
-orgmgr.py migrate --registry ~/tmpsorta/proj2026
-orgmgr.py migrate --dry-run
-```
-
-Behavior:
-
-- Use `--registry` when provided.
-- Otherwise keep the existing `[projects] registry` value when present.
-- Otherwise record the default `~/Projects`.
-- Write only `ortask.ini` atomically.
-
-This command is still useful for bootstrapping a fresh config, but it is no
-longer a compatibility bridge from the old projtui-specific config.
-
 ## Future Verbs
 
-- `projrm NAME`: remove a project’s registry subdirectory and symlinks without
-  touching the real project or Org file.
 - `doctor`: report broken symlinks, missing task files, duplicate task IDs, or
   registry entries that are not valid projects.
+- `projrm NAME`: remove a project’s registry subdirectory and symlinks without
+  touching the real project or Org file.
 
 These verbs manage the registry inventory. They must not replace local task
 editing verbs in `ortask.py`.

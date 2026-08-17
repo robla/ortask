@@ -168,8 +168,10 @@ logic from terminal I/O and assert that read paths never write to disk.
 
 ## Conventions
 
-- Subcommands are verbs (`list`, `show`, `add`, `done`, `open`, `repair`),
-  aligning with Taskwarrior conventions.
+- Subcommands are verbs (`add`, `apply`, `done`, `list`, `open`, `repair`,
+  `show`), aligning with Taskwarrior conventions. Register and document all
+  subcommands alphabetically, including `help`, and keep dispatch and shell
+  completion tables in that order.
 - File edits are conservative: only touch the `* Tasks` subtree, only rewrite
   matched lines, never reformat the whole file. Atomic writes only.
 - Task IDs are permanent and never reused.

@@ -238,9 +238,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub = parser.add_subparsers(dest="command")
+
+    # Keep subparser registration alphabetical; argparse preserves this order.
+    p_add = sub.add_parser("add", help="add a new task")
+    p_add.add_argument("title", metavar="TITLE")
+    p_add.add_argument("--parent", metavar="ID", default=None)
+
+    p_apply = sub.add_parser(
+        "apply", help="instantiate the * Template subtree as new tasks")
+    p_apply.add_argument("--template", default="weekly",
+                         help="template profile to apply (default: weekly)")
+    p_apply.add_argument("--week", default=None,
+                         help="target ISO week, e.g. 2026W26 or 26W26 (default: this week)")
+    p_apply.add_argument("--date", default=None,
+                         help="target date YYYY-MM-DD; derives the week when --week is omitted")
+    p_apply.add_argument("--dry-run", action="store_true",
+                         help="print the tasks that would be inserted without writing")
+
+    p_done = sub.add_parser("done", help="mark a task DONE")
+    p_done.add_argument("id", metavar="ID")
+
     sub.add_parser("help", help="show this help message")
 
-    # list (default when no subcommand)
+    # list remains the default when no subcommand is supplied.
     p_list = sub.add_parser("list", help="print tasks")
     state_group = p_list.add_mutually_exclusive_group()
     state_group.add_argument("--todo", dest="state", action="store_const", const="todo",
@@ -254,38 +274,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_list.add_argument("--items", type=int, default=None)
     p_list.add_argument("--format", choices=["plain", "json", "org"], default="plain")
 
-    # show
-    p_show = sub.add_parser("show", help="show a single task by ID")
-    p_show.add_argument("id", metavar="ID")
-
-    # add
-    p_add = sub.add_parser("add", help="add a new task")
-    p_add.add_argument("title", metavar="TITLE")
-    p_add.add_argument("--parent", metavar="ID", default=None)
-
-    # done
-    p_done = sub.add_parser("done", help="mark a task DONE")
-    p_done.add_argument("id", metavar="ID")
-
-    # open
     p_open = sub.add_parser("open", help="reopen a task (DONE -> TODO)")
     p_open.add_argument("id", metavar="ID")
 
-    # repair
     p_repair = sub.add_parser("repair", help="find and fix ID problems")
     p_repair.add_argument("--dry-run", action="store_true")
 
-    # apply
-    p_apply = sub.add_parser(
-        "apply", help="instantiate the * Template subtree as new tasks")
-    p_apply.add_argument("--template", default="weekly",
-                         help="template profile to apply (default: weekly)")
-    p_apply.add_argument("--week", default=None,
-                         help="target ISO week, e.g. 2026W26 or 26W26 (default: this week)")
-    p_apply.add_argument("--date", default=None,
-                         help="target date YYYY-MM-DD; derives the week when --week is omitted")
-    p_apply.add_argument("--dry-run", action="store_true",
-                         help="print the tasks that would be inserted without writing")
+    p_show = sub.add_parser("show", help="show a single task by ID")
+    p_show.add_argument("id", metavar="ID")
 
     return parser
 
@@ -340,13 +336,13 @@ def main() -> int:
         args.format = "plain"
 
     dispatch = {
-        "list": cmd_list,
-        "show": cmd_show,
         "add": cmd_add,
+        "apply": cmd_apply,
         "done": cmd_done,
+        "list": cmd_list,
         "open": cmd_open,
         "repair": cmd_repair,
-        "apply": cmd_apply,
+        "show": cmd_show,
     }
 
     handler = dispatch.get(cmd)

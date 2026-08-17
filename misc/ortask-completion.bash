@@ -20,7 +20,7 @@ _ortask_complete()
         cword=$COMP_CWORD
     fi
 
-    local subcommands="help list show add done open repair apply"
+    local subcommands="add apply done help list open repair show"
     local global_opts="-i --interactive --file --help"
     local list_opts="--todo --done --all --root-only --items --format --file --help"
     local add_opts="--parent --file --help"
@@ -76,20 +76,20 @@ _ortask_complete()
 
     if [[ "$cur" == -* ]]; then
         case "$command" in
-            list)
-                COMPREPLY=( $(compgen -W "$list_opts" -- "$cur") )
-                ;;
             add)
                 COMPREPLY=( $(compgen -W "$add_opts" -- "$cur") )
                 ;;
-            show|done|open)
+            apply)
+                COMPREPLY=( $(compgen -W "$apply_opts" -- "$cur") )
+                ;;
+            done|open|show)
                 COMPREPLY=( $(compgen -W "$id_opts" -- "$cur") )
+                ;;
+            list)
+                COMPREPLY=( $(compgen -W "$list_opts" -- "$cur") )
                 ;;
             repair)
                 COMPREPLY=( $(compgen -W "$repair_opts" -- "$cur") )
-                ;;
-            apply)
-                COMPREPLY=( $(compgen -W "$apply_opts" -- "$cur") )
                 ;;
             *)
                 COMPREPLY=()
@@ -118,7 +118,7 @@ _orgmgr_complete()
         cword=$COMP_CWORD
     fi
 
-    local subcommands="help list projadd migrate"
+    local subcommands="help list migrate projadd"
     local global_opts="-i --interactive --registry --todo-only --help"
     local list_opts="--all --format --help"
     local projadd_opts="--name --file --registry --force --dry-run --help"
@@ -167,11 +167,11 @@ _orgmgr_complete()
             list)
                 COMPREPLY=( $(compgen -W "$list_opts" -- "$cur") )
                 ;;
-            projadd)
-                COMPREPLY=( $(compgen -W "$projadd_opts" -- "$cur") )
-                ;;
             migrate)
                 COMPREPLY=( $(compgen -W "$migrate_opts" -- "$cur") )
+                ;;
+            projadd)
+                COMPREPLY=( $(compgen -W "$projadd_opts" -- "$cur") )
                 ;;
             *)
                 COMPREPLY=()
