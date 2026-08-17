@@ -1,0 +1,240 @@
+# -*- mode: org -*-
+#+TODO: TODO | DONE
+
+Archived entries from file ~/src/ortask/todo.org
+
+* DONE t0001 Remove AI slop from docs/taskwarrior.md
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+
+* DONE t0002 create .org file if none exist in directory when using 'ort add' (calling it "tasks.org")
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+
+* DONE t0003 Make it so that there doesn't have to be a 'Tasks' section in a .org file to use it
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+
+* DONE t0005 Let's make it so that 'ort add' doesn't arbitrarily add a '* Tasks' section to anything other than maybe a new todo.org
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+
+* DONE t0006 Implement in-memory saving, with writing happening on exit (and writing only happening after confirmation)
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+** DONE [#A] t0006.1 Add task-list transaction history and dirty visibility
+Record state and priority actions as undoable =OrgBuffer= transactions. Show
+file-level dirty status, support =C-/= undo and =C-r= redo, and make =C-s= save
+the whole Org file and reset history.
+
+* DONE t0007 When in menu.select_menu app mode, don't reorder the tasks based on TODO/DONE status, since that can make it so that a different task is selected upon hiting "t"
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+
+* DONE [#A] t0009.1 Add regression coverage for bounded repainting and terminal cleanup
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks/t0009 Keep interactive sessions inside one bounded application
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Use pipe-input and PTY tests to cover context changes, long lists, final exit,
+resize, and the absence of alternate-screen switching.
+
+* DONE [#A] t0009.2 Add one persistent 20-row prompt_toolkit application shell
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks/t0009 Keep interactive sessions inside one bounded application
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Give the session a dynamic header, scrolling body, fixed command footer, and
+terminal-aware effective height.
+
+* DONE [#A] t0009.3 Move project, task, detail, Help, and picker contexts onto a view stack
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks/t0009 Keep interactive sessions inside one bounded application
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Preserve stable selection and scroll state when pushing and popping views.
+
+* DONE [#A] t0009.4 Move recovery and save/discard prompts into the bounded application
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks/t0009 Keep interactive sessions inside one bounded application
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Show confirmations and outcomes in the active region without appending output.
+** DONE [#A] t0009.4.1 Move save/discard confirmation into the bounded task session
+** DONE [#A] t0009.4.2 Move recovery choices into the bounded task session
+** DONE [#A] t0009.4.3 Make operational footer notices transient
+Restore the current command hint about two seconds after warnings and feedback,
+without allowing an older timer to erase a newer or final outcome.
+
+* DONE [#A] t0009.5 Suspend and resume the session around the external editor
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks/t0009 Keep interactive sessions inside one bounded application
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Use prompt_toolkit terminal handoff, then reload data and repaint the same view.
+
+* DONE [#B] t0009.6.1 Define and test controlled normal-exit retention
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks/t0009 Keep interactive sessions inside one bounded application/t0009.6 Define and test controlled final-frame and failure behavior
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+
+* DONE t0010 Archive completed tasks into a separate org file
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Implement the =todo.org_archive= archiving behavior described in =docs/roadmap.md=.
+
+* DONE t0014 Add initial bounded task-title editing
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Establish a surgical heading rewrite and focused single-line input as
+groundwork for the full issue workspace in =t0016=.
+** DONE t0014.1 Add a surgical heading-text rewrite helper
+Preserve the rest of the Org heading and reject text that would alter its
+structure when reparsed.
+** DONE t0014.2 Add focused text entry to the bounded task-detail workflow
+
+* DONE [#A] t0015.3 Add compact state and priority workspace controls
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks/t0015 Expose state and priority as direct context actions
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Keep both choices visible beside the title and body, use Left/Right while a
+choice has focus, and stage all task fields behind one save/discard boundary.
+
+* DONE [#A] t0016.1 Define and test task-own-body mutation boundaries
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks/t0016 Build the full orti issue-editing workspace
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Add a surgical helper for replacing a task's own body without crossing into
+its heading, descendant or sibling subtrees, or unrelated prose. Cover bodies
+that contain drawers, planning lines, and blank lines.
+
+* DONE [#A] t0016.2 Replace the action-row detail menu with a persistent workspace
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks/t0016 Build the full orti issue-editing workspace
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Show title, compact metadata, and body together; remove synthetic =TEXT=,
+=EDIT=, =STATE=, and =PRIOR= rows. Keep =e= on the parent task list while
+=t0016.4= adds the independently focusable subtask region.
+** DONE [#A] t0016.2.1 Save workspace edits safely
+Make =Ctrl-S= save the entire Org file and reset field undo history. Warn on
+dirty workspace exit with Save, Continue Editing, and explicit Discard choices.
+
+* DONE [#A] t0016.3 Add multiline task-body editing
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks/t0016 Build the full orti issue-editing workspace
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Edit the task's own body inside the existing bounded application and route
+changes through =OrgBuffer=, auto-save recovery, and save/discard handling.
+
+* DONE [#A] t0016.4.1 Add a bounded subtask preview and editor button
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks/t0016 Build the full orti issue-editing workspace/t0016.4 Add a hierarchical subtask mini-list
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Establish a five-row descendant viewport at the bottom of the task workspace,
+followed by a focusable external-editor escape hatch.
+
+* DONE [#A] t0016.4.2 Make the subtask viewport navigable
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks/t0016 Build the full orti issue-editing workspace/t0016.4 Add a hierarchical subtask mini-list
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Render every descendant without truncation, scroll a highlight with line and
+page keys, and open child workspaces while preserving the parent context.
+
+* DONE t0017 Accept MOOT as a terminal state, aliasing SUPERSEDED
+:PROPERTIES:
+:ARCHIVE_TIME: [2026-08-17 Mon 03:11]
+:ARCHIVE_FILE: ~/src/ortask/todo.org
+:ARCHIVE_OLPATH: Tasks
+:ARCHIVE_CATEGORY: todo
+:ARCHIVE_TODO: DONE
+:END:
+Groundwork for the castabout rename; ortasklib lands first. Touches
+=TASK_STATES=/=TERMINAL_STATES= in =ortasklib/core.py=,
+=ensure_terminal_keyword= and the subtree-state defaults in =tasks.py=, and the
+terminal-state set in =menu.py=. Keep parsing =SUPERSEDED= as a terminal alias
+so mixed tool versions cannot silently degrade the keyword into headline prose.
+Rationale and phasing in =castabout/docs/roadmap.md=; archive-history handling
+overlaps =t0010=.

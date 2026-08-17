@@ -1,42 +1,12 @@
 * Tasks
-** DONE t0001 Remove AI slop from docs/taskwarrior.md
-** DONE t0002 create .org file if none exist in directory when using 'ort add' (calling it "tasks.org")
-** DONE t0003 Make it so that there doesn't have to be a 'Tasks' section in a .org file to use it
 ** TODO t0004 Test the 'ort repair' subcommand, particularly for adding identifiers to task lists without them
-** DONE t0005 Let's make it so that 'ort add' doesn't arbitrarily add a '* Tasks' section to anything other than maybe a new todo.org
-** DONE t0006 Implement in-memory saving, with writing happening on exit (and writing only happening after confirmation)
-*** DONE [#A] t0006.1 Add task-list transaction history and dirty visibility
-Record state and priority actions as undoable =OrgBuffer= transactions. Show
-file-level dirty status, support =C-/= undo and =C-r= redo, and make =C-s= save
-the whole Org file and reset history.
-** DONE t0007 When in menu.select_menu app mode, don't reorder the tasks based on TODO/DONE status, since that can make it so that a different task is selected upon hiting "t"
 ** TODO t0008 Make ortask.py work with .org files with tasks that don't have ids on them
 ** TODO [#A] t0009 Keep interactive sessions inside one bounded application
 Implement the persistent 20-row inline application described in =docs/roadmap.md=.
-*** DONE [#A] t0009.1 Add regression coverage for bounded repainting and terminal cleanup
-Use pipe-input and PTY tests to cover context changes, long lists, final exit,
-resize, and the absence of alternate-screen switching.
-*** DONE [#A] t0009.2 Add one persistent 20-row prompt_toolkit application shell
-Give the session a dynamic header, scrolling body, fixed command footer, and
-terminal-aware effective height.
-*** DONE [#A] t0009.3 Move project, task, detail, Help, and picker contexts onto a view stack
-Preserve stable selection and scroll state when pushing and popping views.
-*** DONE [#A] t0009.4 Move recovery and save/discard prompts into the bounded application
-Show confirmations and outcomes in the active region without appending output.
-**** DONE [#A] t0009.4.1 Move save/discard confirmation into the bounded task session
-**** DONE [#A] t0009.4.2 Move recovery choices into the bounded task session
-**** DONE [#A] t0009.4.3 Make operational footer notices transient
-Restore the current command hint about two seconds after warnings and feedback,
-without allowing an older timer to erase a newer or final outcome.
-*** DONE [#A] t0009.5 Suspend and resume the session around the external editor
-Use prompt_toolkit terminal handoff, then reload data and repaint the same view.
 *** TODO [#B] t0009.6 Define and test controlled final-frame and failure behavior
 Retain at most one factual final frame, erase misleading failure output, and
 restore the terminal after signals, exceptions, and resize failures.
-**** DONE [#B] t0009.6.1 Define and test controlled normal-exit retention
 **** TODO [#B] t0009.6.2 Harden signal, exception, and terminal-failure cleanup
-** DONE t0010 Archive completed tasks into a separate org file
-Implement the =todo.org_archive= archiving behavior described in =docs/roadmap.md=.
 ** TODO t0011 Remove obsolete one-shot interactive selector code
 Delete =_run_selector=, =select_menu=, =select_project_menu=, and their
 compatibility-only tests after confirming no supported production path uses
@@ -53,13 +23,6 @@ repeatable bottlenecks rather than relying only on subjective timing.
 Compare =Esc= with =b=/=q= to confirm prompt_toolkit's escape-sequence timeout
 is responsible, then reduce the delay without breaking arrow keys, Meta keys,
 or slower terminal connections.
-** DONE t0014 Add initial bounded task-title editing
-Establish a surgical heading rewrite and focused single-line input as
-groundwork for the full issue workspace in =t0016=.
-*** DONE t0014.1 Add a surgical heading-text rewrite helper
-Preserve the rest of the Org heading and reject text that would alter its
-structure when reparsed.
-*** DONE t0014.2 Add focused text entry to the bounded task-detail workflow
 ** TODO [#A] t0015 Expose state and priority as direct context actions
 Keep state and priority available on highlighted tasks in both the list and
 issue workspace rather than representing them as pseudo-field rows.
@@ -67,36 +30,13 @@ issue workspace rather than representing them as pseudo-field rows.
 *** TODO [#A] t0015.2 Add plain-key state and priority commands
 Keep Shift-arrow aligned with Org while providing discoverable alternatives
 for terminals that do not reliably report those chords.
-*** DONE [#A] t0015.3 Add compact state and priority workspace controls
-Keep both choices visible beside the title and body, use Left/Right while a
-choice has focus, and stage all task fields behind one save/discard boundary.
 ** TODO [#A] t0016 Build the full orti issue-editing workspace
 Turn =ortask.py -i= into the compact Org-backed issue editor described in
 =docs/roadmap.md=, with the external editor retained as a secondary escape
 hatch.
-*** DONE [#A] t0016.1 Define and test task-own-body mutation boundaries
-Add a surgical helper for replacing a task's own body without crossing into
-its heading, descendant or sibling subtrees, or unrelated prose. Cover bodies
-that contain drawers, planning lines, and blank lines.
-*** DONE [#A] t0016.2 Replace the action-row detail menu with a persistent workspace
-Show title, compact metadata, and body together; remove synthetic =TEXT=,
-=EDIT=, =STATE=, and =PRIOR= rows. Keep =e= on the parent task list while
-=t0016.4= adds the independently focusable subtask region.
-**** DONE [#A] t0016.2.1 Save workspace edits safely
-Make =Ctrl-S= save the entire Org file and reset field undo history. Warn on
-dirty workspace exit with Save, Continue Editing, and explicit Discard choices.
-*** DONE [#A] t0016.3 Add multiline task-body editing
-Edit the task's own body inside the existing bounded application and route
-changes through =OrgBuffer=, auto-save recovery, and save/discard handling.
 *** TODO [#A] t0016.4 Add a hierarchical subtask mini-list
 Show all descendants in Org source order with indentation, independent
 highlight and scrolling, direct actions, and child-workspace navigation.
-**** DONE [#A] t0016.4.1 Add a bounded subtask preview and editor button
-Establish a five-row descendant viewport at the bottom of the task workspace,
-followed by a focusable external-editor escape hatch.
-**** DONE [#A] t0016.4.2 Make the subtask viewport navigable
-Render every descendant without truncation, scroll a highlight with line and
-page keys, and open child workspaces while preserving the parent context.
 **** TODO [#A] t0016.4.3 Add direct subtask state and priority actions
 Apply task-list-style triage commands to the highlighted viewport task.
 *** TODO [#B] t0016.5 Add direct tag and standard metadata editing
@@ -104,14 +44,6 @@ Support useful Org-native issue metadata without inventing a private schema.
 *** TODO [#B] t0016.6 Add workspace terminal, safety, and performance coverage
 Cover long bodies and subtask lists, narrow and resized terminals, focus,
 Help, cancellation, save/discard/recovery, and PTY lifecycle behavior.
-** DONE t0017 Accept MOOT as a terminal state, aliasing SUPERSEDED
-Groundwork for the castabout rename; ortasklib lands first. Touches
-=TASK_STATES=/=TERMINAL_STATES= in =ortasklib/core.py=,
-=ensure_terminal_keyword= and the subtree-state defaults in =tasks.py=, and the
-terminal-state set in =menu.py=. Keep parsing =SUPERSEDED= as a terminal alias
-so mixed tool versions cannot silently degrade the keyword into headline prose.
-Rationale and phasing in =castabout/docs/roadmap.md=; archive-history handling
-overlaps =t0010=.
 ** TODO [#A] t0018 Make the orti viewport adaptive and optionally full-screen
 Fit short views to their content, grow richer views to the normal 20-row
 inline ceiling, and support deliberate fixed-height and full-screen modes as
