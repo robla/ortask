@@ -1919,6 +1919,82 @@ def test_inline_workspace_activates_focused_control() -> None:
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_workspace_moves_focused_list_region() -> None:
+    # Workspace list regions should receive line and page movement commands.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.layout import HSplit, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.output import DummyOutput
+
+    control = Window(FormattedTextControl("List", focusable=True))
+    moved: list[int] = []
+
+    def move(
+        session: menu.InlineMenuSession,
+        _focus_index: int,
+        direction: int,
+    ) -> None:
+        moved.append(direction)
+        if direction == -5:
+            session.pop_view()
+
+    view = menu.WorkspaceView(
+        HSplit([control]),
+        [control],
+        lambda _session: None,
+        list_focus_indices=frozenset({0}),
+        on_list_move=move,
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("\x1b[B\x1b[6~\x1b[A\x1b[5~")
+            menu.InlineMenuSession(view).run()
+
+    assert moved == [1, 5, -1, -5]
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_workspace_resumes_after_child_view() -> None:
+    # Popping a child should restore the same workspace and run its refresh hook.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.layout import HSplit, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.output import DummyOutput
+
+    control = Window(FormattedTextControl("Parent", focusable=True))
+    resumed: list[str] = []
+
+    def activate(session: menu.InlineMenuSession, _focus_index: int) -> None:
+        def close_child(
+            child_session: menu.InlineMenuSession,
+            _result: menu.MenuResult,
+        ) -> None:
+            child_session.pop_view()
+
+        session.push_view(
+            menu.MenuView([menu.MenuRow(1, "CHILD", "Child")], close_child)
+        )
+
+    view = menu.WorkspaceView(
+        HSplit([control]),
+        [control],
+        lambda _session: None,
+        on_resume=lambda _session: resumed.append("parent"),
+        activate_focus_indices=frozenset({0}),
+        on_activate=activate,
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("\r\r\x1b")
+            menu.InlineMenuSession(view).run()
+
+    assert resumed == ["parent"]
+    assert view.focused_index == 0
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_inline_menu_session_suspends_external_command(monkeypatch) -> None:
     # External commands should run through terminal handoff and resume one app.
     from prompt_toolkit.application import create_app_session
@@ -1983,11 +2059,12 @@ def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) 
         "Parent",
         "Body line",
     ]
-    assert len(view.focus_targets) == 5
+    assert len(view.focus_targets) == 6
     assert "Subtasks: 1" in view.summary
     assert view.focused_index == 2
     assert view.choice_focus_indices == frozenset({0, 1})
-    assert view.activate_focus_indices == frozenset({4})
+    assert view.list_focus_indices == frozenset({4})
+    assert view.activate_focus_indices == frozenset({4, 5})
     assert view.enter_moves_focus == frozenset({2})
     assert view.is_dirty is not None and view.is_dirty() is False
     assert view.status_text is not None and view.status_text() == ""
@@ -1997,8 +2074,10 @@ def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) 
     assert view.status_text() == "FILE MODIFIED: 1 edit"
 
 
-def test_task_workspace_subtasks_follow_org_tree_and_truncate(tmp_path: Path) -> None:
-    # The read-only preview should preserve Org hierarchy within a strict cap.
+def test_task_workspace_subtasks_follow_org_tree_without_truncation(
+    tmp_path: Path,
+) -> None:
+    # The scroll model should retain every descendant in Org hierarchy order.
     org_file = write(
         tmp_path / "tasks.org",
         """
@@ -2019,9 +2098,11 @@ def test_task_workspace_subtasks_follow_org_tree_and_truncate(tmp_path: Path) ->
     parent = projtui.load_menu_items(buf)[0]
 
     descendants = projtui._descendant_subtasks(buf, parent)
-    fragments, height = projtui._workspace_subtask_fragments(
+    fragments = projtui._workspace_subtask_fragments(
         parent.task,
         descendants,
+        5,
+        active=True,
     )
     rendered = "".join(text for _style, text in fragments)
 
@@ -2035,9 +2116,97 @@ def test_task_workspace_subtasks_follow_org_tree_and_truncate(tmp_path: Path) ->
     ]
     assert "t9001 First child" in rendered
     assert "  t9002 Grandchild" in rendered
-    assert "... 2 more subtask(s)" in rendered
+    assert "t9006 Fifth child" in rendered
+    assert "more subtask" not in rendered
     assert "t9998" not in rendered
-    assert height == projtui.WORKSPACE_SUBTASK_LINE_LIMIT
+    assert ("[SetCursorPosition]", "") in fragments
+    assert any(
+        style == "class:selected.todo" and "t9006 Fifth child" in text
+        for style, text in fragments
+    )
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_task_workspace_subtask_viewport_scrolls_to_selection(tmp_path: Path) -> None:
+    # Selecting an off-screen descendant should scroll the five-row viewport.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n"
+        "** TODO t0001 Parent\n"
+        "*** TODO t0001.1 Child one\n"
+        "*** TODO t0001.2 Child two\n"
+        "*** TODO t0001.3 Child three\n"
+        "*** TODO t0001.4 Child four\n"
+        "*** TODO t0001.5 Child five\n"
+        "*** TODO t0001.6 Child six\n",
+    )
+    buf = projtui.OrgBuffer(org_file)
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    view = controller._focus_view(projtui.load_menu_items(buf)[0])
+    assert isinstance(view, menu.WorkspaceView)
+    assert view.on_list_move is not None
+
+    class QuietSession:
+        def set_message(self, _message) -> None:
+            pass
+
+    view.on_list_move(QuietSession(), 4, 5)
+    view.focused_index = 4
+    viewport = view.focus_targets[4]
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("\x1b")
+            menu.InlineMenuSession(view).run()
+
+    assert viewport.render_info.window_height == projtui.WORKSPACE_SUBTASK_HEIGHT
+    assert viewport.vertical_scroll <= 5
+    assert 5 < viewport.vertical_scroll + projtui.WORKSPACE_SUBTASK_HEIGHT
+
+
+def test_task_workspace_opens_selected_subtask_workspace(tmp_path: Path) -> None:
+    # Enter on the subtask region should push the selected child's workspace.
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n"
+        "** TODO t0001 Parent\n"
+        "*** TODO t0001.1 First child\n"
+        "*** TODO t0001.2 Second child\n",
+    )
+    buf = projtui.OrgBuffer(org_file)
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    parent_view = controller._focus_view(projtui.load_menu_items(buf)[0])
+    pushed: list[menu.InlineView] = []
+
+    class ImmediateSession:
+        def set_message(self, _message) -> None:
+            pass
+
+        def push_view(self, view: menu.InlineView) -> None:
+            pushed.append(view)
+
+    session = ImmediateSession()
+    assert isinstance(parent_view, menu.WorkspaceView)
+    assert parent_view.on_list_move is not None
+    assert parent_view.on_activate is not None
+    assert parent_view.is_dirty is not None
+    parent_view.focus_targets[2].buffer.insert_text(" draft")
+    parent_view.focused_index = 4
+
+    parent_view.on_list_move(session, 4, 1)
+    parent_view.on_activate(session, 4)
+
+    assert len(pushed) == 1
+    assert isinstance(pushed[0], menu.WorkspaceView)
+    assert pushed[0].title == "Edit t0001.2"
+    assert parent_view.focused_index == 4
+    assert parent_view.focus_targets[2].text == "Parent draft"
+    assert parent_view.is_dirty() is True
 
 
 def test_task_workspace_button_opens_editor_at_task_line(

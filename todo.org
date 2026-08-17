@@ -92,8 +92,13 @@ changes through =OrgBuffer=, auto-save recovery, and save/discard handling.
 Show all descendants in Org source order with indentation, independent
 highlight and scrolling, direct actions, and child-workspace navigation.
 **** DONE [#A] t0016.4.1 Add a bounded subtask preview and editor button
-Show a five-row read-only descendant preview at the bottom of the task
-workspace, followed by a focusable external-editor escape hatch.
+Establish a five-row descendant viewport at the bottom of the task workspace,
+followed by a focusable external-editor escape hatch.
+**** DONE [#A] t0016.4.2 Make the subtask viewport navigable
+Render every descendant without truncation, scroll a highlight with line and
+page keys, and open child workspaces while preserving the parent context.
+**** TODO [#A] t0016.4.3 Add direct subtask state and priority actions
+Apply task-list-style triage commands to the highlighted viewport task.
 *** TODO [#B] t0016.5 Add direct tag and standard metadata editing
 Support useful Org-native issue metadata without inventing a private schema.
 *** TODO [#B] t0016.6 Add workspace terminal, safety, and performance coverage

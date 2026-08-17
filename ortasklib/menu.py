@@ -160,9 +160,15 @@ class WorkspaceView:
     focused_index: int = 0
     is_dirty: Callable[[], bool] | None = None
     on_back: Callable[["InlineMenuSession"], bool] | None = None
+    on_resume: Callable[["InlineMenuSession"], None] | None = None
     status_text: Callable[[], str] | None = None
     choice_focus_indices: frozenset[int] = frozenset()
     on_choice_change: (
+        Callable[["InlineMenuSession", int, int], None] | None
+    ) = None
+    list_focus_indices: frozenset[int] = frozenset()
+    list_page_size: int = 5
+    on_list_move: (
         Callable[["InlineMenuSession", int, int], None] | None
     ) = None
     activate_focus_indices: frozenset[int] = frozenset()
@@ -507,6 +513,13 @@ class InlineMenuSession:
             and self.current_view.focused_index
             in self.current_view.activate_focus_indices
         )
+        workspace_list_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, WorkspaceView)
+            and self.current_view.on_list_move is not None
+            and self.current_view.focused_index
+            in self.current_view.list_focus_indices
+        )
         input_active = Condition(
             lambda: not self.help_visible
             and isinstance(
@@ -597,6 +610,35 @@ class InlineMenuSession:
         @bindings.add("enter", filter=workspace_choice_active, eager=True)
         def next_workspace_choice(_event) -> None:
             change_workspace_choice(1)
+
+        def move_workspace_list(delta: int) -> None:
+            view = self.current_view
+            assert isinstance(view, WorkspaceView)
+            assert view.on_list_move is not None
+            view.on_list_move(self, view.focused_index, delta)
+            self.application.invalidate()
+
+        @bindings.add("up", filter=workspace_list_active, eager=True)
+        @bindings.add("k", filter=workspace_list_active, eager=True)
+        def previous_workspace_list_item(_event) -> None:
+            move_workspace_list(-1)
+
+        @bindings.add("down", filter=workspace_list_active, eager=True)
+        @bindings.add("j", filter=workspace_list_active, eager=True)
+        def next_workspace_list_item(_event) -> None:
+            move_workspace_list(1)
+
+        @bindings.add("pageup", filter=workspace_list_active, eager=True)
+        def previous_workspace_list_page(_event) -> None:
+            view = self.current_view
+            assert isinstance(view, WorkspaceView)
+            move_workspace_list(-view.list_page_size)
+
+        @bindings.add("pagedown", filter=workspace_list_active, eager=True)
+        def next_workspace_list_page(_event) -> None:
+            view = self.current_view
+            assert isinstance(view, WorkspaceView)
+            move_workspace_list(view.list_page_size)
 
         @bindings.add("enter", filter=workspace_activate_active, eager=True)
         def activate_workspace_control(_event) -> None:
@@ -764,7 +806,10 @@ class InlineMenuSession:
             return
         self.views.pop()
         resumed = self.current_view
-        if isinstance(resumed, MenuView) and resumed.on_resume is not None:
+        if (
+            isinstance(resumed, (MenuView, WorkspaceView))
+            and resumed.on_resume is not None
+        ):
             resumed.on_resume(self)
         self._replace_message(message)
         self._activate_current_view()

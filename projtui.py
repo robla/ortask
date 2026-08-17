@@ -19,13 +19,20 @@ from pathlib import Path
 try:
     from prompt_toolkit.document import Document
     from prompt_toolkit.formatted_text import FormattedText
-    from prompt_toolkit.layout import FormattedTextControl, HSplit, VSplit, Window
+    from prompt_toolkit.layout import (
+        FormattedTextControl,
+        HSplit,
+        ScrollOffsets,
+        VSplit,
+        Window,
+    )
     from prompt_toolkit.widgets import TextArea
 except ImportError:  # pragma: no cover - optional interactive dependency
     Document = None
     FormattedText = None
     FormattedTextControl = None
     HSplit = None
+    ScrollOffsets = None
     VSplit = None
     Window = None
     TextArea = None
@@ -45,7 +52,7 @@ from ortasklib.manager import (
 
 
 DETAIL_LINE_LIMIT = 20
-WORKSPACE_SUBTASK_LINE_LIMIT = 5
+WORKSPACE_SUBTASK_HEIGHT = 5
 
 
 @dataclass(frozen=True)
@@ -551,18 +558,18 @@ def _descendant_subtasks(buf: OrgBuffer, item: MenuItem) -> list[MenuItem]:
 def _workspace_subtask_fragments(
     parent: core.TodoItem,
     subtasks: list[MenuItem],
-    limit: int = WORKSPACE_SUBTASK_LINE_LIMIT,
-) -> tuple[list[tuple[str, str]], int]:
-    line_limit = max(limit, 1)
-    truncated = len(subtasks) > line_limit
-    task_limit = line_limit - 1 if truncated else line_limit
-    visible = subtasks[:task_limit]
+    selected_index: int,
+    *,
+    active: bool,
+) -> list[tuple[str, str]]:
     fragments: list[tuple[str, str]] = []
-    if not visible and not truncated:
-        return [("class:dim", "  (none)\n")], 1
-    for subtask in visible:
+    if not subtasks:
+        return [("class:dim", "  (none)\n")]
+    selected_index = min(max(selected_index, 0), len(subtasks) - 1)
+    for index, subtask in enumerate(subtasks):
         assert subtask.task is not None
         depth = max(subtask.task.level - parent.level - 1, 0)
+        selected = index == selected_index
         state_style = (
             "class:status.todo"
             if subtask.task.state == "TODO"
@@ -572,17 +579,34 @@ def _workspace_subtask_fragments(
                 else "class:status.other"
             )
         )
-        fragments.append((state_style, f"  {subtask.task.state:<6}"))
+        cursor = "▶ " if selected else "  "
+        line = (
+            f"{cursor}{subtask.task.state:<6}  {'  ' * depth}"
+            f"{subtask.task.id} {subtask.task.text}\n"
+        )
+        if selected:
+            fragments.append(("[SetCursorPosition]", ""))
+        if selected and active:
+            selected_style = (
+                "class:selected.todo"
+                if subtask.task.state == "TODO"
+                else (
+                    "class:selected.done"
+                    if subtask.task.state == "DONE"
+                    else "class:selected.other"
+                )
+            )
+            fragments.append((selected_style, line))
+            continue
+        fragments.append(("", cursor))
+        fragments.append((state_style, f"{subtask.task.state:<6}"))
         fragments.append(
             (
                 "",
                 f"  {'  ' * depth}{subtask.task.id} {subtask.task.text}\n",
             )
         )
-    if truncated:
-        omitted = len(subtasks) - len(visible)
-        fragments.append(("class:dim", f"  ... {omitted} more subtask(s)\n"))
-    return fragments, len(visible) + (1 if truncated else 0)
+    return fragments
 
 
 def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
@@ -1295,6 +1319,7 @@ class InteractiveTaskController:
                 FormattedText,
                 FormattedTextControl,
                 HSplit,
+                ScrollOffsets,
                 Window,
                 VSplit,
                 TextArea,
@@ -1328,6 +1353,44 @@ class InteractiveTaskController:
             "priority": draft["priority"],
         }
         workspace: menu.WorkspaceView | None = None
+        descendant_subtasks = _descendant_subtasks(self.buf, item)
+        subtask_focus_index = 4 if descendant_subtasks else None
+        editor_focus_index = 5 if descendant_subtasks else 4
+        selected_subtask_id = [
+            descendant_subtasks[0].task.id
+            if descendant_subtasks and descendant_subtasks[0].task is not None
+            else None
+        ]
+        selected_subtask_fallback = [0]
+
+        def current_subtasks() -> list[MenuItem]:
+            return descendant_subtasks
+
+        def selected_subtask_index(subtasks: list[MenuItem]) -> int:
+            if not subtasks:
+                selected_subtask_id[0] = None
+                selected_subtask_fallback[0] = 0
+                return 0
+            for index, subtask in enumerate(subtasks):
+                if (
+                    subtask.task is not None
+                    and subtask.task.id == selected_subtask_id[0]
+                ):
+                    selected_subtask_fallback[0] = index
+                    return index
+            index = min(selected_subtask_fallback[0], len(subtasks) - 1)
+            assert subtasks[index].task is not None
+            selected_subtask_id[0] = subtasks[index].task.id
+            selected_subtask_fallback[0] = index
+            return index
+
+        def set_selected_subtask(subtasks: list[MenuItem], index: int) -> None:
+            if not subtasks:
+                return
+            index = min(max(index, 0), len(subtasks) - 1)
+            assert subtasks[index].task is not None
+            selected_subtask_id[0] = subtasks[index].task.id
+            selected_subtask_fallback[0] = index
 
         def is_dirty() -> bool:
             return (
@@ -1431,26 +1494,49 @@ class InteractiveTaskController:
                 always_hide_cursor=True,
             )
 
-        def subtask_panel(subtasks: list[MenuItem]):
-            fragments, height = _workspace_subtask_fragments(
-                item.task,
-                subtasks,
-            )
+        def subtask_panel():
+            def render():
+                subtasks = current_subtasks()
+                selected_index = selected_subtask_index(subtasks)
+                active = (
+                    workspace is not None
+                    and workspace.focused_index == subtask_focus_index
+                )
+                return FormattedText(
+                    _workspace_subtask_fragments(
+                        item.task,
+                        subtasks,
+                        selected_index,
+                        active=active,
+                    )
+                )
+
             return Window(
-                FormattedTextControl(FormattedText(fragments)),
-                height=height,
+                FormattedTextControl(
+                    render,
+                    focusable=bool(descendant_subtasks),
+                    show_cursor=False,
+                ),
+                height=lambda: min(
+                    max(len(current_subtasks()), 1), WORKSPACE_SUBTASK_HEIGHT
+                ),
                 wrap_lines=False,
+                scroll_offsets=ScrollOffsets(top=1, bottom=1),
                 always_hide_cursor=True,
             )
 
         state_control = compact_choice("State", "state", 0, 22)
         priority_control = compact_choice("Priority", "priority", 1, 20)
-        editor_control = compact_button("Open in external editor", 4, 27)
+        subtask_control = subtask_panel()
+        editor_control = compact_button(
+            "Open in external editor",
+            editor_focus_index,
+            27,
+        )
         compact_controls = VSplit(
             [state_control, Window(width=1), priority_control],
             height=1,
         )
-        descendant_subtasks = _descendant_subtasks(self.buf, item)
 
         container = HSplit(
             [
@@ -1460,7 +1546,7 @@ class InteractiveTaskController:
                 label("Body"),
                 body_area,
                 label("Subtasks"),
-                subtask_panel(descendant_subtasks),
+                subtask_control,
                 editor_control,
             ]
         )
@@ -1637,11 +1723,33 @@ class InteractiveTaskController:
                 )
             session.set_message(None)
 
+        def move_subtask_list(
+            session: menu.InlineMenuSession,
+            focus_index: int,
+            direction: int,
+        ) -> None:
+            if focus_index != subtask_focus_index:
+                return
+            subtasks = current_subtasks()
+            selected = selected_subtask_index(subtasks)
+            set_selected_subtask(subtasks, selected + direction)
+            session.set_message(None)
+
         def activate_control(
             session: menu.InlineMenuSession,
             focus_index: int,
         ) -> None:
-            if focus_index != 4:
+            if focus_index == subtask_focus_index:
+                subtasks = current_subtasks()
+                if not subtasks:
+                    session.set_transient_message(
+                        f"{task_id} has no subtasks to open"
+                    )
+                    return
+                selected = selected_subtask_index(subtasks)
+                session.push_view(self._focus_view(subtasks[selected]))
+                return
+            if focus_index != editor_focus_index:
                 return
             if is_dirty():
                 session.push_view(editor_warning_view())
@@ -1650,23 +1758,43 @@ class InteractiveTaskController:
 
         tags = item.task.tags or "none"
         subtask_count = len(descendant_subtasks)
+
+        def summary(count: int) -> str:
+            return (
+                f"Tags: {tags} · Subtasks: {count} · "
+                f"Line: {item.task.line_num + 1}"
+            )
+
+        def refresh_subtasks(_session: menu.InlineMenuSession) -> None:
+            nonlocal descendant_subtasks
+            descendant_subtasks = _descendant_subtasks(
+                self.buf,
+                _refresh_item(self.buf, item),
+            )
+            selected_subtask_index(descendant_subtasks)
+            if workspace is not None:
+                workspace.summary = summary(len(descendant_subtasks))
+
+        focus_targets = [
+            state_control,
+            priority_control,
+            title_area,
+            body_area,
+        ]
+        if subtask_focus_index is not None:
+            focus_targets.append(subtask_control)
+        focus_targets.append(editor_control)
+        activate_focus_indices = {editor_focus_index}
+        if subtask_focus_index is not None:
+            activate_focus_indices.add(subtask_focus_index)
         workspace = menu.WorkspaceView(
             container=container,
-            focus_targets=[
-                state_control,
-                priority_control,
-                title_area,
-                body_area,
-                editor_control,
-            ],
+            focus_targets=focus_targets,
             on_save=save_workspace,
             title=f"Edit {task_id}",
-            summary=(
-                f"Tags: {tags} · Subtasks: {subtask_count} · "
-                f"Line: {item.task.line_num + 1}"
-            ),
+            summary=summary(subtask_count),
             instruction=(
-                "Tab/S-Tab fields · ←/→ choice · Enter edit/open · "
+                "Tab/S-Tab fields · ↑/↓ subtasks · Enter open · "
                 "Ctrl-S save · C-g help · Esc back"
             ),
             help_entries=[
@@ -1676,6 +1804,9 @@ class InteractiveTaskController:
                 ("Enter (choice)", "Choose the next value"),
                 ("Enter (title)", "Move focus to the body"),
                 ("Enter (body)", "Insert a newline"),
+                ("Up/Down (subtasks)", "Move the subtask highlight"),
+                ("Page Up/Down", "Move five subtasks at a time"),
+                ("Enter (subtask)", "Open the highlighted child workspace"),
                 ("Enter (button)", "Open this task in the external editor"),
                 ("Ctrl-S", f"Save the entire {self.buf.path.name} file"),
                 ("Esc", "Return, warning first if edits are unsaved"),
@@ -1685,10 +1816,17 @@ class InteractiveTaskController:
             focused_index=2,
             is_dirty=is_dirty,
             on_back=back,
+            on_resume=refresh_subtasks,
             status_text=self._buffer_status,
             choice_focus_indices=frozenset({0, 1}),
             on_choice_change=change_choice,
-            activate_focus_indices=frozenset({4}),
+            list_focus_indices=(
+                frozenset({subtask_focus_index})
+                if subtask_focus_index is not None
+                else frozenset()
+            ),
+            on_list_move=move_subtask_list,
+            activate_focus_indices=frozenset(activate_focus_indices),
             on_activate=activate_control,
         )
 

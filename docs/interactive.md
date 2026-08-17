@@ -398,7 +398,7 @@ menu rows or child contexts. State and priority use one compact control row:
 
 ```text
 Edit tw26W26.0.3
-Tags: promo · Subtasks: 0 · Line: 18
+Tags: promo · Subtasks: 2 · Line: 18
 
  State [TODO]       Priority [B]
 Title
@@ -407,16 +407,16 @@ Body
 https://www.reddit.com/r/electorama/submit
 
 Subtasks
-  TODO    tw26W26.0.3.1 Record the posted URL
+▶ TODO    tw26W26.0.3.1 Record the posted URL
   DONE    tw26W26.0.3.2 Check the submission
 [ Open in external editor ]
 
-Tab/S-Tab fields · ←/→ choice · Enter edit/open · Ctrl-S save · Esc back
+Tab/S-Tab fields · ↑/↓ subtasks · Enter open · Ctrl-S save · Esc back
 ```
 
 Title has initial focus. Tab and Shift-Tab move among the four editable fields
-and the editor button. On State
-or Priority, Left/Right changes the value and Enter advances it. State cycles
+and, when present, the subtask viewport and editor button. On State or
+Priority, Left/Right changes the value and Enter advances it. State cycles
 through `TODO`, `DONE`, and `MOOT`; a parsed `SUPERSEDED` remains visible until
 changed, then follows the canonical `MOOT` position. Priority stops at the ends
 of `none -> C -> B -> A`. Enter moves from Title into Body; within Body it
@@ -434,11 +434,14 @@ four fields to the values loaded when the workspace opened or last saved; it
 does not discard older edits already buffered from the task list.
 
 The body boundary ends at the next Org heading, so child and sibling headings
-cannot be changed from the body control. A read-only panel shows up to five
-display rows of descendant tasks in Org source order, indented by heading
-depth; the final row reports any omitted descendants. The header count includes
-all descendants. `t0016.4` will make this region independently focusable and
-scrollable with subtask actions.
+cannot be changed from the body control. A five-row viewport contains every
+descendant task in Org source order, indented by heading depth. Focus it with
+Tab or Shift-Tab, move its highlight with Up/Down or `j`/`k`, and move five rows
+with Page Up/Page Down. The viewport scrolls to keep the selected descendant
+visible; it does not truncate the list. Enter opens the selected descendant's
+workspace. Back returns to the parent with its draft fields and subtask
+selection intact. The header count includes all descendants. Direct state and
+priority actions within the subtask viewport remain part of `t0016.4`.
 
 The bottom `[ Open in external editor ]` button uses the same terminal handoff
 and source-line targeting as `e` in the task list. Focus it with Tab or
