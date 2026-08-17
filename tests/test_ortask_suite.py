@@ -1558,6 +1558,75 @@ def test_inline_task_contexts_share_one_bounded_application(
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_transient_message_restores_view_hint(monkeypatch) -> None:
+    # A transient warning should expire back to the current view's instruction.
+    import asyncio
+
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import DummyOutput
+
+    captured = []
+    view = menu.MenuView(
+        [menu.MenuRow(1, "TODO", "t0001 task")],
+        lambda _session, _result: None,
+        instruction="C-g help · Esc back",
+    )
+    with create_app_session(output=DummyOutput()):
+        session = menu.InlineMenuSession(view)
+        monkeypatch.setattr(
+            session.application,
+            "create_background_task",
+            lambda coroutine: captured.append(coroutine),
+        )
+        monkeypatch.setattr(session.application, "invalidate", lambda: None)
+
+        session.set_transient_message("No visible subtasks", timeout=0)
+        assert "No visible subtasks" in str(session._render_footer())
+        asyncio.run(captured.pop())
+
+    assert session.message is None
+    assert "C-g help · Esc back" in str(session._render_footer())
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_stale_transient_timer_cannot_clear_newer_message(monkeypatch) -> None:
+    # Replaced timers must not erase a newer warning or persistent save outcome.
+    import asyncio
+
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import DummyOutput
+
+    captured = []
+    view = menu.MenuView([], lambda _session, _result: None)
+    with create_app_session(output=DummyOutput()):
+        session = menu.InlineMenuSession(view)
+        monkeypatch.setattr(
+            session.application,
+            "create_background_task",
+            lambda coroutine: captured.append(coroutine),
+        )
+        monkeypatch.setattr(session.application, "invalidate", lambda: None)
+
+        session.set_transient_message("first", timeout=0)
+        first = captured.pop()
+        session.set_transient_message("second", timeout=0)
+        second = captured.pop()
+        asyncio.run(first)
+        assert session.message == "second"
+
+        session.set_message("Saved changes")
+        asyncio.run(second)
+        assert session.message == "Saved changes"
+
+        session.set_transient_message("third", timeout=0)
+        third = captured.pop()
+        session.replace_view(menu.MenuView([], lambda _session, _result: None))
+        asyncio.run(third)
+
+    assert session.message is None
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_inline_menu_session_clamps_height_and_scrolls() -> None:
     # A bounded session should reserve one terminal row and scroll its body.
     from prompt_toolkit.application import create_app_session
@@ -2554,6 +2623,27 @@ def test_load_menu_items_defaults_to_all_task_states(tmp_path: Path) -> None:
     assert [item.task.id for item in projtui.load_menu_items(buf, filter_mode="done")] == [
         "t0002",
     ]
+
+
+def test_leaf_tree_navigation_uses_transient_warning(tmp_path: Path) -> None:
+    # Right on a leaf task should report a temporary notice, not a sticky footer.
+    org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 Leaf\n")
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = projtui.InteractiveTaskController(
+        project,
+        projtui.OrgBuffer(org_file),
+        include_done=True,
+    )
+    view = controller.initial_view()
+    notices: list[str] = []
+
+    class NoticeSession:
+        def set_transient_message(self, message: str) -> None:
+            notices.append(message)
+
+    view.on_result(NoticeSession(), menu.MenuResult("tree_right", 0))
+
+    assert notices == ["t0001 has no visible subtasks"]
 
 
 def test_anchor_index_follows_task_and_clamps() -> None:

@@ -220,6 +220,11 @@ safe default for both Enter and Back. Outcomes appear in the footer, and
 canceling an exit returns to the live task list with edits intact. The numbered
 fallback deliberately retains its plain prompts.
 
+Operational warnings and feedback use a transient footer message that restores
+the current command hint after about two seconds. Replacing a notice or leaving
+its view cancels the older timeout so it cannot clear newer text. Final save,
+discard, and recovery outcomes remain persistent.
+
 Keep the existing `OrgBuffer` safety contract: navigation is read-only, edits
 remain buffered and mirrored to the auto-save file, and the real Org file is
 written only through an explicit save path. State and priority actions are

@@ -74,6 +74,12 @@ In highlight-bar mode, `C-g` replaces the rows with a modal help view; `C-g`,
 actions use `menu.MenuAction` metadata so adding a binding also adds its key and
 description to this help view.
 
+Nonfinal notices temporarily replace the footer hint. Warnings such as `task
+has no visible subtasks`, boundary notices, and undo/redo feedback clear after
+about two seconds, restoring the current view's command hint. A newer message
+or view transition cancels the old timeout. Final save, discard, and recovery
+outcomes remain persistent.
+
 Treat the interactive UI as a stack. Outside a focused text field, `Esc`, `b`,
 and `q` are synonyms for popping its top layer: help returns to the underlying
 menu, a subtask returns to its parent task, a task focus view returns to its

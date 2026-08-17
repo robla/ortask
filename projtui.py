@@ -1102,17 +1102,17 @@ class InteractiveTaskController:
                 else self.buf.redo()
             )
             if description is None:
-                session.set_message(f"Nothing to {result.action}")
+                session.set_transient_message(f"Nothing to {result.action}")
                 return
             session.replace_view(self._task_view(selected_id, fallback))
             verb = "Undid" if result.action == "undo" else "Redid"
-            session.set_message(f"{verb}: {description}")
+            session.set_transient_message(f"{verb}: {description}")
             return
 
         if result.action == "fold_all":
             expandable_ids = set(child_ids)
             if not expandable_ids:
-                session.set_message("No task subtrees to expand")
+                session.set_transient_message("No task subtrees to expand")
                 return
             if expandable_ids <= self.expanded_task_ids:
                 self.expanded_task_ids.clear()
@@ -1138,7 +1138,9 @@ class InteractiveTaskController:
             return
         if result.action in {"fold", "tree_left", "tree_right"}:
             if item.task is None:
-                session.set_message("This Org heading has no task subtree")
+                session.set_transient_message(
+                    "This Org heading has no task subtree"
+                )
                 return
             task_id = item.task.id
             children = [
@@ -1148,7 +1150,9 @@ class InteractiveTaskController:
             ]
             if result.action == "fold":
                 if not children:
-                    session.set_message(f"{task_id} has no visible subtasks")
+                    session.set_transient_message(
+                        f"{task_id} has no visible subtasks"
+                    )
                     return
                 if task_id in self.expanded_task_ids:
                     self.expanded_task_ids.remove(task_id)
@@ -1158,7 +1162,9 @@ class InteractiveTaskController:
                 return
             if result.action == "tree_right":
                 if not children:
-                    session.set_message(f"{task_id} has no visible subtasks")
+                    session.set_transient_message(
+                        f"{task_id} has no visible subtasks"
+                    )
                     return
                 if task_id not in self.expanded_task_ids:
                     self.expanded_task_ids.add(task_id)
@@ -1173,7 +1179,9 @@ class InteractiveTaskController:
             else:
                 target_id = parent_ids.get(task_id)
             if target_id is None:
-                session.set_message(f"{task_id} is already at the tree root")
+                session.set_transient_message(
+                    f"{task_id} is already at the tree root"
+                )
                 return
             session.replace_view(self._task_view(target_id, fallback))
             return
@@ -1380,10 +1388,12 @@ class InteractiveTaskController:
                     source = core.lines_to_text(new_lines)
                     changed_fields.append("priority")
             except tasks.TaskNotFound:
-                session.set_message(f"task {task_id} no longer exists")
+                session.set_transient_message(
+                    f"task {task_id} no longer exists"
+                )
                 return False
             except ValueError as exc:
-                session.set_message(str(exc))
+                session.set_transient_message(str(exc))
                 return False
 
             if changed_fields:
@@ -1525,7 +1535,7 @@ class InteractiveTaskController:
 
         def clear_saved_message(_buffer) -> None:
             if self.session is not None and is_dirty():
-                self.session.message = None
+                self.session.set_message(None)
 
         title_area.buffer.on_text_changed += clear_saved_message
         body_area.buffer.on_text_changed += clear_saved_message

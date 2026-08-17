@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -438,6 +439,7 @@ class InlineMenuSession:
     DEFAULT_HEIGHT = 20
     MINIMUM_HEIGHT = 6
     RESERVED_TERMINAL_ROWS = 1
+    TRANSIENT_MESSAGE_SECONDS = 2.0
 
     def __init__(
         self,
@@ -461,6 +463,8 @@ class InlineMenuSession:
         self.effective_height = self.requested_height
         self.help_visible = False
         self.message: str | None = None
+        self._message_generation = 0
+        self._message_task: Any = None
         self.final_message = final_message
         self.error: str | None = None
 
@@ -708,7 +712,7 @@ class InlineMenuSession:
             view.clamp_focus()
         self.views.append(view)
         self.help_visible = False
-        self.message = None
+        self._replace_message(None)
         self._activate_current_view()
         self.application.invalidate()
 
@@ -719,12 +723,13 @@ class InlineMenuSession:
             view.clamp_focus()
         self.views[-1] = view
         self.help_visible = False
+        self._replace_message(None)
         self._activate_current_view()
         self.application.invalidate()
 
     def pop_view(self, *, message: str | None = None) -> None:
         self.help_visible = False
-        self.message = None
+        self._replace_message(None)
         active = self.current_view
         on_back = (
             active.on_back
@@ -737,7 +742,7 @@ class InlineMenuSession:
         if message is not None:
             self.final_message = message
         if len(self.views) == 1:
-            self.message = self.final_message
+            self._replace_message(self.final_message)
             self.application.erase_when_done = False
             self.application.exit(result=MenuResult("back", None))
             return
@@ -745,13 +750,44 @@ class InlineMenuSession:
         resumed = self.current_view
         if isinstance(resumed, MenuView) and resumed.on_resume is not None:
             resumed.on_resume(self)
-        self.message = message
+        self._replace_message(message)
         self._activate_current_view()
         self.application.invalidate()
 
     def set_message(self, message: str | None) -> None:
-        self.message = message
+        """Show a persistent message until another action replaces it."""
+        self._replace_message(message)
         self.application.invalidate()
+
+    def set_transient_message(
+        self,
+        message: str,
+        *,
+        timeout: float = TRANSIENT_MESSAGE_SECONDS,
+    ) -> None:
+        """Show ``message`` briefly, then restore the current view's hint."""
+        generation = self._replace_message(message)
+        self.application.invalidate()
+
+        async def expire() -> None:
+            await asyncio.sleep(timeout)
+            if generation != self._message_generation:
+                return
+            self.message = None
+            self._message_task = None
+            self._message_generation += 1
+            if not self.application.is_done:
+                self.application.invalidate()
+
+        self._message_task = self.application.create_background_task(expire())
+
+    def _replace_message(self, message: str | None) -> int:
+        if self._message_task is not None:
+            self._message_task.cancel()
+            self._message_task = None
+        self._message_generation += 1
+        self.message = message
+        return self._message_generation
 
     def set_outcome(self, message: str) -> None:
         """Record a factual final outcome and show it in the active footer."""
@@ -766,14 +802,18 @@ class InlineMenuSession:
     ) -> None:
         """Temporarily hand the terminal to ``func``, then repaint this view."""
         if run_in_terminal is None:
-            self.set_message("prompt_toolkit terminal handoff is unavailable")
+            self.set_transient_message(
+                "prompt_toolkit terminal handoff is unavailable"
+            )
             return
 
         async def run() -> None:
             try:
                 await run_in_terminal(func, in_executor=True)
             except OSError as exc:
-                self.message = f"could not run external command: {exc}"
+                self.set_transient_message(
+                    f"could not run external command: {exc}"
+                )
             else:
                 if on_done is not None:
                     on_done()
@@ -865,7 +905,7 @@ class InlineMenuSession:
         view = self.current_view
         if isinstance(view, (TextInputView, MultilineInputView)):
             view.text = buffer.text
-            self.message = None
+            self._replace_message(None)
 
     def _input_area(self, view: TextInputView | MultilineInputView):
         if isinstance(view, MultilineInputView):
