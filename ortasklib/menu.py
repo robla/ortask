@@ -130,7 +130,20 @@ class TextInputView:
     cancel_help: str = "Cancel without changing the task"
 
 
-InlineView = MenuView | TextInputView
+@dataclass
+class MultilineInputView:
+    """One focused multiline input view in an :class:`InlineMenuSession`."""
+
+    text: str
+    on_accept: Callable[["InlineMenuSession", str], None]
+    title: str = ""
+    summary: str = ""
+    instruction: str = "Enter newline · Ctrl-S apply · Esc cancel · C-g help"
+    accept_help: str = "Apply the edited text"
+    cancel_help: str = "Cancel without changing the task"
+
+
+InlineView = MenuView | TextInputView | MultilineInputView
 
 
 class ContextCancelled(Exception):
@@ -311,11 +324,21 @@ def _selector_help(
     return _command_help(entries)
 
 
-def _text_input_help(view: TextInputView) -> FormattedText:
+def _text_input_help(
+    view: TextInputView | MultilineInputView,
+) -> FormattedText:
+    edit_help = "Edit the field"
+    accept_key = "Enter"
+    entries: list[tuple[str, str]] = []
+    if isinstance(view, MultilineInputView):
+        edit_help = "Edit the task body"
+        accept_key = "Ctrl-S"
+        entries.append(("Enter", "Insert a newline"))
     return _command_help(
         [
-            ("Typing", "Edit the field"),
-            ("Enter", view.accept_help),
+            ("Typing", edit_help),
+            *entries,
+            (accept_key, view.accept_help),
             ("Esc", view.cancel_help),
             ("C-g", "Show or close this help"),
         ]
@@ -403,9 +426,20 @@ class InlineMenuSession:
             lambda: not self.help_visible
             and isinstance(self.current_view, MenuView)
         )
-        input_active = Condition(
+        singleline_input_active = Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, TextInputView)
+        )
+        multiline_input_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, MultilineInputView)
+        )
+        input_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(
+                self.current_view,
+                (TextInputView, MultilineInputView),
+            )
         )
         help_active = Condition(lambda: self.help_visible)
 
@@ -440,11 +474,17 @@ class InlineMenuSession:
         def back(_event) -> None:
             self.pop_view()
 
-        @bindings.add("enter", filter=input_active, eager=True)
+        @bindings.add("enter", filter=singleline_input_active, eager=True)
         def accept_text(_event) -> None:
             view = self.current_view
             assert isinstance(view, TextInputView)
             view.on_accept(self, self.text_area.text)
+
+        @bindings.add("c-s", filter=multiline_input_active, eager=True)
+        def accept_multiline_text(_event) -> None:
+            view = self.current_view
+            assert isinstance(view, MultilineInputView)
+            view.on_accept(self, self.multiline_text_area.text)
 
         @bindings.add("escape", filter=input_active, eager=True)
         def cancel_text(_event) -> None:
@@ -503,7 +543,13 @@ class InlineMenuSession:
             prompt=self._render_input_prompt,
         )
         self.text_area.buffer.on_text_changed += self._input_changed
-        if isinstance(initial_view, TextInputView):
+        self.multiline_text_area = TextArea(
+            multiline=True,
+            wrap_lines=False,
+            scrollbar=True,
+        )
+        self.multiline_text_area.buffer.on_text_changed += self._input_changed
+        if isinstance(initial_view, (TextInputView, MultilineInputView)):
             self._load_input(initial_view)
         body = DynamicContainer(self._active_body)
         root = HSplit(
@@ -525,8 +571,8 @@ class InlineMenuSession:
             height=lambda: self.effective_height,
         )
         focused_element = (
-            self.text_area
-            if isinstance(initial_view, TextInputView)
+            self._input_area(initial_view)
+            if isinstance(initial_view, (TextInputView, MultilineInputView))
             else body_control
         )
         self.application = Application(
@@ -650,7 +696,7 @@ class InlineMenuSession:
     def _render_body(self) -> FormattedText:
         view = self.current_view
         if self.help_visible:
-            if isinstance(view, TextInputView):
+            if isinstance(view, (TextInputView, MultilineInputView)):
                 return _text_input_help(view)
             return _selector_help(
                 view.actions,
@@ -684,23 +730,28 @@ class InlineMenuSession:
     def _active_body(self):
         if self.help_visible or isinstance(self.current_view, MenuView):
             return self.body_window
-        return self.text_area
+        return self._input_area(self.current_view)
 
     def _input_changed(self, buffer) -> None:
         view = self.current_view
-        if isinstance(view, TextInputView):
+        if isinstance(view, (TextInputView, MultilineInputView)):
             view.text = buffer.text
             self.message = None
 
-    def _load_input(self, view: TextInputView) -> None:
-        self.text_area.buffer.set_document(
+    def _input_area(self, view: TextInputView | MultilineInputView):
+        if isinstance(view, MultilineInputView):
+            return self.multiline_text_area
+        return self.text_area
+
+    def _load_input(self, view: TextInputView | MultilineInputView) -> None:
+        self._input_area(view).buffer.set_document(
             Document(view.text, cursor_position=len(view.text)),
             bypass_readonly=True,
         )
 
     def _activate_current_view(self) -> None:
         view = self.current_view
-        if isinstance(view, TextInputView):
+        if isinstance(view, (TextInputView, MultilineInputView)):
             self._load_input(view)
         self._focus_current_view()
 
@@ -708,7 +759,7 @@ class InlineMenuSession:
         if self.help_visible or isinstance(self.current_view, MenuView):
             self.application.layout.focus(self.body_control)
         else:
-            self.application.layout.focus(self.text_area)
+            self.application.layout.focus(self._input_area(self.current_view))
 
     def _before_render(self, application) -> None:
         if application.is_done:

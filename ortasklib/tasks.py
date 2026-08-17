@@ -15,6 +15,7 @@ from .core import (
     BARE_HEADING_RE,
     HEADING_RE,
     NUMERIC_ID_RE,
+    ORG_HEADING_RE,
     TASK_STATES,
     WEEK_ID_PARTS_RE,
     TodoItem,
@@ -281,6 +282,36 @@ def change_text(text: str, task_id: str, target: str) -> list[str] | None:
 
     lines[item.line_num] = updated
     return lines
+
+
+def change_body(text: str, task_id: str, target: str) -> list[str] | None:
+    """Replace a task's own body without touching any following Org heading."""
+    if "\r" in target:
+        raise ValueError("task body must not contain carriage returns")
+    if any(ORG_HEADING_RE.match(line) for line in target.split("\n")):
+        raise ValueError(
+            "task body cannot create Org headings; use the external editor"
+        )
+
+    lines = text.splitlines()
+    item = find_by_id(parse_org(text), task_id)
+    if item is None:
+        raise TaskNotFound(task_id)
+
+    start = item.line_num + 1
+    end = next(
+        (
+            line_num
+            for line_num in range(start, len(lines))
+            if ORG_HEADING_RE.match(lines[line_num])
+        ),
+        len(lines),
+    )
+    if "\n".join(lines[start:end]) == target:
+        return None
+
+    replacement = [] if target == "" else target.split("\n")
+    return [*lines[:start], *replacement, *lines[end:]]
 
 
 PRIORITIES = ("A", "B", "C")

@@ -1137,6 +1137,78 @@ def test_change_text_rejects_invalid_or_ambiguous_titles() -> None:
         tasks.change_text(original, "t9999", "Missing")
 
 
+def test_change_body_replaces_only_the_task_own_body() -> None:
+    # Body edits preserve the heading, descendants, siblings, and later sections.
+    original = (
+        "* Tasks\n"
+        "** TODO [#A] t0001 Parent  :work:\n"
+        "SCHEDULED: <2026-08-17 Mon>\n"
+        ":PROPERTIES:\n"
+        ":OWNER: robla\n"
+        ":END:\n"
+        "\n"
+        "Old description\n"
+        "*** TODO t0001.1 Child\n"
+        "Child body\n"
+        "** TODO t0002 Sibling\n"
+        "Sibling body\n"
+        "* Notes\n"
+        "Unrelated prose\n"
+    )
+    replacement = (
+        "DEADLINE: <2026-08-18 Tue>\n"
+        ":PROPERTIES:\n"
+        ":OWNER: nobody\n"
+        ":END:\n"
+        "\n"
+        "New description"
+    )
+
+    changed = tasks.change_body(original, "t0001", replacement)
+
+    assert changed is not None
+    assert core.lines_to_text(changed) == (
+        "* Tasks\n"
+        "** TODO [#A] t0001 Parent  :work:\n"
+        f"{replacement}\n"
+        "*** TODO t0001.1 Child\n"
+        "Child body\n"
+        "** TODO t0002 Sibling\n"
+        "Sibling body\n"
+        "* Notes\n"
+        "Unrelated prose\n"
+    )
+    assert tasks.change_body(core.lines_to_text(changed), "t0001", replacement) is None
+
+
+def test_change_body_handles_empty_bodies_and_rejects_structure_changes() -> None:
+    # Body insertion/removal stays before children and cannot create Org headings.
+    original = (
+        "* Tasks\n"
+        "** TODO t0001 Parent\n"
+        "*** TODO t0001.1 Child\n"
+        "** TODO t0002 Sibling\n"
+    )
+
+    inserted = tasks.change_body(original, "t0001", "First line\n\nLast line")
+    assert inserted is not None
+    assert inserted[2:6] == [
+        "First line",
+        "",
+        "Last line",
+        "*** TODO t0001.1 Child",
+    ]
+    removed = tasks.change_body(core.lines_to_text(inserted), "t0001", "")
+    assert removed == original.splitlines()
+
+    with pytest.raises(ValueError, match="carriage returns"):
+        tasks.change_body(original, "t0001", "First\rSecond")
+    with pytest.raises(ValueError, match="cannot create Org headings"):
+        tasks.change_body(original, "t0001", "Prose\n*** TODO t0001.2 New child")
+    with pytest.raises(tasks.TaskNotFound):
+        tasks.change_body(original, "t9999", "Missing")
+
+
 def test_change_priority_preserves_task_heading_and_body() -> None:
     # Priority edits should touch only the cookie and round-trip back to the source.
     original = (
@@ -1469,7 +1541,7 @@ def test_inline_task_contexts_share_one_bounded_application(
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Include a canceled picker, then discard the buffered priority edit.
-            pin.send_text("\rjjjj\rq\x07qpqpk\rqqj\r")
+            pin.send_text("\rjjjjj\rq\x07qpqpk\rqqj\r")
             controller.run()
 
     assert len(applications) == 1
@@ -1675,6 +1747,35 @@ def test_inline_text_input_escape_restores_parent_without_accepting() -> None:
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_multiline_input_uses_enter_for_lines_and_ctrl_s_to_apply() -> None:
+    # Multiline focus must preserve Enter for body text and use Ctrl-S to apply.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    accepted: list[str] = []
+
+    def accept(session: menu.InlineMenuSession, text: str) -> None:
+        accepted.append(text)
+        session.pop_view()
+
+    def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+        if result.action == "select":
+            session.push_view(menu.MultilineInputView("Original", accept))
+
+    parent = menu.MenuView(
+        [menu.MenuRow(1, "BODY", "Edit body")],
+        handle,
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("\r\x15First line\rSecond line\x13q")
+            menu.InlineMenuSession(parent).run()
+
+    assert accepted == ["First line\nSecond line"]
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_inline_menu_session_suspends_external_command(monkeypatch) -> None:
     # External commands should run through terminal handoff and resume one app.
     from prompt_toolkit.application import create_app_session
@@ -1737,14 +1838,16 @@ def test_focus_editor_exposes_fields_and_subtasks(tmp_path: Path) -> None:
     assert [row.status for row in view.rows] == [
         "STATE",
         "PRIOR",
-        "TEXT",
+        "TITLE",
+        "BODY",
         "EDIT",
         "TODO",
     ]
-    assert [row.text for row in view.rows[:4]] == [
+    assert [row.text for row in view.rows[:5]] == [
         "TODO",
         "B",
         "Parent",
+        "1 line",
         "Open task in external editor",
     ]
     assert "Body line" in view.preamble
@@ -1777,6 +1880,53 @@ def test_bounded_task_text_edit_validates_buffers_and_saves(tmp_path: Path) -> N
         "* Tasks\n"
         "** TODO [#B] t0001 bqjkped renamed  :work:\n"
         "Body line\n"
+    )
+    assert buf.dirty is False
+    assert not buf.autosave_path.exists()
+    assert controller.session is not None
+    assert controller.session.final_message == "Saved changes to tasks.org"
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_bounded_task_editor_updates_title_and_multiline_body(tmp_path: Path) -> None:
+    # One bounded session should edit and save both issue title and own-body text.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(
+        tmp_path / "tasks.org",
+        (
+            "* Tasks\n"
+            "** TODO [#B] t0001 Original title  :work:\n"
+            "Old body\n"
+            "*** TODO t0001.1 Child\n"
+            "Child body\n"
+            "** TODO t0002 Neighbor\n"
+        ),
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Open details, edit TITLE, edit BODY, then save on leaving the file.
+            pin.send_text(
+                "\rjj\r\x15Renamed title\r"
+                "j\r\x15First body line\rSecond body line\x13"
+                "qq\r"
+            )
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == (
+        "* Tasks\n"
+        "** TODO [#B] t0001 Renamed title  :work:\n"
+        "First body line\n"
+        "Second body line\n"
+        "*** TODO t0001.1 Child\n"
+        "Child body\n"
+        "** TODO t0002 Neighbor\n"
     )
     assert buf.dirty is False
     assert not buf.autosave_path.exists()

@@ -1166,6 +1166,8 @@ class InteractiveTaskController:
             session.push_view(self._priority_view(item))
         elif action == "text":
             session.push_view(self._text_input_view(item))
+        elif action == "body":
+            session.push_view(self._body_input_view(item))
         elif action == "edit":
             self._suspend_for_editor(
                 session,
@@ -1208,6 +1210,38 @@ class InteractiveTaskController:
             prompt="Task text> ",
             accept_help="Apply the heading-text edit",
             cancel_help="Return to task details without changing text",
+        )
+
+    def _body_input_view(self, item: MenuItem) -> menu.MultilineInputView:
+        item = _refresh_item(self.buf, item)
+        assert item.task is not None
+        task_id = item.task.id
+
+        def accept(session: menu.InlineMenuSession, text: str) -> None:
+            try:
+                new_lines = tasks.change_body(self.buf.read(), task_id, text)
+            except tasks.TaskNotFound:
+                session.set_message(f"task {task_id} no longer exists")
+                return
+            except ValueError as exc:
+                session.set_message(str(exc))
+                return
+
+            if new_lines is None:
+                message = f"No body change for {task_id}"
+            else:
+                self.buf.apply(new_lines)
+                message = f"Updated body for {task_id}"
+            session.pop_view()
+            session.set_message(message)
+
+        return menu.MultilineInputView(
+            text="\n".join(item.task.body_lines),
+            on_accept=accept,
+            title=f"Edit task body: {task_id}",
+            summary="Descendant and sibling headings are outside this editor",
+            accept_help="Apply the body edit to the task buffer",
+            cancel_help="Return to task details without changing the body",
         )
 
     def _priority_view(self, item: MenuItem) -> menu.MenuView:
@@ -1361,7 +1395,14 @@ def _focus_rows(
     if item.task is not None:
         add("STATE", item.task.state, "state")
         add("PRIOR", item.task.priority or "none", "priority")
-        add("TEXT", item.task.text, "text")
+        add("TITLE", item.task.text, "text")
+        body_lines = item.task.body_lines
+        body_summary = (
+            f"{len(body_lines)} line{'s' if len(body_lines) != 1 else ''}"
+            if body_lines
+            else "(empty)"
+        )
+        add("BODY", body_summary, "body")
     add("EDIT", "Open task in external editor", "edit")
     for subtask in subtasks:
         assert subtask.task is not None

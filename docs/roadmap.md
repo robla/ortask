@@ -474,7 +474,17 @@ auto-save recovery remains available, and the source file changes only after
 the existing save flow. Body mutation needs a pure, surgical helper with tests
 covering drawers, planning lines, blank lines, nested tasks, sibling tasks, and
 unrelated prose. Title editing from `t0014` remains useful groundwork, but its
-current `TEXT` action row is transitional UI.
+action-row presentation is transitional UI.
+
+The transitional detail view now exposes `TITLE` and `BODY` rows. Title editing
+remains single-line and applies with Enter. Body editing uses a bounded
+multiline `TextArea`: Enter inserts a newline, `Ctrl-S` applies the edit to
+`OrgBuffer`, and Escape cancels it. `tasks.change_body()` replaces only the
+non-heading lines after the selected task heading and before the next Org
+heading; text that would create a heading is rejected so descendants, siblings,
+and unrelated sections cannot be absorbed accidentally. These controls satisfy
+`t0016.1` and `t0016.3`, but remain staging UI until `t0016.2` places title and
+body editing directly in the issue workspace and removes the pseudo-rows.
 
 ### Architecture Direction
 
@@ -493,8 +503,10 @@ second adopter exposes stable shared behavior or duplicated bugs.
 1. Finish abnormal terminal cleanup (`t0009.6.2`), remove obsolete selectors
    (`t0011`), and diagnose the standalone Escape delay (`t0013.1`).
 2. Define and test the task-own-body boundary and surgical mutation helper.
+   (Completed by `t0016.1`.)
 3. Replace the action-row detail menu with a persistent issue-workspace shell.
 4. Add multiline body editing within the existing buffer and save contract.
+   (Completed by `t0016.3`.)
 5. Complete direct state and priority actions in both list and workspace views.
 6. Add the hierarchical, independently scrollable subtask region.
 7. Add tag editing and terminal, recovery, resize, and performance coverage.

@@ -64,14 +64,14 @@ for terminals that do not reliably report those chords.
 Turn =ortask.py -i= into the compact Org-backed issue editor described in
 =docs/roadmap.md=, with the external editor retained as a secondary escape
 hatch.
-*** TODO [#A] t0016.1 Define and test task-own-body mutation boundaries
+*** DONE [#A] t0016.1 Define and test task-own-body mutation boundaries
 Add a surgical helper for replacing a task's own body without crossing into
 its heading, descendant or sibling subtrees, or unrelated prose. Cover bodies
 that contain drawers, planning lines, and blank lines.
 *** TODO [#A] t0016.2 Replace the action-row detail menu with a persistent workspace
 Show title, compact metadata, body, and subtask regions together; remove the
 synthetic =TEXT=, =EDIT=, =STATE=, and =PRIOR= rows while retaining =e=.
-*** TODO [#A] t0016.3 Add multiline task-body editing
+*** DONE [#A] t0016.3 Add multiline task-body editing
 Edit the task's own body inside the existing bounded application and route
 changes through =OrgBuffer=, auto-save recovery, and save/discard handling.
 *** TODO [#A] t0016.4 Add a hierarchical subtask mini-list
