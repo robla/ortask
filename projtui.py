@@ -45,6 +45,7 @@ from ortasklib.manager import (
 
 
 DETAIL_LINE_LIMIT = 20
+WORKSPACE_SUBTASK_LINE_LIMIT = 5
 
 
 @dataclass(frozen=True)
@@ -507,12 +508,34 @@ def _show_context(buf: OrgBuffer, item: MenuItem) -> None:
 def _direct_subtasks(buf: OrgBuffer, item: MenuItem) -> list[MenuItem]:
     if item.task is None:
         return []
+    return [
+        child
+        for child in _descendant_subtasks(buf, item)
+        if child.task is not None
+        and child.task.level == item.task.level + 1
+    ]
+
+
+def _descendant_subtasks(buf: OrgBuffer, item: MenuItem) -> list[MenuItem]:
+    if item.task is None:
+        return []
     selected = item.task
-    prefix = selected.id + "."
-    items = core.parse_org(buf.read())
+    text = buf.read()
+    lines = text.splitlines()
+    subtree_end = len(lines)
+    for line_num in range(selected.line_num + 1, len(lines)):
+        line = lines[line_num]
+        if not core.ORG_HEADING_RE.match(line):
+            continue
+        level = len(line.split(None, 1)[0])
+        if level <= selected.level:
+            subtree_end = line_num
+            break
     children = [
-        task for task in items
-        if task.id.startswith(prefix) and task.level == selected.level + 1
+        task
+        for task in core.parse_org(text)
+        if selected.line_num < task.line_num < subtree_end
+        and task.level > selected.level
     ]
     return [
         MenuItem(
@@ -523,6 +546,43 @@ def _direct_subtasks(buf: OrgBuffer, item: MenuItem) -> list[MenuItem]:
         )
         for task in children
     ]
+
+
+def _workspace_subtask_fragments(
+    parent: core.TodoItem,
+    subtasks: list[MenuItem],
+    limit: int = WORKSPACE_SUBTASK_LINE_LIMIT,
+) -> tuple[list[tuple[str, str]], int]:
+    line_limit = max(limit, 1)
+    truncated = len(subtasks) > line_limit
+    task_limit = line_limit - 1 if truncated else line_limit
+    visible = subtasks[:task_limit]
+    fragments: list[tuple[str, str]] = []
+    if not visible and not truncated:
+        return [("class:dim", "  (none)\n")], 1
+    for subtask in visible:
+        assert subtask.task is not None
+        depth = max(subtask.task.level - parent.level - 1, 0)
+        state_style = (
+            "class:status.todo"
+            if subtask.task.state == "TODO"
+            else (
+                "class:status.done"
+                if subtask.task.state in core.TERMINAL_STATES
+                else "class:status.other"
+            )
+        )
+        fragments.append((state_style, f"  {subtask.task.state:<6}"))
+        fragments.append(
+            (
+                "",
+                f"  {'  ' * depth}{subtask.task.id} {subtask.task.text}\n",
+            )
+        )
+    if truncated:
+        omitted = len(subtasks) - len(visible)
+        fragments.append(("class:dim", f"  ... {omitted} more subtask(s)\n"))
+    return fragments, len(visible) + (1 if truncated else 0)
 
 
 def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
@@ -1340,12 +1400,57 @@ class InteractiveTaskController:
                 always_hide_cursor=True,
             )
 
+        def compact_button(label_text: str, focus_index: int, width: int):
+            def render():
+                text = f"[ {label_text} ]"
+                focused = (
+                    workspace is not None
+                    and workspace.focused_index == focus_index
+                )
+                style = (
+                    "class:choice.focused"
+                    if focused
+                    else "class:field.label"
+                )
+                return FormattedText(
+                    [
+                        ("[SetCursorPosition]", ""),
+                        (style, text),
+                    ]
+                )
+
+            return Window(
+                FormattedTextControl(
+                    render,
+                    focusable=True,
+                    show_cursor=False,
+                ),
+                width=width,
+                height=1,
+                dont_extend_width=True,
+                always_hide_cursor=True,
+            )
+
+        def subtask_panel(subtasks: list[MenuItem]):
+            fragments, height = _workspace_subtask_fragments(
+                item.task,
+                subtasks,
+            )
+            return Window(
+                FormattedTextControl(FormattedText(fragments)),
+                height=height,
+                wrap_lines=False,
+                always_hide_cursor=True,
+            )
+
         state_control = compact_choice("State", "state", 0, 22)
         priority_control = compact_choice("Priority", "priority", 1, 20)
+        editor_control = compact_button("Open in external editor", 4, 27)
         compact_controls = VSplit(
             [state_control, Window(width=1), priority_control],
             height=1,
         )
+        descendant_subtasks = _descendant_subtasks(self.buf, item)
 
         container = HSplit(
             [
@@ -1354,6 +1459,9 @@ class InteractiveTaskController:
                 title_area,
                 label("Body"),
                 body_area,
+                label("Subtasks"),
+                subtask_panel(descendant_subtasks),
+                editor_control,
             ]
         )
 
@@ -1416,22 +1524,28 @@ class InteractiveTaskController:
             session.set_outcome(message)
             return True
 
-        def exit_warning_view() -> menu.MenuView:
+        def launch_editor(session: menu.InlineMenuSession) -> None:
+            self._suspend_for_editor(
+                session,
+                item.line_num,
+                lambda: session.replace_view(self._focus_view(item)),
+            )
+
+        def dirty_resolution_view(
+            *,
+            summary: str,
+            save_detail: str,
+            discard_detail: str,
+            on_saved: Callable[[menu.InlineMenuSession], None],
+            on_discarded: Callable[[menu.InlineMenuSession], None],
+        ) -> menu.MenuView:
             rows = [
-                menu.MenuRow(
-                    1,
-                    "SAVE",
-                    f"Save all changes to {self.buf.path.name} and return",
-                ),
+                menu.MenuRow(1, "SAVE", save_detail),
                 menu.MenuRow(2, "CONTINUE", "Return to the task workspace"),
-                menu.MenuRow(
-                    3,
-                    "DISCARD",
-                    "Discard unsaved task-field edits and return",
-                ),
+                menu.MenuRow(3, "DISCARD", discard_detail),
             ]
 
-            def handle_exit(
+            def handle_resolution(
                 session: menu.InlineMenuSession,
                 result: menu.MenuResult,
             ) -> None:
@@ -1443,28 +1557,47 @@ class InteractiveTaskController:
                 if result.index == 2:
                     discard_workspace_edits()
                     session.pop_view()
-                    session.pop_view(
-                        message=f"Discarded unsaved edits to {task_id}"
-                    )
+                    on_discarded(session)
                     return
 
                 session.pop_view()
                 if save_workspace(session):
-                    session.pop_view(
-                        message=f"Saved changes to {self.buf.path.name}"
-                    )
+                    on_saved(session)
 
             return menu.MenuView(
                 rows=rows,
-                on_result=handle_exit,
+                on_result=handle_resolution,
                 title=f"Unsaved task edits: {task_id}",
-                summary="One or more task fields differ from the workspace baseline",
+                summary=summary,
                 instruction=(
                     "↑↓/jk · ↵ choose · Esc/b/q continue editing"
                 ),
                 select_help="Choose how to handle unsaved task edits",
-                back_help="Continue editing without saving or discarding",
+                back_help="Continue editing without resolving changes",
                 selected_index=1,
+            )
+
+        def exit_warning_view() -> menu.MenuView:
+            def finish_saved_exit(session: menu.InlineMenuSession) -> None:
+                session.pop_view(
+                    message=f"Saved changes to {self.buf.path.name}"
+                )
+
+            def finish_discarded_exit(session: menu.InlineMenuSession) -> None:
+                session.pop_view(
+                    message=f"Discarded unsaved edits to {task_id}"
+                )
+
+            return dirty_resolution_view(
+                summary=(
+                    "One or more task fields differ from the workspace baseline"
+                ),
+                save_detail=(
+                    f"Save all changes to {self.buf.path.name} and return"
+                ),
+                discard_detail="Discard unsaved task-field edits and return",
+                on_saved=finish_saved_exit,
+                on_discarded=finish_discarded_exit,
             )
 
         def back(session: menu.InlineMenuSession) -> bool:
@@ -1472,6 +1605,17 @@ class InteractiveTaskController:
                 return True
             session.push_view(exit_warning_view())
             return False
+
+        def editor_warning_view() -> menu.MenuView:
+            return dirty_resolution_view(
+                summary="Resolve workspace edits before opening the editor",
+                save_detail=(
+                    f"Save all changes to {self.buf.path.name} and open editor"
+                ),
+                discard_detail="Discard workspace edits and open editor",
+                on_saved=launch_editor,
+                on_discarded=launch_editor,
+            )
 
         def change_choice(
             session: menu.InlineMenuSession,
@@ -1493,8 +1637,19 @@ class InteractiveTaskController:
                 )
             session.set_message(None)
 
+        def activate_control(
+            session: menu.InlineMenuSession,
+            focus_index: int,
+        ) -> None:
+            if focus_index != 4:
+                return
+            if is_dirty():
+                session.push_view(editor_warning_view())
+            else:
+                launch_editor(session)
+
         tags = item.task.tags or "none"
-        subtask_count = len(_direct_subtasks(self.buf, item))
+        subtask_count = len(descendant_subtasks)
         workspace = menu.WorkspaceView(
             container=container,
             focus_targets=[
@@ -1502,6 +1657,7 @@ class InteractiveTaskController:
                 priority_control,
                 title_area,
                 body_area,
+                editor_control,
             ],
             on_save=save_workspace,
             title=f"Edit {task_id}",
@@ -1510,7 +1666,7 @@ class InteractiveTaskController:
                 f"Line: {item.task.line_num + 1}"
             ),
             instruction=(
-                "Tab/S-Tab fields · ←/→ choice · Enter title→body/newline · "
+                "Tab/S-Tab fields · ←/→ choice · Enter edit/open · "
                 "Ctrl-S save · C-g help · Esc back"
             ),
             help_entries=[
@@ -1520,6 +1676,7 @@ class InteractiveTaskController:
                 ("Enter (choice)", "Choose the next value"),
                 ("Enter (title)", "Move focus to the body"),
                 ("Enter (body)", "Insert a newline"),
+                ("Enter (button)", "Open this task in the external editor"),
                 ("Ctrl-S", f"Save the entire {self.buf.path.name} file"),
                 ("Esc", "Return, warning first if edits are unsaved"),
                 ("C-g", "Show or close this help"),
@@ -1531,6 +1688,8 @@ class InteractiveTaskController:
             status_text=self._buffer_status,
             choice_focus_indices=frozenset({0, 1}),
             on_choice_change=change_choice,
+            activate_focus_indices=frozenset({4}),
+            on_activate=activate_control,
         )
 
         def clear_saved_message(_buffer) -> None:

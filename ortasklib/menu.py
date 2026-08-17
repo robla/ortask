@@ -165,6 +165,8 @@ class WorkspaceView:
     on_choice_change: (
         Callable[["InlineMenuSession", int, int], None] | None
     ) = None
+    activate_focus_indices: frozenset[int] = frozenset()
+    on_activate: Callable[["InlineMenuSession", int], None] | None = None
 
     def clamp_focus(self) -> None:
         if not self.focus_targets:
@@ -498,6 +500,13 @@ class InlineMenuSession:
             and self.current_view.focused_index
             in self.current_view.choice_focus_indices
         )
+        workspace_activate_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, WorkspaceView)
+            and self.current_view.on_activate is not None
+            and self.current_view.focused_index
+            in self.current_view.activate_focus_indices
+        )
         input_active = Condition(
             lambda: not self.help_visible
             and isinstance(
@@ -588,6 +597,13 @@ class InlineMenuSession:
         @bindings.add("enter", filter=workspace_choice_active, eager=True)
         def next_workspace_choice(_event) -> None:
             change_workspace_choice(1)
+
+        @bindings.add("enter", filter=workspace_activate_active, eager=True)
+        def activate_workspace_control(_event) -> None:
+            view = self.current_view
+            assert isinstance(view, WorkspaceView)
+            assert view.on_activate is not None
+            view.on_activate(self, view.focused_index)
 
         @bindings.add("c-s", filter=workspace_active, eager=True)
         def save_workspace(_event) -> None:

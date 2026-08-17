@@ -406,10 +406,16 @@ Post to reddit (/r/electorama)
 Body
 https://www.reddit.com/r/electorama/submit
 
-Tab/S-Tab fields · ←/→ choice · Enter title→body/newline · Ctrl-S save · Esc back
+Subtasks
+  TODO    tw26W26.0.3.1 Record the posted URL
+  DONE    tw26W26.0.3.2 Check the submission
+[ Open in external editor ]
+
+Tab/S-Tab fields · ←/→ choice · Enter edit/open · Ctrl-S save · Esc back
 ```
 
-Title has initial focus. Tab and Shift-Tab move among all four fields. On State
+Title has initial focus. Tab and Shift-Tab move among the four editable fields
+and the editor button. On State
 or Priority, Left/Right changes the value and Enter advances it. State cycles
 through `TODO`, `DONE`, and `MOOT`; a parsed `SUPERSEDED` remains visible until
 changed, then follows the canonical `MOOT` position. Priority stops at the ends
@@ -428,12 +434,19 @@ four fields to the values loaded when the workspace opened or last saved; it
 does not discard older edits already buffered from the task list.
 
 The body boundary ends at the next Org heading, so child and sibling headings
-cannot be changed from the body control. The header reports the direct-subtask
-count; `t0016.4` will add the embedded, independently focusable subtask list.
-State and priority remain directly editable from the task list as well. `e`
-opens the external editor from the task list; printable letters type normally
-inside text fields. The numbered fallback retains its older detail/action
-workflow.
+cannot be changed from the body control. A read-only panel shows up to five
+display rows of descendant tasks in Org source order, indented by heading
+depth; the final row reports any omitted descendants. The header count includes
+all descendants. `t0016.4` will make this region independently focusable and
+scrollable with subtask actions.
+
+The bottom `[ Open in external editor ]` button uses the same terminal handoff
+and source-line targeting as `e` in the task list. Focus it with Tab or
+Shift-Tab and press Enter. If workspace fields are dirty, opening it first
+requires Save, Continue Editing, or Discard; Continue Editing is the safe
+default. State and priority remain directly editable from the task list, and
+printable letters type normally inside text fields. The numbered fallback
+retains its older detail/action workflow.
 
 Workflow-specific tools such as castabout may add domain actions such as "copy
 draft", "open destination", or "record result". Those actions should still use

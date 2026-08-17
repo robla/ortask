@@ -91,6 +91,9 @@ changes through =OrgBuffer=, auto-save recovery, and save/discard handling.
 *** TODO [#A] t0016.4 Add a hierarchical subtask mini-list
 Show all descendants in Org source order with indentation, independent
 highlight and scrolling, direct actions, and child-workspace navigation.
+**** DONE [#A] t0016.4.1 Add a bounded subtask preview and editor button
+Show a five-row read-only descendant preview at the bottom of the task
+workspace, followed by a focusable external-editor escape hatch.
 *** TODO [#B] t0016.5 Add direct tag and standard metadata editing
 Support useful Org-native issue metadata without inventing a private schema.
 *** TODO [#B] t0016.6 Add workspace terminal, safety, and performance coverage

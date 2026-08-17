@@ -459,8 +459,9 @@ filtering and summary counts.
 The issue workspace keeps these regions visible together:
 
 - the actual title and compact state, priority, identifier, and tag metadata;
-- a multiline description/body editor; and, after `t0016.4`,
-- an embedded subtask list.
+- a multiline description/body editor;
+- a bounded, read-only descendant preview; and
+- a bottom external-editor escape hatch.
 
 Focus moves among editable regions without pushing a new view for each field.
 State and priority use compact, focusable controls in one row; Left/Right
@@ -476,6 +477,12 @@ to the highlighted subtask while that region has focus. `Enter` may navigate
 to the child's issue workspace; Back returns to the parent with its prior
 selection intact. This is navigation between issues, not a substitute for
 showing the parent and its subtasks together.
+
+The first preview slice is implemented with a five-display-row cap and an
+omitted-count marker. It is intentionally read-only; `t0016.4` owns independent
+focus, scrolling, direct actions, and child-workspace navigation. The external
+editor button is already focusable and guards dirty fields with the same
+Save/Continue/Discard policy as workspace exit.
 
 ### Editing and Safety
 
@@ -511,10 +518,10 @@ absorbed accidentally.
 ### Architecture Direction
 
 `projtui.py` composes application-specific title/body `TextArea` controls and
-compact state/priority windows inside the generic `menu.WorkspaceView`
-lifecycle seam. `InlineMenuSession` owns focus switching, Help, save dispatch,
-dirty presentation, guarded Back, and terminal lifecycle while remaining
-agnostic about task fields and mutation.
+compact state/priority windows and action buttons inside the generic
+`menu.WorkspaceView` lifecycle seam. `InlineMenuSession` owns focus switching,
+button activation, Help, save dispatch, dirty presentation, guarded Back, and
+terminal lifecycle while remaining agnostic about task fields and mutation.
 Editing stays inside the same bounded `Application`; do not start a second
 prompt_toolkit application.
 
@@ -535,7 +542,9 @@ second adopter exposes stable shared behavior or duplicated bugs.
 5. Complete direct state and priority actions in both list and workspace views.
    (Compact workspace controls completed by `t0015.3`; optional picker and
    plain-key list aliases remain separate follow-ups.)
-6. Add the hierarchical, independently scrollable subtask region.
+6. Add the hierarchical, independently scrollable subtask region. (A bounded
+   read-only source-order preview and external-editor button are complete;
+   focus, scrolling, and subtask actions remain.)
 7. Add tag editing and terminal, recovery, resize, and performance coverage.
 
 ### Completion Criteria
@@ -544,8 +553,8 @@ second adopter exposes stable shared behavior or duplicated bugs.
   external editor.
 - The selected issue and its subtasks can be read and acted on in one bounded
   workspace, including with long bodies and subtask lists.
-- Action-like pseudo-rows are gone; external editing is an optional `e`
-  command.
+- Action-like pseudo-rows are gone; external editing is an optional task-list
+  `e` command and bottom workspace button.
 - Save, discard, recovery, terminal cleanup, and source-structure preservation
   retain their current safety guarantees.
 

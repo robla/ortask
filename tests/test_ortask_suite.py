@@ -1885,6 +1885,40 @@ def test_inline_workspace_keeps_multiple_fields_visible_and_focusable() -> None:
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_workspace_activates_focused_control() -> None:
+    # Workspace Enter should dispatch application-owned button controls.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.layout import HSplit, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.output import DummyOutput
+
+    controls = [
+        Window(FormattedTextControl("Field", focusable=True)),
+        Window(FormattedTextControl("[ Action ]", focusable=True)),
+    ]
+    activated: list[int] = []
+
+    def activate(session: menu.InlineMenuSession, focus_index: int) -> None:
+        activated.append(focus_index)
+        session.pop_view()
+
+    view = menu.WorkspaceView(
+        HSplit(controls),
+        controls,
+        lambda _session: None,
+        activate_focus_indices=frozenset({1}),
+        on_activate=activate,
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("\t\r")
+            menu.InlineMenuSession(view).run()
+
+    assert activated == [1]
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_inline_menu_session_suspends_external_command(monkeypatch) -> None:
     # External commands should run through terminal handoff and resume one app.
     from prompt_toolkit.application import create_app_session
@@ -1945,14 +1979,15 @@ def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) 
     view = controller._focus_view(parent)
 
     assert isinstance(view, menu.WorkspaceView)
-    assert [control.text for control in view.focus_targets[2:]] == [
+    assert [control.text for control in view.focus_targets[2:4]] == [
         "Parent",
         "Body line",
     ]
-    assert len(view.focus_targets) == 4
+    assert len(view.focus_targets) == 5
     assert "Subtasks: 1" in view.summary
     assert view.focused_index == 2
     assert view.choice_focus_indices == frozenset({0, 1})
+    assert view.activate_focus_indices == frozenset({4})
     assert view.enter_moves_focus == frozenset({2})
     assert view.is_dirty is not None and view.is_dirty() is False
     assert view.status_text is not None and view.status_text() == ""
@@ -1960,6 +1995,119 @@ def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) 
     assert view.is_dirty() is True
     projtui._shift_priority(buf, parent, 1)
     assert view.status_text() == "FILE MODIFIED: 1 edit"
+
+
+def test_task_workspace_subtasks_follow_org_tree_and_truncate(tmp_path: Path) -> None:
+    # The read-only preview should preserve Org hierarchy within a strict cap.
+    org_file = write(
+        tmp_path / "tasks.org",
+        """
+        * Tasks
+        ** TODO t0001 Parent
+        *** TODO t9001 First child
+        **** DONE t9002 Grandchild
+        *** TODO t9003 Second child
+        *** TODO t9004 Third child
+        *** TODO t9005 Fourth child
+        *** TODO t9006 Fifth child
+        ** Notes
+        *** TODO t9998 Outside parent subtree
+        ** TODO t0002 Sibling
+        """,
+    )
+    buf = projtui.OrgBuffer(org_file)
+    parent = projtui.load_menu_items(buf)[0]
+
+    descendants = projtui._descendant_subtasks(buf, parent)
+    fragments, height = projtui._workspace_subtask_fragments(
+        parent.task,
+        descendants,
+    )
+    rendered = "".join(text for _style, text in fragments)
+
+    assert [child.task.id for child in descendants] == [
+        "t9001",
+        "t9002",
+        "t9003",
+        "t9004",
+        "t9005",
+        "t9006",
+    ]
+    assert "t9001 First child" in rendered
+    assert "  t9002 Grandchild" in rendered
+    assert "... 2 more subtask(s)" in rendered
+    assert "t9998" not in rendered
+    assert height == projtui.WORKSPACE_SUBTASK_LINE_LIMIT
+
+
+def test_task_workspace_button_opens_editor_at_task_line(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    # The workspace editor button should suspend at the selected task heading.
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n** TODO t0001 Open me\nBody\n",
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    opened: list[tuple[Path, int | None]] = []
+    monkeypatch.setattr(
+        projtui,
+        "_open_editor",
+        lambda target, line: opened.append((target.path, line)),
+    )
+
+    class ImmediateSession:
+        def suspend(self, func, *, on_done) -> None:
+            func()
+            on_done()
+
+        def replace_view(self, replacement) -> None:
+            self.replacement = replacement
+
+    view = controller._focus_view(projtui.load_menu_items(buf)[0])
+    session = ImmediateSession()
+    assert isinstance(view, menu.WorkspaceView)
+    assert view.on_activate is not None
+
+    view.on_activate(session, 4)
+
+    assert opened == [(org_file.resolve(), 1)]
+    assert isinstance(session.replacement, menu.WorkspaceView)
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_task_workspace_dirty_editor_button_defaults_to_continue(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    # Unsaved task fields should not be discarded or opened past implicitly.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    original = "* Tasks\n** TODO t0001 Original\n"
+    org_file = write(tmp_path / "tasks.org", original)
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = projtui.OrgBuffer(org_file)
+    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    opened: list[int | None] = []
+    monkeypatch.setattr(
+        projtui,
+        "_open_editor",
+        lambda _target, line: opened.append(line),
+    )
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Continue from editor warning, then explicitly discard on exit.
+            pin.send_text("\r changed\t\t\r\r\x1bj\rq")
+            controller.run()
+
+    assert opened == []
+    assert org_file.read_text(encoding="utf-8") == original
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
