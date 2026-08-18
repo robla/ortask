@@ -47,8 +47,8 @@ orgmgr.py pcd --out FILE [--edit]
 
 `--out` is required and is the only result channel.
 
-- Default: write the selected project's resolved directories to FILE, one absolute path per line; exit 0.
-- `--edit`: write the path of the selected project's `.org` task file to FILE, appending a `* Directories` section to the end of that file if it does not already exist; exit 0.
+- Default: write the header "dirs" followed by the selected project's resolved directories to FILE, one absolute path per line; exit 0.
+- `--edit` (or interactive `e` key press): write the header "edit" followed by the path of the selected project's `.org` task file to FILE, appending a `* Directories` section to the end of that file if it does not already exist; exit 0.
 - Cancel (`Esc`, `q`): exit 1 and leave FILE untouched.
 
 Results must not go to stdout. `menu.interactive_select_available()` requires `sys.stdout.isatty()` and the `Application` renders to stdout, so under `$(...)` the picker would silently degrade to the numbered fallback and its output would land in the captured value. Keeping one file-based channel also keeps everything the shell would otherwise need to know about the `.org` file and default section contents on the Python side.
@@ -112,10 +112,24 @@ pcd () {
 
     [[ ${#lines[@]} -eq 0 ]] && return 0
 
-    # Handle Edit Mode
-    if [[ "$edit" == true ]]; then
+    local action="${lines[0]}"
+    local dirs_to_load=()
+    if [[ "$action" == "dirs" ]]; then
+        dirs_to_load=("${lines[@]:1}")
+    elif [[ "$action" == "edit" ]]; then
+        dirs_to_load=()
+    else
+        dirs_to_load=("${lines[@]}")
+    fi
+
+    # Handle Edit Mode (either from CLI flag or TUI action)
+    if [[ "$action" == "edit" || "$edit" == true ]]; then
+        local target_file="${lines[1]}"
+        if [[ "$action" != "edit" ]]; then
+            target_file="${lines[0]}"
+        fi
         local editor_cmd=(${EDITOR:-vi})
-        "${editor_cmd[@]}" "${lines[0]}"
+        "${editor_cmd[@]}" "$target_file"
         return 0
     fi
 
@@ -133,7 +147,7 @@ pcd () {
         local old_dir removed=false
         for old_dir in "${old_dirstack[@]}"; do
             local found=false dir
-            for dir in "${lines[@]}"; do
+            for dir in "${dirs_to_load[@]}"; do
                 [[ "$old_dir" == "$dir" ]] && found=true && break
             done
             if [[ "$found" == false ]]; then
@@ -149,8 +163,8 @@ pcd () {
     # Load new directory stack in reverse order to preserve their order in the dirstack
     local i
     local first_push=true
-    for ((i=${#lines[@]}-1; i>=0; i--)); do
-        local target_dir="${lines[$i]}"
+    for ((i=${#dirs_to_load[@]}-1; i>=0; i--)); do
+        local target_dir="${dirs_to_load[$i]}"
         if [[ -d "$target_dir" ]]; then
             if [[ "$first_push" == true && "$append" == false ]]; then
                 cd "$target_dir"

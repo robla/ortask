@@ -40,10 +40,25 @@ pcd () {
 
     [[ ${#lines[@]} -eq 0 ]] && return 0
 
-    # Handle Edit Mode
-    if [[ "$edit" == true ]]; then
+    local action="${lines[0]}"
+    local dirs_to_load=()
+    if [[ "$action" == "dirs" ]]; then
+        dirs_to_load=("${lines[@]:1}")
+    elif [[ "$action" == "edit" ]]; then
+        dirs_to_load=() # not loading any dirs
+    else
+        # Backwards compatibility fallback if no header action exists
+        dirs_to_load=("${lines[@]}")
+    fi
+
+    # Handle Edit Mode (either from CLI flag or TUI action)
+    if [[ "$action" == "edit" || "$edit" == true ]]; then
+        local target_file="${lines[1]}"
+        if [[ "$action" != "edit" ]]; then
+            target_file="${lines[0]}"
+        fi
         local editor_cmd=(${EDITOR:-vi})
-        "${editor_cmd[@]}" "${lines[0]}"
+        "${editor_cmd[@]}" "$target_file"
         return 0
     fi
 
@@ -61,7 +76,7 @@ pcd () {
         local old_dir removed=false
         for old_dir in "${old_dirstack[@]}"; do
             local found=false dir
-            for dir in "${lines[@]}"; do
+            for dir in "${dirs_to_load[@]}"; do
                 [[ "$old_dir" == "$dir" ]] && found=true && break
             done
             if [[ "$found" == false ]]; then
@@ -77,8 +92,8 @@ pcd () {
     # Load new directory stack in reverse order to preserve their order in the dirstack
     local i
     local first_push=true
-    for ((i=${#lines[@]}-1; i>=0; i--)); do
-        local target_dir="${lines[$i]}"
+    for ((i=${#dirs_to_load[@]}-1; i>=0; i--)); do
+        local target_dir="${dirs_to_load[$i]}"
         if [[ -d "$target_dir" ]]; then
             if [[ "$first_push" == true && "$append" == false ]]; then
                 cd "$target_dir"
