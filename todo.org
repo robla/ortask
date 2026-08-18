@@ -1,3 +1,13 @@
+* Directories
+** file:~/src/ortask
+** file:~/src/nowtools
+** file:~/src/vergoog
+** file:~/tmpsorta/gdocs2026
+** file:~/src/elusync
+** file:~/src/elugen
+** file:~/tmpsorta/electorama-weekly
+** file:~/src/electorama-website/electorama.com
+** file:~/tmpsorta/mwsync-electowiki
 * Tasks
 ** TODO t0004 Test the 'ort repair' subcommand, particularly for adding identifiers to task lists without them
 ** TODO t0008 Make ortask.py work with .org files with tasks that don't have ids on them
@@ -73,18 +83,3 @@ Add pure sizing tests, pipe-input view-transition tests, and PTY coverage for
 growth, contraction, =C-^= input, Alt-arrow viewport scrolling, stale-line
 cleanup, inline final frames, and full-screen alternate-screen restoration.
 
-* Directories
-.
-/home/robla/src/ortask
-/home/robla/src/nowtools
-/home/robla/src/vergoog
-/home/robla/tmpsorta/gdocs2026
-/home/robla/src/elusync
-/home/robla/src/elugen
-/home/robla/src/mwmap
-/home/robla/tmpsorta/mwmap-electowiki
-/home/robla/src/mwsync
-/home/robla/src/castabout
-/home/robla/tmpsorta/electorama-weekly
-/home/robla/src/electorama-website/electorama.com
-/home/robla/tmpsorta/mwsync-electowiki
