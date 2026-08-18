@@ -86,49 +86,25 @@ pcd [-a|--append] [-e|--edit] [-r|--registry PATH]
 ```bash
 # misc/pcd.func.sh (prototype)
 
-pcd_pretty_dir () {
-    local dir="$1"
-    if [[ "$dir" == "$HOME" ]]; then
-        printf '~'
-    elif [[ "$dir" == "$HOME/"* ]]; then
-        printf '~/%s' "${dir#"$HOME"/}"
-    else
-        printf '%s' "$dir"
-    fi
-}
-
-pcd_dir_in_list () {
-    local needle="$1"
-    shift
-    local dir
-    for dir in "$@"; do
-        [[ "$needle" == "$dir" ]] && return 0
-    done
-    return 1
-}
-
 pcd () {
     local orgmgr="${ORTASK_ORGMGR:-orgmgr.py}"
-    local append_mode=false
-    local edit_mode=false
-    local registry=""
-    local args=()
+    local append=false edit=false reg="" args=()
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -a|--append)   append_mode=true; shift ;;
-            -e|--edit)     edit_mode=true; shift ;;
-            -r|--registry) registry="$2"; shift 2 ;;
-            *) echo "Usage: pcd [-a|--append] [-e|--edit] [-r|--registry PATH]" >&2; return 1 ;;
+            -a|--append)   append=true; shift ;;
+            -e|--edit)     edit=true; shift ;;
+            -r|--registry) reg="$2"; shift 2 ;;
+            *) echo "Usage: pcd [-a] [-e] [-r PATH]" >&2; return 1 ;;
         esac
     done
 
     # Prepare helper arguments
-    [[ -n "$registry" ]] && args+=(--registry "$registry")
+    [[ -n "$reg" ]] && args+=(--registry "$reg")
     local out; out="$(mktemp)"
     args+=(pcd --out "$out")
-    [[ "$edit_mode" == true ]] && args+=(--edit)
+    [[ "$edit" == true ]] && args+=(--edit)
 
     # Run the interactive picker
     "$orgmgr" "${args[@]}"
@@ -145,15 +121,11 @@ pcd () {
         rm -f "$out"
     fi
 
-    if [[ ${#lines[@]} -eq 0 ]]; then
-        echo "No project selected." >&2
-        return 0
-    fi
+    [[ ${#lines[@]} -eq 0 ]] && return 0
 
     # Handle Edit Mode
-    if [[ "$edit_mode" == true ]]; then
-        local target_file="${lines[0]}"
-        "${EDITOR:-vi}" "$target_file"
+    if [[ "$edit" == true ]]; then
+        "${EDITOR:-vi}" "${lines[0]}"
         return 0
     fi
 
@@ -161,29 +133,25 @@ pcd () {
     local old_dirstack=()
     readarray -t old_dirstack < <(dirs -l -p)
 
-    if [[ "$append_mode" == true ]]; then
+    if [[ "$append" == true ]]; then
         echo "mode: append project directories to dirstack"
     else
         echo "mode: reset dirstack to project directories"
         
-        # Show directories removed by the reset
-        local old_dir
-        local removed_any=false
+        # Show directories removed by the reset (inline diff)
+        echo "removed by reset:"
+        local old_dir removed=false
         for old_dir in "${old_dirstack[@]}"; do
-            if ! pcd_dir_in_list "$old_dir" "${lines[@]}"; then
-                if [[ "$removed_any" == false ]]; then
-                    echo "removed by reset:"
-                    removed_any=true
-                fi
-                printf '  - '
-                pcd_pretty_dir "$old_dir"
-                printf '\n'
+            local found=false dir
+            for dir in "${lines[@]}"; do
+                [[ "$old_dir" == "$dir" ]] && found=true && break
+            done
+            if [[ "$found" == false ]]; then
+                echo "  - ${old_dir/#$HOME/\~}"
+                removed=true
             fi
         done
-        if [[ "$removed_any" == false ]]; then
-            echo "removed by reset:"
-            echo "  (none)"
-        fi
+        [[ "$removed" == false ]] && echo "  (none)"
 
         dirs -c
     fi
@@ -192,15 +160,14 @@ pcd () {
     local i
     for ((i=0; i<${#lines[@]}; i++)); do
         local target_dir="${lines[$i]}"
-        if [[ ! -d "$target_dir" ]]; then
-            echo "Warning: directory does not exist: $target_dir" >&2
-            continue
-        fi
-
-        if [[ $i -eq 0 && "$append_mode" == false ]]; then
-            cd "$target_dir"
+        if [[ -d "$target_dir" ]]; then
+            if [[ $i -eq 0 && "$append" == false ]]; then
+                cd "$target_dir"
+            else
+                pushd "$target_dir" > /dev/null
+            fi
         else
-            pushd "$target_dir" > /dev/null
+            echo "Warning: directory does not exist: $target_dir" >&2
         fi
     done
 
@@ -218,10 +185,8 @@ Four things the first draft of this design got wrong, worth not repeating:
 - In append mode, do not `pushd .` first. Every entry is pushed, so the current
   directory is already preserved; `nowcd` needed that only because it `cd`s its
   first entry.
-- Pass both the old and new directory lists to the "removed by reset" helper as
-  arguments, rather than having it read one of them out of its caller's locals
-  by bash dynamic scoping. (Solved here by using a simple item-in-list helper
-  `pcd_dir_in_list` which takes a single item and list arguments).
+- Perform the directory diff inline to avoid dynamic scoping issues, passing complex
+  arrays, or polluting the global shell namespace with auxiliary helper functions.
 
 ## Integration checklist
 
