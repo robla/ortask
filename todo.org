@@ -74,6 +74,7 @@ growth, contraction, =C-^= input, Alt-arrow viewport scrolling, stale-line
 cleanup, inline final frames, and full-screen alternate-screen restoration.
 
 * Directories
+.
 /home/robla/src/ortask
 /home/robla/src/nowtools
 /home/robla/src/vergoog

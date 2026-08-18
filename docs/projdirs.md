@@ -145,13 +145,15 @@ pcd () {
         dirs -c
     fi
 
-    # Load new directory stack
+    # Load new directory stack in reverse order to preserve their order in the dirstack
     local i
-    for ((i=0; i<${#lines[@]}; i++)); do
+    local first_push=true
+    for ((i=${#lines[@]}-1; i>=0; i--)); do
         local target_dir="${lines[$i]}"
         if [[ -d "$target_dir" ]]; then
-            if [[ $i -eq 0 && "$append" == false ]]; then
+            if [[ "$first_push" == true && "$append" == false ]]; then
                 cd "$target_dir"
+                first_push=false
             else
                 pushd "$target_dir" > /dev/null
             fi
