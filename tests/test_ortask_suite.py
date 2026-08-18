@@ -1230,9 +1230,8 @@ def test_orgmgr_pcd_resolves_directories(
     ) == 0
 
     resolved_paths = out_file.read_text(encoding="utf-8").splitlines()
-    assert len(resolved_paths) == 2
-    assert resolved_paths[0] == "dirs"
-    assert resolved_paths[1] == str(project.resolve())
+    assert len(resolved_paths) == 1
+    assert resolved_paths[0] == str(project.resolve())
 
     # Case 2: With * Directories config inside TODO.org
     org_file = project / "TODO.org"
@@ -1248,12 +1247,11 @@ def test_orgmgr_pcd_resolves_directories(
     ) == 0
 
     resolved_paths = out_file2.read_text(encoding="utf-8").splitlines()
-    assert len(resolved_paths) == 5
-    assert resolved_paths[0] == "dirs"
-    assert resolved_paths[1] == str(project.resolve())
-    assert resolved_paths[2] == str((project / "docs").resolve())
-    assert resolved_paths[3] == "/absolute/path"
-    assert resolved_paths[4] == str((project / "subdir_env").resolve())
+    assert len(resolved_paths) == 4
+    assert resolved_paths[0] == str(project.resolve())
+    assert resolved_paths[1] == str((project / "docs").resolve())
+    assert resolved_paths[2] == "/absolute/path"
+    assert resolved_paths[3] == str((project / "subdir_env").resolve())
 
 
 def test_orgmgr_pcd_edit_mode(
@@ -1291,7 +1289,7 @@ def test_orgmgr_pcd_edit_mode(
     assert content_after.rstrip().endswith(".\n") or content_after.rstrip().endswith(".")
 
     expected_org_link = registry / "myproj" / "TODO.org"
-    assert out_file.read_text(encoding="utf-8").splitlines() == ["edit", str(expected_org_link.resolve())]
+    assert out_file.read_text(encoding="utf-8").strip() == str(expected_org_link.resolve())
 
 
 def test_orgmgr_pcd_interactive_edit_action(
@@ -1331,7 +1329,7 @@ def test_orgmgr_pcd_interactive_edit_action(
     assert "* Directories" in content_after
 
     expected_org_link = registry / "myproj" / "TODO.org"
-    assert out_file.read_text(encoding="utf-8").splitlines() == ["edit", str(expected_org_link.resolve())]
+    assert out_file.read_text(encoding="utf-8").strip() == str(expected_org_link.resolve())
 
 
 

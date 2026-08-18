@@ -256,7 +256,7 @@ def cmd_pcd(args: argparse.Namespace) -> int:
                 return 1
 
         try:
-            out_path.write_text("edit\n" + str(real_org_file) + "\n", encoding="utf-8")
+            out_path.write_text(str(real_org_file) + "\n", encoding="utf-8")
         except Exception as e:
             print(f"Error writing to output file {out_path}: {e}", file=sys.stderr)
             return 1
@@ -308,7 +308,7 @@ def cmd_pcd(args: argparse.Namespace) -> int:
         resolved_dirs = [str(real_path.resolve())]
 
     try:
-        out_path.write_text("dirs\n" + "\n".join(resolved_dirs) + "\n", encoding="utf-8")
+        out_path.write_text("\n".join(resolved_dirs) + "\n", encoding="utf-8")
     except Exception as e:
         print(f"Error writing to output file {out_path}: {e}", file=sys.stderr)
         return 1

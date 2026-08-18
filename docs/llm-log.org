@@ -156,3 +156,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Gemini [2026-08-18 Tue 15:53 PDT]: made double-asterisks, file: prefixes, and org link brackets optional in the * Directories section parser, and updated unit tests.
 ** Gemini [2026-08-18 Tue 16:05 PDT]: added 'e' key action to the project picker in cmd_pcd to edit directories from the TUI, and added unit tests.
 ** Gemini [2026-08-18 Tue 16:19 PDT]: added 'edit' and 'dirs' action headers to the pcd output file to distinguish resolution from edit mode in TUI trigger, and updated tests.
+** Gemini [2026-08-18 Tue 16:26 PDT]: simplified edit mode detection by directly checking for file existence (-f) on the first target instead of writing custom prefixes, ensuring compatibility with unsourced shells.
