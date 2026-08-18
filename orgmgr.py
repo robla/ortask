@@ -167,15 +167,6 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     return 0
 
 
-def _real_project_path(project: manager.Project) -> Path:
-    for item in project.path.iterdir():
-        if item.is_symlink() and item.resolve().is_dir():
-            return item.resolve()
-    if project.org_file:
-        return project.org_file.resolve().parent
-    return project.path
-
-
 def cmd_pcd(args: argparse.Namespace) -> int:
     """Select a project and output its directory stack config to a file."""
     import os
@@ -193,11 +184,9 @@ def cmd_pcd(args: argparse.Namespace) -> int:
 
     rows = []
     for idx, project in enumerate(projects, start=1):
-        try:
-            org_file = str(project.org_file.relative_to(workspace))
-        except ValueError:
-            org_file = str(project.org_file)
-        rows.append(menu.ProjectRow(idx, project.name, org_file))
+        real_p_path = manager.real_project_path(project)
+        friendly_p_path = manager.friendly_path(real_p_path)
+        rows.append(menu.ProjectRow(idx, project.name, friendly_p_path))
 
     project = None
     if menu.interactive_select_available():
@@ -228,7 +217,7 @@ def cmd_pcd(args: argparse.Namespace) -> int:
     if project is None:
         return 1
 
-    real_path = _real_project_path(project)
+    real_path = manager.real_project_path(project)
     out_path = Path(args.out).expanduser().resolve()
 
     if args.edit:

@@ -38,6 +38,17 @@ def canonical_org_file(project: Project) -> Path:
     return project.org_file.resolve()
 
 
+def real_project_path(project: Project) -> Path:
+    """Return the real project directory path, resolving any registry symlinks."""
+    try:
+        for item in project.path.iterdir():
+            if item.is_symlink() and item.resolve().is_dir():
+                return item.resolve()
+    except OSError:
+        pass
+    return project.org_file.resolve().parent
+
+
 # ---------------------------------------------------------------------------
 # Config: where the registry directory lives
 # ---------------------------------------------------------------------------

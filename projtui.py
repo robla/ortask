@@ -47,6 +47,8 @@ from ortasklib.manager import (
     Project,
     canonical_org_file,
     discover_projects,
+    friendly_path,
+    real_project_path,
     resolve_registry,
 )
 
@@ -457,11 +459,9 @@ def _print_dashboard(title: str, org_file: Path, items: list[MenuItem]) -> None:
 def _project_rows(workspace: Path, projects: list[Project]) -> list[menu.ProjectRow]:
     rows: list[menu.ProjectRow] = []
     for idx, project in enumerate(projects, start=1):
-        try:
-            org_file = str(project.org_file.relative_to(workspace))
-        except ValueError:
-            org_file = str(project.org_file)
-        rows.append(menu.ProjectRow(idx, project.name, org_file))
+        real_p_path = real_project_path(project)
+        friendly_p_path = friendly_path(real_p_path)
+        rows.append(menu.ProjectRow(idx, project.name, friendly_p_path))
     return rows
 
 
