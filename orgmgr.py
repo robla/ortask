@@ -220,41 +220,75 @@ def cmd_pcd(args: argparse.Namespace) -> int:
     real_path = manager.real_project_path(project)
     out_path = Path(args.out).expanduser().resolve()
 
+    real_org_file = project.org_file.resolve() if project.org_file else None
+
     if args.edit:
-        proj_dirs_file = real_path / ".projdirs"
-        if not proj_dirs_file.exists():
-            try:
-                proj_dirs_file.parent.mkdir(parents=True, exist_ok=True)
-                proj_dirs_file.write_text(".\n", encoding="utf-8")
-            except Exception as e:
-                print(f"Error creating {proj_dirs_file}: {e}", file=sys.stderr)
-                return 1
+        if not real_org_file:
+            print("Error: project has no org file to edit", file=sys.stderr)
+            return 1
+
         try:
-            out_path.write_text(str(proj_dirs_file) + "\n", encoding="utf-8")
+            content = real_org_file.read_text(encoding="utf-8")
+        except Exception as e:
+            print(f"Error reading {real_org_file}: {e}", file=sys.stderr)
+            return 1
+
+        has_dirs = False
+        for line in content.splitlines():
+            if line.startswith("*"):
+                parts = line.split(None, 1)
+                if parts and all(c == "*" for c in parts[0]):
+                    header_title = parts[1].split(":")[0].strip() if len(parts) > 1 else ""
+                    if parts[0] == "*" and header_title == "Directories":
+                        has_dirs = True
+                        break
+
+        if not has_dirs:
+            try:
+                prefix = "" if content.endswith("\n\n") else ("\n" if content.endswith("\n") else "\n\n")
+                new_section = prefix + "* Directories\n.\n"
+                core.atomic_write(real_org_file, content + new_section)
+            except Exception as e:
+                print(f"Error bootstrapping '* Directories' in {real_org_file}: {e}", file=sys.stderr)
+                return 1
+
+        try:
+            out_path.write_text(str(real_org_file) + "\n", encoding="utf-8")
         except Exception as e:
             print(f"Error writing to output file {out_path}: {e}", file=sys.stderr)
             return 1
         return 0
 
-    # Resolve directories
-    proj_dirs_file = real_path / ".projdirs"
+    # Resolve directories from '* Directories' section
     resolved_dirs = []
-    if proj_dirs_file.exists():
+    if real_org_file and real_org_file.exists():
         try:
-            lines = proj_dirs_file.read_text(encoding="utf-8").splitlines()
-            for line in lines:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                expanded = os.path.expandvars(os.path.expanduser(line))
-                path = Path(expanded)
-                if not path.is_absolute():
-                    path = (real_path / path).resolve()
-                else:
-                    path = path.resolve()
-                resolved_dirs.append(str(path))
+            content = real_org_file.read_text(encoding="utf-8")
+            in_dirs_section = False
+            for line in content.splitlines():
+                if line.startswith("*"):
+                    parts = line.split(None, 1)
+                    if parts and all(c == "*" for c in parts[0]):
+                        header_title = parts[1].split(":")[0].strip() if len(parts) > 1 else ""
+                        if parts[0] == "*" and header_title == "Directories":
+                            in_dirs_section = True
+                            continue
+                        else:
+                            in_dirs_section = False
+
+                if in_dirs_section:
+                    line_stripped = line.strip()
+                    if not line_stripped or line_stripped.startswith("#"):
+                        continue
+                    expanded = os.path.expandvars(os.path.expanduser(line_stripped))
+                    path = Path(expanded)
+                    if not path.is_absolute():
+                        path = (real_path / path).resolve()
+                    else:
+                        path = path.resolve()
+                    resolved_dirs.append(str(path))
         except Exception as e:
-            print(f"Warning: could not read {proj_dirs_file}: {e}", file=sys.stderr)
+            print(f"Warning: could not parse '* Directories' section in {real_org_file}: {e}", file=sys.stderr)
 
     if not resolved_dirs:
         resolved_dirs = [str(real_path.resolve())]

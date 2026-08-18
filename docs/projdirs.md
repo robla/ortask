@@ -21,27 +21,22 @@ projects exactly as `orgmgr.py list` does — see `docs/orgmgr.md` — through
 existing project picker (`projtui._project_view`) rather than adding a second
 selector.
 
-## `.projdirs`
+## `* Directories`
 
-A project's directory stack is a `.projdirs` file in the project root:
+A project's directory stack is specified in an optional `* Directories` top-level section inside the project's `.org` task file:
 
-```text
+```org
+* Directories
 # Directory stack for the ortask project
 .
 docs
 tests
 ```
 
-- One directory per line, in stack order.
+- One directory per line in the body of the section, in stack order.
 - `#` comments and blank lines are ignored.
-- Relative paths resolve against the project root; absolute paths are taken as
-  given; `~` and `$VAR` are expanded.
-- With no `.projdirs`, the stack is a single entry: the project root. Most
-  projects should never need the file.
-
-Only `.projdirs` is recognized. An alternate `projdirs.txt` spelling was
-considered and dropped — it doubles the lookup in both the helper and the shell
-function and buys nothing.
+- Relative paths resolve against the resolved project root; absolute paths are taken as given; `~` and `$VAR` are expanded.
+- With no `* Directories` section, the stack defaults to a single entry: the project root. Most projects should never need to define this section.
 
 ## `orgmgr.py pcd`
 
@@ -51,18 +46,11 @@ orgmgr.py pcd --out FILE [--edit]
 
 `--out` is required and is the only result channel.
 
-- Default: write the selected project's resolved directories to FILE, one
-  absolute path per line; exit 0.
-- `--edit`: write the path of the selected project's `.projdirs` to FILE,
-  creating that file with a single `.` entry if it does not exist; exit 0.
+- Default: write the selected project's resolved directories to FILE, one absolute path per line; exit 0.
+- `--edit`: write the path of the selected project's `.org` task file to FILE, appending a `* Directories` section to the end of that file if it does not already exist; exit 0.
 - Cancel (`Esc`, `q`): exit 1 and leave FILE untouched.
 
-Results must not go to stdout. `menu.interactive_select_available()` requires
-`sys.stdout.isatty()` and the `Application` renders to stdout, so under `$(...)`
-the picker would silently degrade to the numbered fallback and its output would
-land in the captured value. Keeping one file-based channel also keeps everything
-the shell would otherwise need to know about `.projdirs` — its name, location,
-and default contents — on the Python side.
+Results must not go to stdout. `menu.interactive_select_available()` requires `sys.stdout.isatty()` and the `Application` renders to stdout, so under `$(...)` the picker would silently degrade to the numbered fallback and its output would land in the captured value. Keeping one file-based channel also keeps everything the shell would otherwise need to know about the `.org` file and default section contents on the Python side.
 
 The picker follows the bounded inline contract in `docs/interactive.md`:
 `full_screen=False`, content-sized within the usual ceiling, `↑↓`/`j`/`k` to
@@ -80,7 +68,7 @@ pcd [-a|--append] [-e|--edit] [-r|--registry PATH]
   to the first project directory, `pushd` the rest, then print `dirs -v`.
 - `-a`: leave the current stack alone and `pushd` the project directories onto
   it.
-- `-e`: open the selected project's `.projdirs` in `$EDITOR`.
+- `-e`: open the selected project's `.org` task file in `$EDITOR`.
 - Directories that do not exist produce a warning and are skipped.
 
 ```bash
@@ -200,9 +188,7 @@ Four things the first draft of this design got wrong, worth not repeating:
 
 ## Open questions
 
-- Should `.projdirs` be checked into a project, or kept local and gitignored?
-  Checked in it becomes shared team configuration; the `nowdirs.txt` it descends
-  from was strictly personal.
+- Since directories are now stored inside the `.org` file, they are automatically shared with the team. Should we support a private workspace-local override file (e.g. `.git/info/exclude` style) for developers who have different local paths?
 - Should `-e` apply the edited stack immediately, as `nowcd -e` did, or only
   edit?
 - Is `pcd` worth a mention in `docs/ecosystem.md`?

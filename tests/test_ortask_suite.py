@@ -1223,7 +1223,7 @@ def test_orgmgr_pcd_resolves_directories(
     monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
 
-    # Case 1: No .projdirs config
+    # Case 1: No * Directories config
     out_file = tmp_path / "out1.txt"
     assert orgmgr.cmd_pcd(
         argparse.Namespace(registry=str(registry), out=str(out_file), edit=False)
@@ -1233,11 +1233,11 @@ def test_orgmgr_pcd_resolves_directories(
     assert len(resolved_paths) == 1
     assert resolved_paths[0] == str(project.resolve())
 
-    # Case 2: With .projdirs config
-    proj_dirs = project / ".projdirs"
+    # Case 2: With * Directories config inside TODO.org
+    org_file = project / "TODO.org"
     monkeypatch.setenv("TEST_ENV_VAR", "subdir_env")
-    proj_dirs.write_text(
-        "# Comment line\n\n.\ndocs\n/absolute/path\n$TEST_ENV_VAR\n",
+    org_file.write_text(
+        "* Tasks\n** TODO t0001 task\n\n* Directories\n# Comment line\n\n.\ndocs\n/absolute/path\n$TEST_ENV_VAR\n",
         encoding="utf-8"
     )
 
@@ -1273,18 +1273,23 @@ def test_orgmgr_pcd_edit_mode(
     monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
 
-    # Verify --edit mode (creates .projdirs with "." if missing)
+    # Verify --edit mode (appends "* Directories" section if missing)
     out_file = tmp_path / "out.txt"
-    proj_dirs_file = project / ".projdirs"
-    assert not proj_dirs_file.exists()
+    org_file = project / "TODO.org"
+
+    content_before = org_file.read_text(encoding="utf-8")
+    assert "* Directories" not in content_before
 
     assert orgmgr.cmd_pcd(
         argparse.Namespace(registry=str(registry), out=str(out_file), edit=True)
     ) == 0
 
-    assert proj_dirs_file.exists()
-    assert proj_dirs_file.read_text(encoding="utf-8").strip() == "."
-    assert out_file.read_text(encoding="utf-8").strip() == str(proj_dirs_file.resolve())
+    content_after = org_file.read_text(encoding="utf-8")
+    assert "* Directories" in content_after
+    assert content_after.rstrip().endswith(".\n") or content_after.rstrip().endswith(".")
+
+    expected_org_link = registry / "myproj" / "TODO.org"
+    assert out_file.read_text(encoding="utf-8").strip() == str(expected_org_link.resolve())
 
 
 def test_projtui_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> None:

@@ -72,3 +72,18 @@ required.
 Add pure sizing tests, pipe-input view-transition tests, and PTY coverage for
 growth, contraction, =C-^= input, Alt-arrow viewport scrolling, stale-line
 cleanup, inline final frames, and full-screen alternate-screen restoration.
+
+* Directories
+/home/robla/src/ortask
+/home/robla/src/nowtools
+/home/robla/src/vergoog
+/home/robla/tmpsorta/gdocs2026
+/home/robla/src/elusync
+/home/robla/src/elugen
+/home/robla/src/mwmap
+/home/robla/tmpsorta/mwmap-electowiki
+/home/robla/src/mwsync
+/home/robla/src/castabout
+/home/robla/tmpsorta/electorama-weekly
+/home/robla/src/electorama-website/electorama.com
+/home/robla/tmpsorta/mwsync-electowiki
