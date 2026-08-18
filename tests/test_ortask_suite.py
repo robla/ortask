@@ -1292,6 +1292,47 @@ def test_orgmgr_pcd_edit_mode(
     assert out_file.read_text(encoding="utf-8").strip() == str(expected_org_link.resolve())
 
 
+def test_orgmgr_pcd_interactive_edit_action(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    from ortasklib import menu
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+
+    project = tmp_path / "myproj"
+    write(project / "TODO.org", "* Tasks\n** TODO t0001 task\n")
+
+    assert orgmgr.cmd_projadd(_projadd_args(project, name="myproj")) == 0
+    capsys.readouterr()
+
+    # Stub interactive select to be available, and return MenuResult("edit", index=0)
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
+    monkeypatch.setattr(
+        menu,
+        "select_project_menu",
+        lambda *args, **kwargs: menu.MenuResult("edit", index=0)
+    )
+
+    out_file = tmp_path / "out.txt"
+    org_file = project / "TODO.org"
+
+    content_before = org_file.read_text(encoding="utf-8")
+    assert "* Directories" not in content_before
+
+    assert orgmgr.cmd_pcd(
+        argparse.Namespace(registry=str(registry), out=str(out_file), edit=False)
+    ) == 0
+
+    content_after = org_file.read_text(encoding="utf-8")
+    assert "* Directories" in content_after
+
+    expected_org_link = registry / "myproj" / "TODO.org"
+    assert out_file.read_text(encoding="utf-8").strip() == str(expected_org_link.resolve())
+
+
+
 def test_projtui_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> None:
     # This test reproduces a registry symlink: project selection should show the
     # real task-file target path, not the path inside the registry.

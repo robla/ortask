@@ -1,8 +1,5 @@
 * Directories
 ** file:~/src/ortask
-** file:~/src/nowtools
-** file:~/src/vergoog
-** file:~/tmpsorta/gdocs2026
 ** file:~/src/elusync
 ** file:~/src/elugen
 ** file:~/tmpsorta/electorama-weekly

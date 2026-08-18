@@ -1213,6 +1213,7 @@ def select_project_menu(
     title: str | None = None,
     summary: str | None = None,
     instruction: str | None = None,
+    actions: dict[str, str | MenuAction] | None = None,
     start_index: int = 0,
 ) -> MenuResult:
     """Run an inline highlight-bar selector for project rows."""
@@ -1239,6 +1240,7 @@ def select_project_menu(
         title=title,
         summary=summary,
         instruction=instruction,
+        actions=actions,
         start_index=start_index,
         select_help="Open the highlighted project",
         back_help="Back one level (exit at the top level)",

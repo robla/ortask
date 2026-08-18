@@ -154,3 +154,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Gemini [2026-08-18 Tue 15:01 PDT]: replaced .projdirs file concept with optional * Directories section in the project's Org file, populated todo.org with nowdirs.txt, and updated design and tests.
 ** Gemini [2026-08-18 Tue 15:14 PDT]: reversed the directory stack loading loop in misc/pcd.func.sh so that the resulting dirstack matches the exact top-to-bottom order specified in * Directories.
 ** Gemini [2026-08-18 Tue 15:53 PDT]: made double-asterisks, file: prefixes, and org link brackets optional in the * Directories section parser, and updated unit tests.
+** Gemini [2026-08-18 Tue 16:05 PDT]: added 'e' key action to the project picker in cmd_pcd to edit directories from the TUI, and added unit tests.

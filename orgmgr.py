@@ -194,11 +194,15 @@ def cmd_pcd(args: argparse.Namespace) -> int:
             rows,
             title="Projects",
             summary=f"Registry: {display_path}",
-            instruction="↑↓/jk · ↵ select · Esc/q exit",
+            instruction="↑↓/jk · ↵ select · e edit · Esc/q exit",
+            actions={"e": menu.MenuAction("edit", "e", "Edit project directories")},
             start_index=0,
         )
         if result.action == "select" and result.index is not None:
             project = projects[result.index]
+        elif result.action == "edit" and result.index is not None:
+            project = projects[result.index]
+            args.edit = True
     else:
         # Non-interactive fallback
         while True:
