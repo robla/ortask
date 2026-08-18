@@ -140,6 +140,19 @@ Behavior:
 This command is still useful for bootstrapping a fresh config, but it is no
 longer a compatibility bridge from the old projtui-specific config.
 
+## `pcd`
+
+`orgmgr.py pcd` opens an interactive, inline project selection menu. On selection, it writes the directory stack configured for that project to a file. This is intended to be used by the shell function `pcd`.
+
+```sh
+orgmgr.py pcd --out <file> [--edit] [--registry <path>]
+```
+
+Options:
+- `--out <file>`: The output file path to write resolved directories to.
+- `--edit`: Write the path of the selected project's `.projdirs` file to the output file (bootstrapping it with a single `.` if it doesn't exist).
+- `--registry <path>`: Override the default project registry path.
+
 ## `projadd`
 
 `orgmgr.py projadd` adds exactly one project to the registry by creating a

@@ -118,11 +118,12 @@ _orgmgr_complete()
         cword=$COMP_CWORD
     fi
 
-    local subcommands="help list migrate projadd"
+    local subcommands="help list migrate pcd projadd"
     local global_opts="-i --interactive --registry --todo-only --help"
     local list_opts="--all --format --help"
-    local projadd_opts="--name --file --registry --force --dry-run --help"
     local migrate_opts="--registry --force --dry-run --help"
+    local pcd_opts="--out --edit --registry --help"
+    local projadd_opts="--name --file --registry --force --dry-run --help"
 
     case "$prev" in
         --format)
@@ -169,6 +170,9 @@ _orgmgr_complete()
                 ;;
             migrate)
                 COMPREPLY=( $(compgen -W "$migrate_opts" -- "$cur") )
+                ;;
+            pcd)
+                COMPREPLY=( $(compgen -W "$pcd_opts" -- "$cur") )
                 ;;
             projadd)
                 COMPREPLY=( $(compgen -W "$projadd_opts" -- "$cur") )

@@ -941,7 +941,7 @@ def test_cli_subcommands_are_registered_alphabetically() -> None:
             "repair",
             "show",
         ],
-        "orgm": ["help", "list", "migrate", "projadd"],
+        "orgm": ["help", "list", "migrate", "pcd", "projadd"],
     }
     parsers = {
         "ort": ortask.build_parser(),
@@ -1042,7 +1042,7 @@ def test_bash_completion_lists_subcommands_alphabetically() -> None:
                 "show",
             ],
         ),
-        ("_orgmgr_complete", "orgm", ["help", "list", "migrate", "projadd"]),
+        ("_orgmgr_complete", "orgm", ["help", "list", "migrate", "pcd", "projadd"]),
     ]
 
     for function, executable, expected in cases:
@@ -1202,6 +1202,89 @@ def test_projadd_links_project_only_when_no_task_file(
     subdir = registry / "bare"
     assert (subdir / "bare").is_symlink()                          # project link
     assert not any(p.suffix == ".org" for p in subdir.iterdir())   # no task link
+
+
+def test_orgmgr_pcd_resolves_directories(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    from ortasklib import menu
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+
+    project = tmp_path / "myproj"
+    write(project / "TODO.org", "* Tasks\n** TODO t0001 task\n")
+
+    assert orgmgr.cmd_projadd(_projadd_args(project, name="myproj")) == 0
+    capsys.readouterr()
+
+    # Stub interactive select to use fallback, and select project "1"
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
+    monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
+
+    # Case 1: No .projdirs config
+    out_file = tmp_path / "out1.txt"
+    assert orgmgr.cmd_pcd(
+        argparse.Namespace(registry=str(registry), out=str(out_file), edit=False)
+    ) == 0
+
+    resolved_paths = out_file.read_text(encoding="utf-8").splitlines()
+    assert len(resolved_paths) == 1
+    assert resolved_paths[0] == str(project.resolve())
+
+    # Case 2: With .projdirs config
+    proj_dirs = project / ".projdirs"
+    monkeypatch.setenv("TEST_ENV_VAR", "subdir_env")
+    proj_dirs.write_text(
+        "# Comment line\n\n.\ndocs\n/absolute/path\n$TEST_ENV_VAR\n",
+        encoding="utf-8"
+    )
+
+    out_file2 = tmp_path / "out2.txt"
+    assert orgmgr.cmd_pcd(
+        argparse.Namespace(registry=str(registry), out=str(out_file2), edit=False)
+    ) == 0
+
+    resolved_paths = out_file2.read_text(encoding="utf-8").splitlines()
+    assert len(resolved_paths) == 4
+    assert resolved_paths[0] == str(project.resolve())
+    assert resolved_paths[1] == str((project / "docs").resolve())
+    assert resolved_paths[2] == "/absolute/path"
+    assert resolved_paths[3] == str((project / "subdir_env").resolve())
+
+
+def test_orgmgr_pcd_edit_mode(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    from ortasklib import menu
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+
+    project = tmp_path / "myproj"
+    write(project / "TODO.org", "* Tasks\n** TODO t0001 task\n")
+
+    assert orgmgr.cmd_projadd(_projadd_args(project, name="myproj")) == 0
+    capsys.readouterr()
+
+    # Stub interactive select to use fallback, and select project "1"
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
+    monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
+
+    # Verify --edit mode (creates .projdirs with "." if missing)
+    out_file = tmp_path / "out.txt"
+    proj_dirs_file = project / ".projdirs"
+    assert not proj_dirs_file.exists()
+
+    assert orgmgr.cmd_pcd(
+        argparse.Namespace(registry=str(registry), out=str(out_file), edit=True)
+    ) == 0
+
+    assert proj_dirs_file.exists()
+    assert proj_dirs_file.read_text(encoding="utf-8").strip() == "."
+    assert out_file.read_text(encoding="utf-8").strip() == str(proj_dirs_file.resolve())
 
 
 def test_projtui_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> None:

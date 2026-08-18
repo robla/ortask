@@ -167,6 +167,118 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _real_project_path(project: manager.Project) -> Path:
+    for item in project.path.iterdir():
+        if item.is_symlink() and item.resolve().is_dir():
+            return item.resolve()
+    if project.org_file:
+        return project.org_file.resolve().parent
+    return project.path
+
+
+def cmd_pcd(args: argparse.Namespace) -> int:
+    """Select a project and output its directory stack config to a file."""
+    import os
+    from ortasklib import menu
+
+    workspace, display_path = manager.resolve_registry(args.registry)
+    if not workspace.is_dir():
+        print(f"project directory not found: {workspace}", file=sys.stderr)
+        return 1
+
+    projects = manager.discover_projects(workspace)
+    if not projects:
+        print("No projects discovered.", file=sys.stderr)
+        return 0
+
+    rows = []
+    for idx, project in enumerate(projects, start=1):
+        try:
+            org_file = str(project.org_file.relative_to(workspace))
+        except ValueError:
+            org_file = str(project.org_file)
+        rows.append(menu.ProjectRow(idx, project.name, org_file))
+
+    project = None
+    if menu.interactive_select_available():
+        result = menu.select_project_menu(
+            rows,
+            title="Projects",
+            summary=f"Registry: {display_path}",
+            instruction="↑↓/jk · ↵ select · Esc/q exit",
+            start_index=0,
+        )
+        if result.action == "select" and result.index is not None:
+            project = projects[result.index]
+    else:
+        # Non-interactive fallback
+        while True:
+            menu.print_project_dashboard("Projects", workspace, rows)
+            try:
+                choice = menu.prompt_text("number, Esc/b/q=exit").lower()
+            except menu.ContextCancelled:
+                return 1
+            if choice in {"b", "q"}:
+                return 1
+            if choice.isdigit() and 1 <= int(choice) <= len(projects):
+                project = projects[int(choice) - 1]
+                break
+            print("invalid choice", file=sys.stderr)
+
+    if project is None:
+        return 1
+
+    real_path = _real_project_path(project)
+    out_path = Path(args.out).expanduser().resolve()
+
+    if args.edit:
+        proj_dirs_file = real_path / ".projdirs"
+        if not proj_dirs_file.exists():
+            try:
+                proj_dirs_file.parent.mkdir(parents=True, exist_ok=True)
+                proj_dirs_file.write_text(".\n", encoding="utf-8")
+            except Exception as e:
+                print(f"Error creating {proj_dirs_file}: {e}", file=sys.stderr)
+                return 1
+        try:
+            out_path.write_text(str(proj_dirs_file) + "\n", encoding="utf-8")
+        except Exception as e:
+            print(f"Error writing to output file {out_path}: {e}", file=sys.stderr)
+            return 1
+        return 0
+
+    # Resolve directories
+    proj_dirs_file = real_path / ".projdirs"
+    resolved_dirs = []
+    if proj_dirs_file.exists():
+        try:
+            lines = proj_dirs_file.read_text(encoding="utf-8").splitlines()
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                expanded = os.path.expandvars(os.path.expanduser(line))
+                path = Path(expanded)
+                if not path.is_absolute():
+                    path = (real_path / path).resolve()
+                else:
+                    path = path.resolve()
+                resolved_dirs.append(str(path))
+        except Exception as e:
+            print(f"Warning: could not read {proj_dirs_file}: {e}", file=sys.stderr)
+
+    if not resolved_dirs:
+        resolved_dirs = [str(real_path.resolve())]
+
+    try:
+        out_path.write_text("\n".join(resolved_dirs) + "\n", encoding="utf-8")
+    except Exception as e:
+        print(f"Error writing to output file {out_path}: {e}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="orgmgr — global operations command for the ortask suite of tools.",
@@ -218,6 +330,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_mig.add_argument("--dry-run", action="store_true",
                        help="show what would be written and removed")
 
+    p_pcd = sub.add_parser(
+        "pcd",
+        help="select a project and write its directories to a file",
+    )
+    p_pcd.add_argument(
+        "--out",
+        required=True,
+        help="output file to write selected paths to",
+    )
+    p_pcd.add_argument(
+        "--edit",
+        action="store_true",
+        help="write the path to the project's .projdirs file instead of the directories",
+    )
+    # SUPPRESS default so this subparser does not clobber a global override.
+    p_pcd.add_argument("--registry", default=argparse.SUPPRESS,
+                       help="registry directory to select from")
+
     p_add = sub.add_parser(
         "projadd",
         help="add one project to the registry (creates a symlink subdir)",
@@ -259,6 +389,7 @@ def main() -> int:
     dispatch = {
         "list": cmd_list,
         "migrate": cmd_migrate,
+        "pcd": cmd_pcd,
         "projadd": cmd_projadd,
     }
 
