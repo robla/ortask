@@ -870,7 +870,7 @@ class InlineMenuSession:
 
         async def run() -> None:
             try:
-                await run_in_terminal(func, in_executor=True)
+                await run_in_terminal(func, in_executor=False)
             except OSError as exc:
                 self.set_transient_message(
                     f"could not run external command: {exc}"

@@ -42,7 +42,8 @@ pcd () {
 
     # Handle Edit Mode
     if [[ "$edit" == true ]]; then
-        "${EDITOR:-vi}" "${lines[0]}"
+        local editor_cmd=(${EDITOR:-vi})
+        "${editor_cmd[@]}" "${lines[0]}"
         return 0
     fi
 

@@ -2452,7 +2452,7 @@ def test_inline_menu_session_suspends_external_command(monkeypatch) -> None:
     calls = []
 
     async def fake_run_in_terminal(func, *, in_executor):
-        assert in_executor is True
+        assert in_executor is False
         return func()
 
     monkeypatch.setattr(menu, "run_in_terminal", fake_run_in_terminal)
