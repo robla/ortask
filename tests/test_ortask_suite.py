@@ -1237,7 +1237,7 @@ def test_orgmgr_pcd_resolves_directories(
     org_file = project / "TODO.org"
     monkeypatch.setenv("TEST_ENV_VAR", "subdir_env")
     org_file.write_text(
-        "* Tasks\n** TODO t0001 task\n\n* Directories\n# Comment line\n\n.\ndocs\n/absolute/path\n$TEST_ENV_VAR\n",
+        "* Tasks\n** TODO t0001 task\n\n* Directories\n# Comment line\n\n** .\n** file:docs\n** [[/absolute/path]]\n** [[file:$TEST_ENV_VAR]]\n",
         encoding="utf-8"
     )
 

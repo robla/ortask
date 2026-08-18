@@ -153,3 +153,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Gemini [2026-08-18 Tue 14:51 PDT]: displayed full tildified project directories instead of task files in the project selector, refactoring real_project_path into manager.py.
 ** Gemini [2026-08-18 Tue 15:01 PDT]: replaced .projdirs file concept with optional * Directories section in the project's Org file, populated todo.org with nowdirs.txt, and updated design and tests.
 ** Gemini [2026-08-18 Tue 15:14 PDT]: reversed the directory stack loading loop in misc/pcd.func.sh so that the resulting dirstack matches the exact top-to-bottom order specified in * Directories.
+** Gemini [2026-08-18 Tue 15:53 PDT]: made double-asterisks, file: prefixes, and org link brackets optional in the * Directories section parser, and updated unit tests.

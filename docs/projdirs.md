@@ -28,12 +28,13 @@ A project's directory stack is specified in an optional `* Directories` top-leve
 ```org
 * Directories
 # Directory stack for the ortask project
-.
-docs
-tests
+** file:~/src/ortask
+** file:~/src/nowtools
+** file:~/src/vergoog
 ```
 
 - One directory per line in the body of the section, in stack order.
+- Leading asterisks (e.g., `** `), optional `file:` prefixes, and optional Org-mode link brackets (`[[...]]`) are stripped/ignored when parsing.
 - `#` comments and blank lines are ignored.
 - Relative paths resolve against the resolved project root; absolute paths are taken as given; `~` and `$VAR` are expanded.
 - With no `* Directories` section, the stack defaults to a single entry: the project root. Most projects should never need to define this section.

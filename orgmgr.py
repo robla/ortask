@@ -235,13 +235,12 @@ def cmd_pcd(args: argparse.Namespace) -> int:
 
         has_dirs = False
         for line in content.splitlines():
-            if line.startswith("*"):
+            if line.startswith("* "):
                 parts = line.split(None, 1)
-                if parts and all(c == "*" for c in parts[0]):
-                    header_title = parts[1].split(":")[0].strip() if len(parts) > 1 else ""
-                    if parts[0] == "*" and header_title == "Directories":
-                        has_dirs = True
-                        break
+                header_title = parts[1].split(":")[0].strip() if len(parts) > 1 else ""
+                if header_title == "Directories":
+                    has_dirs = True
+                    break
 
         if not has_dirs:
             try:
@@ -266,21 +265,32 @@ def cmd_pcd(args: argparse.Namespace) -> int:
             content = real_org_file.read_text(encoding="utf-8")
             in_dirs_section = False
             for line in content.splitlines():
-                if line.startswith("*"):
+                if line.startswith("* "):
                     parts = line.split(None, 1)
-                    if parts and all(c == "*" for c in parts[0]):
-                        header_title = parts[1].split(":")[0].strip() if len(parts) > 1 else ""
-                        if parts[0] == "*" and header_title == "Directories":
-                            in_dirs_section = True
-                            continue
-                        else:
-                            in_dirs_section = False
+                    header_title = parts[1].split(":")[0].strip() if len(parts) > 1 else ""
+                    if header_title == "Directories":
+                        in_dirs_section = True
+                        continue
+                    else:
+                        in_dirs_section = False
 
                 if in_dirs_section:
-                    line_stripped = line.strip()
-                    if not line_stripped or line_stripped.startswith("#"):
+                    # Strip leading asterisks and whitespace
+                    cleaned = line.lstrip("*").strip()
+
+                    # Strip org link wrappers [[...]] if present
+                    if cleaned.startswith("[[") and "]]" in cleaned:
+                        link_content = cleaned[2:].split("]]")[0]
+                        cleaned = link_content.split("][")[0].strip()
+
+                    # Strip optional "file:" prefix
+                    if cleaned.startswith("file:"):
+                        cleaned = cleaned[5:].strip()
+
+                    if not cleaned or cleaned.startswith("#"):
                         continue
-                    expanded = os.path.expandvars(os.path.expanduser(line_stripped))
+
+                    expanded = os.path.expandvars(os.path.expanduser(cleaned))
                     path = Path(expanded)
                     if not path.is_absolute():
                         path = (real_path / path).resolve()
