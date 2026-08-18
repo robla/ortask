@@ -2,8 +2,8 @@
 
 `pcd` is a shell function that picks a project from the ortask registry and
 loads that project's working directories into the shell's directory stack. It is
-the registry-aware successor to the historical `nowcd`/`cdnow`, which read one
-global `nowdirs.txt` instead of per-project configuration.
+the registry-aware successor to `nowcd`/`cdnow`, which read one global
+`nowdirs.txt` instead of per-project configuration.
 
 It has two halves:
 
@@ -13,185 +13,193 @@ It has two halves:
   `cd`/`pushd`. Only the shell can change the shell's own directory stack, so
   this half cannot move into Python.
 
-## Project discovery
+## The rule that keeps this simple
 
-`pcd` adds no discovery rules of its own. It resolves the registry and scans
-projects exactly as `orgmgr.py list` does — see `docs/orgmgr.md` — through
-`manager.resolve_registry()` and `manager.discover_projects()`, and it reuses the
-existing project picker (`projtui._project_view`) rather than adding a second
-selector.
+**The file written by `--out` has exactly one meaning: the directory stack the
+shell should have when this is over, top entry first.** It is never a mode
+header, never a file to edit, never a flag. The shell reads a list of
+directories and applies it. That is the whole protocol.
+
+Everything else the helper can do — editing, previewing, cancelling — happens
+inside the helper and never reaches the shell. Cancelling means exiting nonzero
+so the shell does nothing.
+
+This rule is the lesson of the first implementation. Editing was routed back
+through the same channel, first as an `edit`/`dirs` header line and then by
+testing whether the first path was a regular file. Both made the file's meaning
+depend on something outside the file, and both broke the moment a shell had
+sourced one version of the function while running another version of the helper:
+
+```text
+Warning: directory does not exist: /home/robla/src/elusync/todo.org
+Warning: directory does not exist: edit
+```
+
+A single-meaning channel cannot fail that way. It also means new helper features
+never require re-sourcing the shell function.
 
 ## `* Directories`
 
-A project's directory stack is specified in an optional `* Directories` top-level section inside the project's `.org` task file:
+A project's directory stack lives in an optional `* Directories` top-level
+section in the project's Org task file:
 
 ```org
 * Directories
-# Directory stack for the ortask project
 ** file:~/src/ortask
-** file:~/src/nowtools
-** file:~/src/vergoog
+** file:~/src/elusync
+** file:~/tmpsorta/electorama-weekly
 ```
 
-- One directory per line in the body of the section, in stack order.
-- Leading asterisks (e.g., `** `), optional `file:` prefixes, and optional Org-mode link brackets (`[[...]]`) are stripped/ignored when parsing.
+- One directory per line, in stack order: the first entry becomes the working
+  directory.
+- Entries are ordinary Org subheadings. Leading asterisks, a `file:` prefix, and
+  `[[...]]` link brackets are all optional and stripped when present, so a plain
+  `~/src/ortask` line works too.
 - `#` comments and blank lines are ignored.
-- Relative paths resolve against the resolved project root; absolute paths are taken as given; `~` and `$VAR` are expanded.
-- With no `* Directories` section, the stack defaults to a single entry: the project root. Most projects should never need to define this section.
+- Relative paths resolve against the real project root; absolute paths are taken
+  as given; `~` and `$VAR` are expanded.
+- The section ends at the next top-level (`* `) heading.
+- With no `* Directories` section, the stack is a single entry: the project
+  root. Most projects should never need the section.
 
 ## `orgmgr.py pcd`
 
 ```sh
-orgmgr.py pcd --out FILE [--edit]
+orgmgr.py pcd --out FILE
 ```
 
-`--out` is required and is the only result channel.
+`--out` is required and is the only result channel. On selection, write the
+resolved directories to FILE, one absolute path per line, and exit 0. On cancel,
+exit nonzero and leave FILE untouched.
 
-- Default: write the selected project's resolved directories to FILE, one absolute path per line; exit 0.
-- `--edit` (or interactive `e` key press): write the path of the selected project's `.org` task file to FILE, appending a `* Directories` section to the end of that file if it does not already exist; exit 0.
-- Cancel (`Esc`, `q`): exit 1 and leave FILE untouched.
+Results must not go to stdout. `menu.interactive_select_available()` requires
+`sys.stdout.isatty()` and the `Application` renders to stdout, so under `$(...)`
+the picker would silently degrade to the numbered fallback and its output would
+land in the captured value.
 
-Results must not go to stdout. `menu.interactive_select_available()` requires `sys.stdout.isatty()` and the `Application` renders to stdout, so under `$(...)` the picker would silently degrade to the numbered fallback and its output would land in the captured value. Keeping one file-based channel also keeps everything the shell would otherwise need to know about the `.org` file and default section contents on the Python side.
+There is no `--edit`. Editing is a key in the picker, not a mode of the command.
+
+## The picker
 
 The picker follows the bounded inline contract in `docs/interactive.md`:
-`full_screen=False`, content-sized within the usual ceiling, `↑↓`/`j`/`k` to
-move, `Enter` to select, `Esc`/`q` to cancel. The highlighted project's resolved
-stack previews in the footer; the session has one body control, so there is no
-side pane to put it in.
+`full_screen=False`, content-sized within the usual ceiling.
+
+```text
+↑↓/jk · ↵ select · e edit · Esc/q cancel
+```
+
+- `↵` resolves the highlighted project's directories, writes them, and exits 0.
+- `e` opens the project's Org file in `$VISUAL`/`$EDITOR`, then returns to the
+  picker so the edited stack can be selected immediately.
+- `Esc`/`q` exits nonzero without writing.
+
+`e` runs entirely inside the helper. Use `InlineMenuSession.suspend()`, which
+already hands the terminal over and repaints the view afterward, and launch the
+editor the way `projtui._open_editor()` does: `shlex.split()` on the variable,
+`VISUAL` before `EDITOR`, per-editor line arguments. That path already works
+with `EDITOR="emacs -nw"`; the shell must not re-solve it.
+
+If the project has no `* Directories` section, `e` still just opens the file.
+`orgmgr.py` does not write Org content — that is `ortask.py`'s job, per
+`docs/orgmgr.md` — so it prints a one-line hint rather than bootstrapping a
+section into the user's task file.
 
 ## `pcd`
 
-```sh
-pcd [-a|--append] [-e|--edit] [-r|--registry PATH]
-```
-
-- Default (reset): report which directories the reset drops, run `dirs -c`, `cd`
-  to the first project directory, `pushd` the rest, then print `dirs -v`.
-- `-a`: leave the current stack alone and `pushd` the project directories onto
-  it.
-- `-e`: open the selected project's `.org` task file in `$EDITOR`.
-- Directories that do not exist produce a warning and are skipped.
+`pcd` takes no arguments of its own. It forwards whatever it is given to
+`orgmgr.py` and appends its own `--out`, so `pcd --registry ~/other` works
+without the shell parsing anything, and a new helper flag never requires
+re-sourcing.
 
 ```bash
-# misc/pcd.func.sh (prototype)
-
+# misc/pcd.func.sh
 pcd () {
-    local orgmgr="${ORTASK_ORGMGR:-orgmgr.py}"
-    local append=false edit=false reg="" args=()
+    local out; out="$(mktemp)" || return 1
+    "${ORTASK_ORGMGR:-orgmgr.py}" "$@" pcd --out "$out" || { rm -f "$out"; return 1; }
 
-    # Parse arguments
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -a|--append)   append=true; shift ;;
-            -e|--edit)     edit=true; shift ;;
-            -r|--registry) reg="$2"; shift 2 ;;
-            *) echo "Usage: pcd [-a] [-e] [-r PATH]" >&2; return 1 ;;
-        esac
+    local want=()
+    readarray -t want < "$out"
+    rm -f "$out"
+    (( ${#want[@]} )) || return 0
+
+    # Report what this drops, the way nowcd did.
+    local old=() cur keep dropped=false
+    readarray -t old < <(dirs -l -p)
+    echo "dropped:"
+    for cur in "${old[@]}"; do
+        for keep in "${want[@]}"; do [[ "$cur" == "$keep" ]] && continue 2; done
+        echo "  - ${cur/#$HOME/\~}"; dropped=true
     done
+    [[ $dropped == true ]] || echo "  (none)"
 
-    # Prepare helper arguments
-    [[ -n "$reg" ]] && args+=(--registry "$reg")
-    local out; out="$(mktemp)"
-    args+=(pcd --out "$out")
-    [[ "$edit" == true ]] && args+=(--edit)
-
-    # Run the interactive picker
-    "$orgmgr" "${args[@]}"
-    local rc=$?
-    if [[ $rc -ne 0 ]]; then
-        rm -f "$out"
-        return $rc
-    fi
-
-    # Read selected targets
-    local lines=()
-    if [[ -f "$out" ]]; then
-        readarray -t lines < "$out"
-        rm -f "$out"
-    fi
-
-    [[ ${#lines[@]} -eq 0 ]] && return 0
-
-    # Handle Edit Mode (either from CLI flag or if the first target is a regular file)
-    if [[ "$edit" == true || -f "${lines[0]}" ]]; then
-        local editor_cmd=(${EDITOR:-vi})
-        "${editor_cmd[@]}" "${lines[0]}"
-        return 0
-    fi
-
-    # Save current directory stack
-    local old_dirstack=()
-    readarray -t old_dirstack < <(dirs -l -p)
-
-    if [[ "$append" == true ]]; then
-        echo "mode: append project directories to dirstack"
-    else
-        echo "mode: reset dirstack to project directories"
-        
-        # Show directories removed by the reset (inline diff)
-        echo "removed by reset:"
-        local old_dir removed=false
-        for old_dir in "${old_dirstack[@]}"; do
-            local found=false dir
-            for dir in "${lines[@]}"; do
-                [[ "$old_dir" == "$dir" ]] && found=true && break
-            done
-            if [[ "$found" == false ]]; then
-                echo "  - ${old_dir/#$HOME/\~}"
-                removed=true
-            fi
-        done
-        [[ "$removed" == false ]] && echo "  (none)"
-
-        dirs -c
-    fi
-
-    # Load new directory stack in reverse order to preserve their order in the dirstack
-    local i
-    local first_push=true
-    for ((i=${#lines[@]}-1; i>=0; i--)); do
-        local target_dir="${lines[$i]}"
-        if [[ -d "$target_dir" ]]; then
-            if [[ "$first_push" == true && "$append" == false ]]; then
-                cd "$target_dir"
-                first_push=false
-            else
-                pushd "$target_dir" > /dev/null
-            fi
-        else
-            echo "Warning: directory does not exist: $target_dir" >&2
-        fi
+    local have=() d i
+    for d in "${want[@]}"; do
+        if [[ -d "$d" ]]; then have+=("$d"); else echo "missing: $d" >&2; fi
     done
+    (( ${#have[@]} )) || { echo "no usable directories" >&2; return 1; }
 
-    echo "stack:"
+    # First entry becomes the working directory; the rest stack beneath it in order.
+    dirs -c
+    cd "${have[0]}" || return 1
+    for ((i = ${#have[@]} - 1; i > 0; i--)); do
+        pushd -n "${have[$i]}" > /dev/null
+    done
     dirs -v
 }
 ```
 
-Four things the first draft of this design got wrong, worth not repeating:
+Stack order matches file order, top first. `pushd` puts its argument on top, so
+building the stack forward would invert it. `pushd -n` inserts just below the
+top without changing directory, so walking the tail backwards leaves entry 0 as
+the working directory and everything else in file order beneath it. This also
+keeps the `cd` target equal to the final working directory, instead of
+transiting through the deepest entry on the way there.
 
-- Build the helper invocation as an array. A command held in a string and
-  expanded unquoted word-splits, and breaks on a registry path with spaces.
-- Locate `orgmgr.py` through `PATH` or an override variable, not a hardcoded
-  absolute path in a checked-in file.
-- In append mode, do not `pushd .` first. Every entry is pushed, so the current
-  directory is already preserved; `nowcd` needed that only because it `cd`s its
-  first entry.
-- Perform the directory diff inline to avoid dynamic scoping issues, passing complex
-  arrays, or polluting the global shell namespace with auxiliary helper functions.
+## Why `-a` and `-e` are gone
 
-## Integration checklist
+`-e` is redundant. Editing is `e` in the picker, which is both more discoverable
+and the thing that removes edit-mode from the shell protocol entirely.
 
-- Register `pcd` alphabetically in `orgmgr.py` — between `migrate` and
-  `projadd` — in the parser, help, and dispatch tables, per repo policy.
-- Document the verb in `docs/orgmgr.md`.
-- Add completion for it in `misc/ortask-completion.bash`.
-- `pcd` reads the registry and writes only the file named by `--out`. Like the
-  rest of `orgmgr.py`, it never touches Org content.
+`-a` (append) is worth dropping too. Under `nowcd` there was one global
+directory list, so append meant "add my standard directories to whatever I am
+doing." With per-project stacks, append means "work on two projects at once,"
+which is a real thing to want but a bad fit for a flag you must type before the
+menu tells you what the projects are. If it comes back, it should come back as a
+key in the picker.
+
+Because the output file means "the stack you want afterward" rather than "this
+project's directories," append can later be added as a picker key plus one input
+argument telling the helper the current stack, with the apply logic in the shell
+function unchanged.
+
+## What this changes in the current implementation
+
+- `misc/pcd.func.sh`: delete the argument-parsing loop, the append branch, the
+  edit branch, and the `-f "${lines[0]}"` sniff. About 96 lines become about 35.
+- `orgmgr.py`: drop the `--edit` flag and the code that appends a `* Directories`
+  section to the user's Org file.
+- `orgmgr.py`: move the roughly 60 lines of inline `* Directories` parsing out of
+  `cmd_pcd` into the shared library — `core` for the Org syntax, `manager` for
+  resolving entries against the project root — so it is unit-testable without
+  driving the CLI, and so `ortask.py` can reuse it later.
+- `orgmgr.py`: build the picker on `InlineMenuSession` rather than
+  `menu.select_project_menu`. `cmd_pcd` currently depends on `_run_selector` and
+  `select_project_menu`, which `t0011` exists to delete.
+- Tests: the two-mode `--out` assertions collapse to one. Add direct unit tests
+  for the `* Directories` parser covering plain paths, `**` prefixes, `file:`
+  prefixes, `[[...]]` links, comments, `$VAR`, `~`, relative paths, section
+  termination at the next `* ` heading, and the no-section fallback.
+
+Keep the `in_executor=False` change in `menu.suspend()`. Running an interactive
+child in a background executor thread is what broke `emacs -nw`, and the fix
+applies to `ort -i` as much as to `pcd`.
 
 ## Open questions
 
-- Since directories are now stored inside the `.org` file, they are automatically shared with the team. Should we support a private workspace-local override file (e.g. `.git/info/exclude` style) for developers who have different local paths?
-- Should `-e` apply the edited stack immediately, as `nowcd -e` did, or only
-  edit?
+- Should the directory list be shared or private? It now lives in the project's
+  Org file, which is usually committed, while the `nowdirs.txt` it descends from
+  was strictly personal. No override mechanism is proposed; the question is
+  whether one is needed before this gets used on a shared repo.
+- Should `pcd` offer a way to add the current directory to the highlighted
+  project's stack, or is that squarely `ortask.py`'s business?
 - Is `pcd` worth a mention in `docs/ecosystem.md`?
