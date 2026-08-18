@@ -84,23 +84,128 @@ pcd [-a|--append] [-e|--edit] [-r|--registry PATH]
 - Directories that do not exist produce a warning and are skipped.
 
 ```bash
-# misc/pcd.func.sh (sketch)
+# misc/pcd.func.sh (prototype)
+
+pcd_pretty_dir () {
+    local dir="$1"
+    if [[ "$dir" == "$HOME" ]]; then
+        printf '~'
+    elif [[ "$dir" == "$HOME/"* ]]; then
+        printf '~/%s' "${dir#"$HOME"/}"
+    else
+        printf '%s' "$dir"
+    fi
+}
+
+pcd_dir_in_list () {
+    local needle="$1"
+    shift
+    local dir
+    for dir in "$@"; do
+        [[ "$needle" == "$dir" ]] && return 0
+    done
+    return 1
+}
+
 pcd () {
     local orgmgr="${ORTASK_ORGMGR:-orgmgr.py}"
-    local out; out="$(mktemp)"
+    local append_mode=false
+    local edit_mode=false
+    local registry=""
     local args=()
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -a|--append)   append_mode=true; shift ;;
+            -e|--edit)     edit_mode=true; shift ;;
+            -r|--registry) registry="$2"; shift 2 ;;
+            *) echo "Usage: pcd [-a|--append] [-e|--edit] [-r|--registry PATH]" >&2; return 1 ;;
+        esac
+    done
+
+    # Prepare helper arguments
     [[ -n "$registry" ]] && args+=(--registry "$registry")
+    local out; out="$(mktemp)"
     args+=(pcd --out "$out")
     [[ "$edit_mode" == true ]] && args+=(--edit)
 
-    "$orgmgr" "${args[@]}" || { rm -f "$out"; return 1; }
+    # Run the interactive picker
+    "$orgmgr" "${args[@]}"
+    local rc=$?
+    if [[ $rc -ne 0 ]]; then
+        rm -f "$out"
+        return $rc
+    fi
 
+    # Read selected targets
     local lines=()
-    readarray -t lines < "$out"
-    rm -f "$out"
-    # -e:        "${EDITOR:-vi}" "${lines[0]}"
-    # reset:     dirs -c; cd "${lines[0]}"; pushd the rest; dirs -v
-    # -a:        pushd every entry; dirs -v
+    if [[ -f "$out" ]]; then
+        readarray -t lines < "$out"
+        rm -f "$out"
+    fi
+
+    if [[ ${#lines[@]} -eq 0 ]]; then
+        echo "No project selected." >&2
+        return 0
+    fi
+
+    # Handle Edit Mode
+    if [[ "$edit_mode" == true ]]; then
+        local target_file="${lines[0]}"
+        "${EDITOR:-vi}" "$target_file"
+        return 0
+    fi
+
+    # Save current directory stack
+    local old_dirstack=()
+    readarray -t old_dirstack < <(dirs -l -p)
+
+    if [[ "$append_mode" == true ]]; then
+        echo "mode: append project directories to dirstack"
+    else
+        echo "mode: reset dirstack to project directories"
+        
+        # Show directories removed by the reset
+        local old_dir
+        local removed_any=false
+        for old_dir in "${old_dirstack[@]}"; do
+            if ! pcd_dir_in_list "$old_dir" "${lines[@]}"; then
+                if [[ "$removed_any" == false ]]; then
+                    echo "removed by reset:"
+                    removed_any=true
+                fi
+                printf '  - '
+                pcd_pretty_dir "$old_dir"
+                printf '\n'
+            fi
+        done
+        if [[ "$removed_any" == false ]]; then
+            echo "removed by reset:"
+            echo "  (none)"
+        fi
+
+        dirs -c
+    fi
+
+    # Load new directory stack
+    local i
+    for ((i=0; i<${#lines[@]}; i++)); do
+        local target_dir="${lines[$i]}"
+        if [[ ! -d "$target_dir" ]]; then
+            echo "Warning: directory does not exist: $target_dir" >&2
+            continue
+        fi
+
+        if [[ $i -eq 0 && "$append_mode" == false ]]; then
+            cd "$target_dir"
+        else
+            pushd "$target_dir" > /dev/null
+        fi
+    done
+
+    echo "stack:"
+    dirs -v
 }
 ```
 
@@ -115,7 +220,8 @@ Four things the first draft of this design got wrong, worth not repeating:
   first entry.
 - Pass both the old and new directory lists to the "removed by reset" helper as
   arguments, rather than having it read one of them out of its caller's locals
-  by bash dynamic scoping.
+  by bash dynamic scoping. (Solved here by using a simple item-in-list helper
+  `pcd_dir_in_list` which takes a single item and list arguments).
 
 ## Integration checklist
 
