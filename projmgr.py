@@ -448,6 +448,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 2
 
 
+def _dedupe(paths: list[Path]) -> list[Path]:
+    """Drop repeats, keeping the first occurrence and so the list's own order."""
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for path in paths:
+        if path not in seen:
+            seen.add(path)
+            unique.append(path)
+    return unique
+
+
 class _CdprojSession:
     """Pick a project, resolve its directory stack, and write it to a file.
 
@@ -468,6 +479,7 @@ class _CdprojSession:
         self.out_path = out_path
         self.status = 1
         self.error: str | None = None
+        self.warnings: list[str] = []
 
     # -- output ----------------------------------------------------------
 
@@ -489,7 +501,70 @@ class _CdprojSession:
         root = manager.real_project_path(project)
         # A section that exists but lists nothing would otherwise write an empty
         # stack, which the shell function reads as "do nothing at all".
-        return manager.resolve_directories(source.entries or [], root) or [root]
+        entries = manager.resolve_directories(source.entries or [], root)
+        return _dedupe(entries) or [root]
+
+    def resolve_stack(
+        self, project: manager.Project
+    ) -> tuple[list[Path], str, list[str]]:
+        """The stack, the label that produced it, and any warnings.
+
+        The private list wins outright and sets the order; the project's own
+        list is never merged in, only checked against. See "Which list wins" in
+        ``docs/cdproj.md`` for why, and for the cases this covers.
+
+        This is the only place a stack is resolved. The picker, ``cdproj
+        PROJECT``, and the numbered fallback all come through here, so they
+        cannot drift apart.
+        """
+        root = manager.real_project_path(project)
+        sources = manager.directory_sources(project)
+        private = next((s for s in sources if s.label == "private"), None)
+        public = next((s for s in sources if s.label == "project"), None)
+
+        winner = private or public
+        if winner is None:
+            # No ``* Directories`` anywhere: the project root is the whole stack.
+            return [root], "project root", []
+
+        directories = self.stack_for(winner, project)
+        if private is None or public is None:
+            return directories, winner.label, []
+
+        # Both lists exist. Compare resolved paths, so "docs", "./docs", and the
+        # absolute form are one entry rather than three.
+        chosen = set(directories)
+        missing = [
+            path
+            for path in _dedupe(manager.resolve_directories(public.entries or [], root))
+            if path not in chosen
+        ]
+        warnings: list[str] = []
+        if missing:
+            warnings.append(
+                f"{project.name}: in {public.path.name} but not "
+                f"{private.path.name}: "
+                + ", ".join(manager.friendly_path(path) for path in missing)
+            )
+        return directories, private.label, warnings
+
+    def write_selection(self, project: manager.Project) -> tuple[str, str]:
+        """Resolve one project's stack, write it, and bank its warnings."""
+        directories, label, warnings = self.resolve_stack(project)
+        self.warnings.extend(warnings)
+        return self.write_stack(directories), label
+
+    def report(self) -> None:
+        """Warnings and errors reach stderr only once any picker has exited.
+
+        The ``--out`` file carries directories and nothing else, and the inline
+        session erases itself on the way out, so stderr is the one channel that
+        survives to the shell that called ``cdproj``.
+        """
+        for warning in self.warnings:
+            print(warning, file=sys.stderr)
+        if self.error:
+            print(self.error, file=sys.stderr)
 
     # -- views -----------------------------------------------------------
 
@@ -500,8 +575,7 @@ class _CdprojSession:
             final_message="No project selected",
         )
         session.run()
-        if self.error:
-            print(self.error, file=sys.stderr)
+        self.report()
         return self.status
 
     def project_view(self) -> menu.MenuView:
@@ -529,39 +603,11 @@ class _CdprojSession:
         )
 
     def select_stack(
-        self, session: menu.InlineMenuSession | None, project: manager.Project
+        self, session: menu.InlineMenuSession, project: manager.Project
     ) -> None:
-        """Resolve the stack, merging public and private sources (public on top)."""
-        sources = manager.directory_sources(project)
-        if not sources:
-            # No ``* Directories`` anywhere: the project root is the whole stack.
-            message = self.write_stack([manager.real_project_path(project)])
-            if session is not None:
-                session.pop_view(message=f"{project.name}: {message} (project root)")
-            return
-
-        public_source = next((s for s in sources if s.label == "project"), None)
-        private_source = next((s for s in sources if s.label == "private"), None)
-
-        resolved_dirs = []
-        seen = set()
-        for src in (public_source, private_source):
-            if src is not None:
-                paths = self.stack_for(src, project)
-                for p in paths:
-                    p_str = str(p)
-                    if p_str not in seen:
-                        seen.add(p_str)
-                        resolved_dirs.append(p)
-
-        message = self.write_stack(resolved_dirs)
-        active_labels = []
-        if public_source:
-            active_labels.append("project")
-        if private_source:
-            active_labels.append("private")
-        if session is not None:
-            session.pop_view(message=f"{project.name} ({' + '.join(active_labels)}): {message}")
+        """Write the highlighted project's stack and close the picker."""
+        message, label = self.write_selection(project)
+        session.pop_view(message=f"{project.name} ({label}): {message}")
 
     def edit_view(self, project: manager.Project) -> menu.MenuView:
         candidates = manager.directory_candidates(project)
@@ -642,29 +688,8 @@ def _cdproj_fallback(session: _CdprojSession) -> int:
     if not choice.isdigit() or not 1 <= int(choice) <= len(session.projects):
         return 1
 
-    project = session.projects[int(choice) - 1]
-    sources = manager.directory_sources(project)
-    if not sources:
-        session.write_stack([manager.real_project_path(project)])
-        return session.status
-
-    public_source = next((s for s in sources if s.label == "project"), None)
-    private_source = next((s for s in sources if s.label == "private"), None)
-
-    resolved_dirs = []
-    seen = set()
-    for src in (public_source, private_source):
-        if src is not None:
-            paths = session.stack_for(src, project)
-            for p in paths:
-                p_str = str(p)
-                if p_str not in seen:
-                    seen.add(p_str)
-                    resolved_dirs.append(p)
-
-    session.write_stack(resolved_dirs)
-    if session.error:
-        print(session.error, file=sys.stderr)
+    session.write_selection(session.projects[int(choice) - 1])
+    session.report()
     return session.status
 
 
@@ -690,9 +715,8 @@ def cmd_cdproj(args: argparse.Namespace) -> int:
         if project is None:
             print(f"project not found in registry: {args.project}", file=sys.stderr)
             return 1
-        session.select_stack(None, project)
-        if session.error:
-            print(session.error, file=sys.stderr)
+        session.write_selection(project)
+        session.report()
         return session.status
 
     if menu.interactive_select_available():

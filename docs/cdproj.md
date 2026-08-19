@@ -272,12 +272,18 @@ function unchanged.
   top-level `* Directories` heading, or `None` when there is no such section, so
   a candidate location can be told apart from a real source. Bare paths, list
   bullets, `file:` prefixes, and `[[...]]` brackets all parse.
-- `core.editor_argv()` — the editor argv, shared with `projtui._open_editor()`.
+- `core.editor_argv()` — the editor argv, shared with `taskui._open_editor()`.
 - `manager.directory_candidates()` / `directory_sources()` — the two locations,
   private first, and the subset of them that defines a stack.
 - `manager.resolve_directories()` — `~`, `$VAR`, and relative-to-project-root
   expansion. Separate from parsing, because resolving needs a project root that
   `core` has no opinion about.
+- `_CdprojSession.resolve_stack()` — which list wins, in what order, and what to
+  warn about. The one place a stack is resolved: the picker, `cdproj PROJECT`,
+  and the numbered fallback all reach it through `write_selection()`, so they
+  cannot answer the question differently.
+- `_CdprojSession.report()` — warnings then errors, on stderr, after any picker
+  has exited.
 - `projmgr.cmd_cdproj` — views and output only. It runs on `InlineMenuSession`, not
   the one-shot `select_project_menu`/`_run_selector` path that `t0011` exists to
   delete, with a numbered fallback for pipes.

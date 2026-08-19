@@ -1635,10 +1635,10 @@ def test_projmgr_cdproj_never_edits_the_task_file(
     assert (project / "TODO.org").read_text(encoding="utf-8") == original
 
 
-def test_projmgr_cdproj_prefers_the_private_list(
+def test_projmgr_cdproj_private_list_wins_outright(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    """A private list is offered first, and chosen without a prompt when alone."""
+    """The private list is the stack; the project's list is only checked."""
     from ortasklib import menu
 
     registry, project = _cdproj_registry(
@@ -1650,12 +1650,13 @@ def test_projmgr_cdproj_prefers_the_private_list(
     monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
 
-    # Only the private file defines a stack, so there is nothing to ask about.
+    # Only the private file defines a stack: nothing to compare, nothing to say.
     out_file = tmp_path / "out1.txt"
     assert projmgr.cmd_cdproj(
         argparse.Namespace(registry=str(registry), out=str(out_file))
     ) == 0
     assert out_file.read_text(encoding="utf-8").splitlines() == ["/private/one"]
+    assert capsys.readouterr().err == ""
 
     # The private file must not be mistaken for the project's task file.
     projects = manager.discover_projects(registry)
@@ -1669,11 +1670,167 @@ def test_projmgr_cdproj_prefers_the_private_list(
     sources = manager.directory_sources(projects[0])
     assert [s.label for s in sources] == ["private", "project"]
 
+    # The shared entry is reported, not merged in. Exit status is unaffected.
     out_file2 = tmp_path / "out2.txt"
     assert projmgr.cmd_cdproj(
         argparse.Namespace(registry=str(registry), out=str(out_file2))
     ) == 0
-    assert out_file2.read_text(encoding="utf-8").splitlines() == ["/shared/one", "/private/one"]
+    assert out_file2.read_text(encoding="utf-8").splitlines() == ["/private/one"]
+    assert capsys.readouterr().err.strip() == (
+        "myproj: in TODO.org but not directories-private.org: /shared/one"
+    )
+
+
+def test_projmgr_cdproj_private_list_sets_the_order(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """Order comes from the private list, not from the project's."""
+    from ortasklib import menu
+
+    registry, _ = _cdproj_registry(
+        tmp_path,
+        monkeypatch,
+        capsys,
+        "* Tasks\n** TODO t0001 task\n"
+        "* Directories\n** file:/a\n** file:/b\n** file:/c\n",
+    )
+    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
+    private.write_text(
+        "* Directories\n** file:/c\n** file:/b\n** file:/a\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
+    monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
+
+    out_file = tmp_path / "out.txt"
+    assert projmgr.cmd_cdproj(
+        argparse.Namespace(registry=str(registry), out=str(out_file))
+    ) == 0
+    assert out_file.read_text(encoding="utf-8").splitlines() == ["/c", "/b", "/a"]
+    # Same set, so nothing is missing and nothing is said.
+    assert capsys.readouterr().err == ""
+
+
+def test_projmgr_cdproj_compares_resolved_paths(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """"docs", "./docs", and the absolute form are one entry, not three."""
+    from ortasklib import menu
+
+    registry, project = _cdproj_registry(
+        tmp_path,
+        monkeypatch,
+        capsys,
+        "* Tasks\n** TODO t0001 task\n"
+        "* Directories\n** ./docs\n** docs\n",
+    )
+    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
+    private.write_text(
+        f"* Directories\n** {project}/docs\n** file:/private/only\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
+    monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
+
+    out_file = tmp_path / "out.txt"
+    assert projmgr.cmd_cdproj(
+        argparse.Namespace(registry=str(registry), out=str(out_file))
+    ) == 0
+    assert out_file.read_text(encoding="utf-8").splitlines() == [
+        str((project / "docs").resolve()),
+        "/private/only",
+    ]
+    # The spellings match after resolution, and an entry only the private list
+    # has is never reported -- that is what the private list is for.
+    assert capsys.readouterr().err == ""
+
+
+def test_projmgr_cdproj_dedupes_the_winning_list(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    from ortasklib import menu
+
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
+    private.write_text(
+        "* Directories\n** file:/a\n** file:/b\n** file:/a\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
+    monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
+
+    out_file = tmp_path / "out.txt"
+    assert projmgr.cmd_cdproj(
+        argparse.Namespace(registry=str(registry), out=str(out_file))
+    ) == 0
+    assert out_file.read_text(encoding="utf-8").splitlines() == ["/a", "/b"]
+
+
+def test_projmgr_cdproj_empty_private_section_wins_and_reports(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """Emptying the private list is a choice; the shared list must not undo it."""
+    from ortasklib import menu
+
+    registry, project = _cdproj_registry(
+        tmp_path,
+        monkeypatch,
+        capsys,
+        "* Tasks\n** TODO t0001 task\n* Directories\n** file:/shared/one\n",
+    )
+    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
+    private.write_text("* Directories\n", encoding="utf-8")
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
+    monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
+
+    out_file = tmp_path / "out.txt"
+    assert projmgr.cmd_cdproj(
+        argparse.Namespace(registry=str(registry), out=str(out_file))
+    ) == 0
+    # An empty stack would read as "do nothing" in the shell function.
+    assert out_file.read_text(encoding="utf-8").splitlines() == [
+        str(project.resolve())
+    ]
+    assert "not directories-private.org: /shared/one" in capsys.readouterr().err
+
+
+def test_projmgr_cdproj_routes_resolve_alike(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """The picker, cdproj PROJECT, and the numbered fallback must not drift."""
+    from ortasklib import menu
+
+    registry, _ = _cdproj_registry(
+        tmp_path,
+        monkeypatch,
+        capsys,
+        "* Tasks\n** TODO t0001 task\n* Directories\n** file:/shared/one\n",
+    )
+    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
+    private.write_text("* Directories\n** file:/private/one\n", encoding="utf-8")
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
+    monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
+
+    results = []
+    for index, project_arg in enumerate((None, "myproj")):
+        out_file = tmp_path / f"out{index}.txt"
+        assert projmgr.cmd_cdproj(
+            argparse.Namespace(
+                registry=str(registry), out=str(out_file), project=project_arg
+            )
+        ) == 0
+        results.append(
+            (
+                out_file.read_text(encoding="utf-8"),
+                capsys.readouterr().err.strip(),
+            )
+        )
+
+    assert results[0] == results[1]
+    assert results[0][0].splitlines() == ["/private/one"]
+    assert results[0][1] == (
+        "myproj: in TODO.org but not directories-private.org: /shared/one"
+    )
 
 
 def test_projmgr_cdproj_empty_section_falls_back_to_the_project_root(
