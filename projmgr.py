@@ -3,7 +3,7 @@
 
 Owns the registry: listing projects, registering and removing them, checking
 them, opening the project navigator, and writing a project's directory stack for
-``pcd``. ``ortask.py`` owns Org task content; this script never writes it.
+``cdproj``. ``ortask.py`` owns Org task content; this script never writes it.
 ``docs/projects.md`` is the model, ``docs/projmgr.md`` the command reference.
 The intended aliases are ``pmgr`` and, for ``-i``, ``ptui``.
 """
@@ -28,7 +28,7 @@ from ortasklib import core, manager, menu, taskui
 # ---------------------------------------------------------------------------
 # The one project list
 #
-# Every project surface — ``-i``, ``pcd``, and both numbered fallbacks — renders
+# Every project surface — ``-i``, ``cdproj``, and both numbered fallbacks — renders
 # rows the same way and anchors the highlight the same way. Only what Enter does
 # differs.
 # ---------------------------------------------------------------------------
@@ -440,12 +440,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 2
 
 
-class _PcdSession:
+class _CdprojSession:
     """Pick a project, resolve its directory stack, and write it to a file.
 
     The output file has exactly one meaning: the directory stack the calling
     shell should have afterwards, top entry first. Editing happens inside this
-    session and never travels back through that channel, so ``misc/pcd.func.sh``
+    session and never travels back through that channel, so ``misc/cdproj.func.sh``
     only ever reads a list of directories.
     """
 
@@ -622,7 +622,7 @@ class _PcdSession:
         session.suspend(run_editor, on_done=done)
 
 
-def _pcd_fallback(session: _PcdSession) -> int:
+def _cdproj_fallback(session: _CdprojSession) -> int:
     """Numbered-menu path for pipes and terminals without prompt_toolkit."""
     _print_project_dashboard(session.projects, session.display_path)
     try:
@@ -658,7 +658,7 @@ def _pcd_fallback(session: _PcdSession) -> int:
     return session.status
 
 
-def cmd_pcd(args: argparse.Namespace) -> int:
+def cmd_cdproj(args: argparse.Namespace) -> int:
     """Select a project and write its directory stack to ``--out``."""
     workspace, display_path = manager.resolve_registry(args.registry)
     if not workspace.is_dir():
@@ -670,14 +670,14 @@ def cmd_pcd(args: argparse.Namespace) -> int:
         print("No projects discovered.", file=sys.stderr)
         return 1
 
-    session = _PcdSession(
+    session = _CdprojSession(
         display_path,
         projects,
         Path(args.out).expanduser().resolve(),
     )
     if menu.interactive_select_available():
         return session.run()
-    return _pcd_fallback(session)
+    return _cdproj_fallback(session)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -771,17 +771,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_mig.add_argument("--dry-run", action="store_true",
                        help="show what would be written and removed")
 
-    p_pcd = sub.add_parser(
-        "pcd",
+    p_cdproj = sub.add_parser(
+        "cdproj",
         help="select a project and write its directories to a file",
     )
-    p_pcd.add_argument(
+    p_cdproj.add_argument(
         "--out",
         required=True,
         help="output file to write selected paths to",
     )
     # SUPPRESS default so this subparser does not clobber a global override.
-    p_pcd.add_argument("--registry", default=argparse.SUPPRESS,
+    p_cdproj.add_argument("--registry", default=argparse.SUPPRESS,
                        help="registry directory to select from")
 
     p_projadd = sub.add_parser(
@@ -829,7 +829,7 @@ def main() -> int:
         "init": cmd_init,
         "list": cmd_list,
         "migrate": cmd_init,        # deprecated alias
-        "pcd": cmd_pcd,
+        "cdproj": cmd_cdproj,
         "projadd": cmd_add,         # deprecated alias
         "rm": cmd_rm,
     }
