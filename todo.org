@@ -75,3 +75,25 @@ Add pure sizing tests, pipe-input view-transition tests, and PTY coverage for
 growth, contraction, =C-^= input, Alt-arrow viewport scrolling, stale-line
 cleanup, inline final frames, and full-screen alternate-screen restoration.
 
+** TODO [#A] t0019 Make the project layer worth opening
+Implement the Project Navigator section of =docs/roadmap.md= against the model
+in =docs/projects.md=: explicit project membership, frictionless registration,
+and one project list shared by =pmgr=, =ptui=, and =pcd=.
+*** TODO [#A] t0019.1 Mark projects by symlink and make task files optional
+Replace =manager.SKIP_PROJECT_DIRS= with the directory-symlink marker, list
+projects that have no task file, and mark broken project symlinks instead of
+omitting them.
+*** TODO [#A] t0019.2 Add a one-word project registration verb
+Add =add= alongside =projadd=: with no argument, walk upward to the project
+root and print what was registered; take an explicit path literally.
+*** TODO [#B] t0019.3 Rename orgmgr.py to projmgr.py and move pcd with it
+Update =misc/ortask-completion.bash=, the =pmgr=/=ptui= aliases, and rename
+=docs/orgmgr.md= to =docs/projmgr.md=.
+*** TODO [#B] t0019.4 Move projtui.py into ortasklib and delete the script
+Task UI to =ortasklib=, project browser to =projmgr.py=. Sequence after
+=t0011= rather than racing it.
+*** TODO [#B] t0019.5 Converge the pcd picker and the project list
+One project view with =--out= deciding what Enter does, removing the second
+copy of project rendering.
+*** TODO [#C] t0019.6 Rename migrate to init and add rm and doctor
+=migrate= has not migrated anything since =projtui.ini= was removed.

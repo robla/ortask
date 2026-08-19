@@ -17,23 +17,28 @@ must stay valid even if the tools are never run again.
 
 All scripts are stdlib-only (Python 3.10+, no external dependencies).
 
-## The three tools
+## The tools
 
 - **`ortask.py`** — local CLI scoped to a single Org task file. Verbs: `list`,
   `show`, `add`, `done`, `open`, `repair`, `apply` (instantiate the `* Template`
   subtree as new weekly tasks; see `docs/templates.md`). This is the core tool.
   The intended shell alias is `ort`. Spec: `docs/ortask.md`.
-- **`orgmgr.py`** — global manager across many projects, organized by a registry
-  directory (one subdirectory per project, each holding symlinks to the project
-  and its `.org` task file). `ortask.ini` records it as `[projects] registry`.
-  Verbs: `list` (read-only task overview), `migrate` (record the registry in
-  `~/.config/ortask/ortask.ini`), and `projadd` (create one project's symlink
+- **`orgmgr.py`** — the project layer across many projects, organized by a
+  registry directory (one subdirectory per project, each holding symlinks to the
+  project and its `.org` task file). `ortask.ini` records it as `[projects]
+  registry`. Verbs: `list` (read-only task overview), `migrate` (record the
+  registry in `~/.config/ortask/ortask.ini`), `pcd` (write a project's directory
+  stack; see `docs/projdirs.md`), and `projadd` (create one project's symlink
   subdirectory under the registry). It edits only config and registry symlinks,
-  never Org content — `ortask.py` owns local task editing. Spec:
-  `docs/orgmgr.md`.
-- **`projtui.py`** — interactive terminal menu: pick a project, pick a task, see
-  a focused work prompt, optionally mark DONE or open in an editor. Delegates
-  writes to the same parser/writer paths as `ortask.py`. Spec:
+  never Org content — `ortask.py` owns local task editing. Specs:
+  `docs/orgmgr.md` for the command, `docs/projects.md` for the registry model.
+  **Planned:** renames to `projmgr.py` (`pmgr`), with `projadd` becoming `add`
+  and `-i` aliased `ptui` — see the Project Navigator section of
+  `docs/roadmap.md`.
+- **`projtui.py`** — despite the name, library code rather than a third tool:
+  2103 lines imported by both scripts, holding the `orti` task workspace
+  (`OrgBuffer`, `InteractiveTaskController`) plus ~105 lines of project browser.
+  It is slated to move into `ortasklib/` and stop being a script. Spec:
   `docs/interactive.md`.
 
 ## Running
@@ -73,8 +78,9 @@ Ambiguous same-tier matches are errors. Do not silently choose alphabetically.
   in `ortask.ini`), and `projadd` (create a project's symlink subdirectory under
   the registry). `list`/`migrate`/`projadd` and `projtui.py` all resolve the
   registry via `manager.resolve_registry()` (`--registry` > `[projects]
-  registry` > `~/Projects`). Future verbs
-  (`projrm`, `scan`, `doctor`) remain specified but unimplemented.
+  registry` > `~/Projects`). It also implements `pcd`. Future verbs (`projrm`,
+  `doctor`) remain specified but unimplemented; `scan` is explicitly not
+  planned, per `docs/projects.md`.
 - **`projtui.py`** implements the minimal numbered-menu workflow.
 - **Shared library (done):** reusable logic lives in the `ortasklib/` package
   (`core`, `tasks`, `manager`); the three scripts are thin front-ends that no
@@ -146,18 +152,26 @@ Task-specific URLs go as plain body lines under the relevant task (not as extra
 
 ## Testing
 
-No test suite exists yet. When adding tests, use pytest with fixture org
-documents covering: heading parsing with/without priorities and tags, weekly-ID
-parsing and normalization, `--items` limits, ID allocation, and round-trip edits
-that preserve unrelated lines. For `projtui.py`/`orgmgr.py`, separate workflow
-logic from terminal I/O and assert that read paths never write to disk.
+`tests/test_ortask_suite.py` is the pytest suite and the refactor gate; run it
+with `python3 -m pytest tests/` before and after any change. It covers heading
+parsing with and without priorities and tags, weekly-ID normalization, ID
+allocation, round-trip edits that preserve unrelated lines, XDG-isolated
+registry behavior, and PTY coverage of the bounded inline session. See
+`docs/testing.md`. New tests follow the same shape: fixture Org documents, and
+for `projtui.py`/`orgmgr.py`, workflow logic separated from terminal I/O so read
+paths can be asserted never to write to disk.
 
 ## Design docs
 
 - `docs/ortask.md` — man-page-style `ortask.py` subcommand reference (planned-behavior source of truth)
-- `docs/orgmgr.md` — spec for the global `orgmgr.py` manager
-- `docs/interactive.md` — spec for the `projtui.py` interactive TUI
+- `docs/orgmgr.md` — spec for the project-layer `orgmgr.py` command
+- `docs/projects.md` — what a project is, and the registry model (the
+  multi-project counterpart to `docs/format.md`)
+- `docs/projdirs.md` — the `pcd` project directory stack
+- `docs/roadmap.md` — design context for multi-step work, keyed to task IDs
+- `docs/interactive.md` — spec for the interactive TUI
 - `docs/format.md` — Org format conventions and file-discovery direction ("wiki way")
+- `docs/architecture.md` — package layout, layer boundaries, script responsibilities
 - `docs/claude-ortask-design.org` — architecture and format spec
 - `docs/codex-ortask-design.org` — phased implementation, testing emphasis
 - `docs/gemini-ortask-design.org` — LLM integration, robust regex, atomic writes

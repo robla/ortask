@@ -571,3 +571,131 @@ second adopter exposes stable shared behavior or duplicated bugs.
 Comments/activity feeds, attachments, custom workflow fields, and general Org
 tree restructuring are outside the first workspace milestone. They can be
 considered after the core issue-editing model proves useful.
+
+## Project Navigator
+
+Tracked as `t0019`. The model this section builds on is `docs/projects.md`;
+this section covers the tool shape, the names, and the order of the work.
+
+### Goal
+
+The project layer should be something the user is eager to start up: one
+command that shows the projects currently being worked on, and one word that
+adds a new one. Today it is neither. Registering a project means recalling
+`orgmgr.py projadd`, a project without a task file does not appear at all, and
+the tool that draws the project list is named `projtui.py`, which is neither
+the manager nor, mostly, about projects.
+
+Nothing in this section changes the registry model. The symlink registry is
+the part that works, and `docs/projects.md` now records why.
+
+### Names
+
+Two commands, four names, matching what actually exists:
+
+| Name | What it is |
+| --- | --- |
+| `ort` | `ortask.py` — one task file |
+| `orti` | `ortask.py -i` — the issue workspace over that file |
+| `pmgr` | `projmgr.py` — the project layer: registry, list, `add`, `pcd` |
+| `ptui` | `projmgr.py -i` — the project navigator |
+
+`pmgr` alone lists, as `ort` alone lists.
+
+The interactive alias is `ptui` rather than the strictly parallel `pmgri`.
+`orti` works because `ort` is short and `-i` appends cleanly; `pmgri` is a
+five-letter finger-tangle that reads as nothing. `ptui` reads as "project TUI",
+matches existing muscle memory from `projtui.py`, and gives the surface the
+user most wants to open a name of its own rather than a modifier on another
+name. This is one line of shell configuration and is cheap to reverse.
+
+### The rename is on `orgmgr.py`, not `projtui.py`
+
+`projtui.py` is 2103 lines and is imported by both `ortask.py:278` and
+`orgmgr.py:27`. Only its last thirty lines are a front-end. It is library code
+wearing a script name, and that is the largest single source of the muddle
+between the tools.
+
+Its contents also do not divide the way the filename suggests. About 105 lines
+(`InteractiveProjectController`, `project_menu`) are the project browser.
+Everything else — `OrgBuffer`, the task list, the issue workspace,
+`InteractiveTaskController` — is the `orti` surface, which has nothing to do
+with projects and is the subject of `t0016`.
+
+So:
+
+- `orgmgr.py` becomes `projmgr.py`. It is already the project-layer front-end;
+  it gains the name.
+- `projtui.py`'s task UI moves into `ortasklib/` as the shared library it
+  already is, leaving the project browser to `projmgr.py`.
+- `projtui.py` stops existing as a script. `ptui` is an alias for
+  `projmgr.py -i`, not a file.
+
+This restores the architecture `docs/architecture.md` already claims: thin
+front-ends over `ortasklib/`, with no script importing another script.
+
+### Verbs
+
+`projmgr.py` verbs, alphabetical as usual: `add`, `doctor`, `help`, `init`,
+`list`, `pcd`, `rm`.
+
+- `add` replaces `projadd`, and is specified in `docs/projects.md`. The prefix
+  was only ever there to disambiguate from local task verbs in a tool that also
+  had none; `pmgr add` adds a project exactly as `ort add` adds a task.
+- `rm` replaces the planned `projrm`, for the same reason.
+- `init` replaces `migrate`, which no longer migrates anything — it has only
+  written the registry path into `ortask.ini` since `projtui.ini` was removed.
+  Low priority, but a verb whose name describes a job it no longer does is the
+  kind of drift this section exists to clear.
+- `pcd` moves here from `orgmgr.py` unchanged in behavior. It was always a
+  project-layer command; it landed in `orgmgr.py` because that was where the
+  registry lived.
+
+### One project list, two entry points
+
+`pcd` and `ptui` currently draw two different project pickers over the same
+registry. They should become the same root view, with `--out` deciding what
+`Enter` does: open the project's tasks, or write its directory stack and exit.
+
+That convergence is what makes `e` (edit the directory list) and the task view
+reachable from one place, and it removes the second copy of project rendering
+before it grows a third.
+
+### What the list must show
+
+A project list worth opening has to survive the empty cases, because the
+project you just added is the one you most want to see:
+
+- every registered project, including those with no task file;
+- open task counts where a task file exists, and a plain "no tasks yet" where
+  one does not;
+- broken projects, marked as broken rather than omitted.
+
+### Implementation Order
+
+1. Retire the `SKIP_PROJECT_DIRS` blocklist for the directory-symlink marker,
+   and make a task file optional in `manager.discover_projects()`. This is the
+   behavior change; everything after it is naming.
+2. Add `add` with project-root walking, keeping `projadd` working until the
+   rename lands.
+3. Rename `orgmgr.py` to `projmgr.py`, move `pcd` with it, update
+   `misc/ortask-completion.bash` and the `pmgr`/`ptui` aliases, and rename
+   `docs/orgmgr.md` to `docs/projmgr.md`.
+4. Move `projtui.py`'s task UI into `ortasklib/` and its project browser into
+   `projmgr.py`; delete the script.
+5. Converge the `pcd` picker and the `ptui` project list onto one view.
+6. Rename `migrate` to `init`; add `rm` and `doctor`.
+
+Steps 1 and 2 are independently useful and do not depend on any rename. Step 4
+should follow `t0011` (obsolete selector removal) rather than race it.
+
+### Completion Criteria
+
+- `pmgr add` in an arbitrary project directory registers it, with or without a
+  task file, and says what it registered.
+- `ptui` opens a list of every registered project, including new and
+  task-less ones, as the root of the same bounded session.
+- No script imports another script; `projtui.py` is gone.
+- `pcd`, `pmgr`, and `ptui` share one project list and one project record.
+- The registry remains readable, editable, and repairable with `ls`, `ln -s`,
+  and `rm`.

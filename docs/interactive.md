@@ -348,16 +348,19 @@ Future TODO-state guidance:
 
 ## Workspace Discovery
 
-The project TUI treats each immediate registry subdirectory as a possible
-project context when it contains or points to an Org task file. In `proj2026`,
-examples include:
+`docs/projects.md` defines what a project is and how the registry is read. The
+project TUI implements that model; it does not extend it. Two consequences
+shape this interface:
 
-- `elweek/` with an ElectoramaWeekly task file
-- `ortask/` with this repository's task file
-
-Do not recursively scan arbitrary nested trees. Use the shared task-file
-discovery convention from `docs/format.md`, and treat ambiguous files as a stop
-condition rather than sorting alphabetically.
+- **Do not recursively scan arbitrary nested trees.** Registry membership is
+  explicit. Use the shared task-file discovery convention from
+  `docs/format.md`, and treat ambiguous files as a stop condition rather than
+  sorting alphabetically.
+- **A project with no task file is still a project.** It appears in the list
+  with no task counts, rather than being omitted. So does a project whose
+  symlink is broken, marked as broken. A list that hides its empty cases is
+  worse than one that shows them, because a newly added project is the one the
+  user is most likely looking for.
 
 ## Task Menu Workflow
 

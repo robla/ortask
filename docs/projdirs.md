@@ -82,6 +82,14 @@ When both files define a stack, `pcd` automatically merges them, placing public 
 `directories-private.org` is excluded from task-file discovery, so a project
 whose registry entry has no task-file symlink will not mistake it for one.
 
+Private files follow the `*-private.org` naming convention from
+`docs/projects.md`, so a registry kept under version control needs exactly one
+`.gitignore` line to cover this file and any later ones:
+
+```gitignore
+*-private.org
+```
+
 ## `orgmgr.py pcd`
 
 ```sh
@@ -213,8 +221,12 @@ function unchanged.
 ## Open questions
 
 - Should `pcd` offer a way to add the current directory to the highlighted
-  project's stack? Deferred; it may be `ortask.py`'s business rather than
-  `orgmgr.py`'s, since it writes Org content.
+  project's stack? Deferred; it may be `ortask.py`'s business rather than the
+  project layer's, since it writes Org content. Writing the *private* list is
+  the project layer's, since that file lives in the registry.
+- `pcd` moves to `projmgr.py` with the rename (`t0019.3`), unchanged in
+  behavior, and its project picker should become the same view the project list
+  uses (`t0019.5`).
 - Should `-a` (append) come back as a picker key? Because the output file means
   "the stack you want afterward" rather than "this project's directories", that
   is a Python-side change plus one input argument carrying the current stack,

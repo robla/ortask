@@ -196,7 +196,13 @@ historical private aliases `_find_tasks_range`, `_build_org_heading`,
 
 ## Future work
 
-- Add `projrm` (and possibly `scan`/`doctor`) per `docs/orgmgr.md`.
+- Add `projrm` (and possibly `doctor`) per `docs/orgmgr.md`. `scan` is not
+  planned; see `docs/projects.md`.
+- Move `projtui.py` into `ortasklib/` and rename `orgmgr.py` to `projmgr.py`,
+  per the Project Navigator section of `docs/roadmap.md`. `projtui.py` is
+  imported by both scripts, so it is library code that has not moved yet — the
+  one place this document's "no script imports another script" rule is not yet
+  true.
 - Consider repointing the test suite to import from `ortasklib` directly and
   retiring the `ortask.py` compatibility re-exports.
 
