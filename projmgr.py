@@ -521,14 +521,15 @@ class _CdprojSession:
         )
 
     def select_stack(
-        self, session: menu.InlineMenuSession, project: manager.Project
+        self, session: menu.InlineMenuSession | None, project: manager.Project
     ) -> None:
         """Resolve the stack, merging public and private sources (public on top)."""
         sources = manager.directory_sources(project)
         if not sources:
             # No ``* Directories`` anywhere: the project root is the whole stack.
             message = self.write_stack([manager.real_project_path(project)])
-            session.pop_view(message=f"{project.name}: {message} (project root)")
+            if session is not None:
+                session.pop_view(message=f"{project.name}: {message} (project root)")
             return
 
         public_source = next((s for s in sources if s.label == "project"), None)
@@ -551,7 +552,8 @@ class _CdprojSession:
             active_labels.append("project")
         if private_source:
             active_labels.append("private")
-        session.pop_view(message=f"{project.name} ({' + '.join(active_labels)}): {message}")
+        if session is not None:
+            session.pop_view(message=f"{project.name} ({' + '.join(active_labels)}): {message}")
 
     def edit_view(self, project: manager.Project) -> menu.MenuView:
         candidates = manager.directory_candidates(project)
@@ -675,6 +677,16 @@ def cmd_cdproj(args: argparse.Namespace) -> int:
         projects,
         Path(args.out).expanduser().resolve(),
     )
+    if getattr(args, "project", None) is not None:
+        project = next((p for p in projects if p.name == args.project), None)
+        if project is None:
+            print(f"project not found in registry: {args.project}", file=sys.stderr)
+            return 1
+        session.select_stack(None, project)
+        if session.error:
+            print(session.error, file=sys.stderr)
+        return session.status
+
     if menu.interactive_select_available():
         return session.run()
     return _cdproj_fallback(session)
@@ -738,6 +750,12 @@ def build_parser() -> argparse.ArgumentParser:
     # SUPPRESS default so this subparser does not clobber a global override.
     p_cdproj.add_argument("--registry", default=argparse.SUPPRESS,
                        help="registry directory to select from")
+    p_cdproj.add_argument(
+        "project",
+        nargs="?",
+        default=None,
+        help="optional project name to resolve immediately without TUI",
+    )
 
     p_doctor = sub.add_parser(
         "doctor",

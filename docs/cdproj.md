@@ -93,12 +93,14 @@ Private files follow the `*-private.org` naming convention from
 ## `projmgr.py cdproj`
 
 ```sh
-projmgr.py cdproj --out FILE
+projmgr.py cdproj --out FILE [PROJECT]
 ```
 
-`--out` is required and is the only result channel. On selection, write the
-resolved directories to FILE, one absolute path per line, and exit 0. On cancel,
-exit nonzero and leave FILE untouched.
+- `--out` is required and is the only result channel. On selection, write the
+  resolved directories to FILE, one absolute path per line, and exit 0. On cancel,
+  exit nonzero and leave FILE untouched.
+- `PROJECT` (optional): resolve and write the specified project's stack directly
+  without launching the picker. Exit nonzero if the project name is not registered.
 
 Results must not go to stdout. `menu.interactive_select_available()` requires
 `sys.stdout.isatty()` and the `Application` renders to stdout, so under `$(...)`
@@ -136,16 +138,15 @@ bootstrapped.
 
 ## `cdproj`
 
-`cdproj` takes no arguments of its own. It forwards whatever it is given to
-`projmgr.py` and appends its own `--out`, so `cdproj --registry ~/other` works
-without the shell parsing anything, and a new helper flag never requires
-re-sourcing.
+`cdproj` takes optional arguments and forwards whatever it is given to
+`projmgr.py cdproj --out FILE`, so `cdproj myproject` resolves the project directly,
+and `cdproj --registry ~/other` works without the shell parsing anything.
 
 ```bash
 # misc/cdproj.func.sh
 cdproj () {
     local out; out="$(mktemp)" || return 1
-    "${ORTASK_PROJMGR:-projmgr.py}" "$@" cdproj --out "$out" || { rm -f "$out"; return 1; }
+    "${ORTASK_PROJMGR:-projmgr.py}" cdproj --out "$out" "$@" || { rm -f "$out"; return 1; }
 
     local want=()
     readarray -t want < "$out"

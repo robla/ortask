@@ -1612,6 +1612,25 @@ def test_projmgr_cdproj_cancel_writes_nothing(
     assert not out_file.exists()
 
 
+def test_projmgr_cdproj_direct_resolution(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    registry, project = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n* Directories\n** docs\n"
+    )
+    out_file = tmp_path / "out.txt"
+    assert projmgr.cmd_cdproj(
+        argparse.Namespace(registry=str(registry), out=str(out_file), project="myproj")
+    ) == 0
+    assert out_file.read_text(encoding="utf-8").splitlines() == [
+        str((project / "docs").resolve())
+    ]
+
+    assert projmgr.cmd_cdproj(
+        argparse.Namespace(registry=str(registry), out=str(out_file), project="nonexistent")
+    ) == 1
+
+
 def test_core_editor_argv(monkeypatch) -> None:
     monkeypatch.delenv("VISUAL", raising=False)
     monkeypatch.delenv("EDITOR", raising=False)

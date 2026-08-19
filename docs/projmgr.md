@@ -206,17 +206,18 @@ Task selection rules:
 
 ## `cdproj`
 
-`projmgr.py cdproj` opens an inline project picker and writes the selected project's
-directory stack to a file, for the `cdproj` shell function in `misc/cdproj.func.sh` to
-apply to the calling shell. See `docs/cdproj.md` for the whole design.
+`projmgr.py cdproj` writes a selected project's directory stack to a file for the
+`cdproj` shell function in `misc/cdproj.func.sh` to apply to the calling shell.
+See `docs/cdproj.md` for the whole design.
 
 ```sh
-projmgr.py cdproj --out FILE
-projmgr.py --registry ~/tmpsorta/proj2026 cdproj --out FILE
+projmgr.py cdproj --out FILE [PROJECT]
+projmgr.py --registry ~/tmpsorta/proj2026 cdproj --out FILE [PROJECT]
 ```
 
 Options:
 
+- `PROJECT`: optional name of a registered project to resolve immediately without launching the picker.
 - `--out FILE`: required. The only result channel.
 - `--registry PATH`: override the resolved registry.
 

@@ -15,7 +15,7 @@
 
 cdproj () {
     local out; out="$(mktemp)" || return 1
-    "${ORTASK_PROJMGR:-projmgr.py}" "$@" cdproj --out "$out" || { rm -f "$out"; return 1; }
+    "${ORTASK_PROJMGR:-projmgr.py}" cdproj --out "$out" "$@" || { rm -f "$out"; return 1; }
 
     local want=()
     readarray -t want < "$out"
