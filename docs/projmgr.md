@@ -247,8 +247,11 @@ Behavior:
 
 A project's stack comes from a `* Directories` section in either the project's
 Org task file or a private `directories-private.org` in the project's registry
-subdirectory. When both define one, `cdproj` automatically merges them. With neither, the
-stack is the project root alone.
+subdirectory. When both define one, the private list wins outright and sets the
+order; any directory the project's list has and the private list lacks is
+reported on stderr as a warning, without changing the stack or the exit status.
+With neither, the stack is the project root alone. See `docs/cdproj.md` for the
+full rule.
 
 `cdproj` reads Org content and never writes it. The one file it creates is the
 private list in the registry, which `projmgr.py` owns, and only when asked to

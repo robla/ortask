@@ -77,7 +77,55 @@ never part of the project's own repository and needs no per-project
 `.gitignore` entry. Both files use the same `* Directories` format and the same
 parser.
 
-When both files define a stack, `cdproj` automatically merges them, placing public (project) items on top of the stack and private items below, deduplicating any duplicate entries (retaining the first occurrence).
+### Which list wins
+
+The `private` list wins. When both files define a `* Directories` section, the
+stack is the private list, in the private list's order. The project list is not
+merged in — it is only checked against.
+
+| `private` | `project` | Resulting stack | Warning |
+|-----------|-----------|-----------------|---------|
+| —                | —                | the project root alone      | no |
+| —                | defines a stack  | the project list, its order | no |
+| defines a stack  | —                | the private list, its order | no |
+| defines a stack  | defines a stack  | the private list, its order | one per project entry the private list lacks |
+
+The warning names every directory the project list has and the private list does
+not:
+
+```text
+elweek: in castabout.task.org but not directories-private.org: ~/src/elusync
+```
+
+It is a warning, not an error. The stack is still written and the exit status is
+still 0.
+
+Merging was the previous behavior and it was wrong in one specific way: it let
+the *shared* list push directories into a stack the user had deliberately
+curated, with no way to say "no, not that one." Overriding silently would be
+wrong in the opposite way — a project that adds a directory you would want in
+your stack is exactly the case worth hearing about. Warning keeps the private
+list authoritative and still reports that the shared list moved.
+
+Comparison rules:
+
+- Entries are compared *after* resolution — `~`, `$VAR`, and
+  relative-to-project-root expansion, then `Path.resolve()` — so `docs`,
+  `./docs`, and `~/src/ortask/docs` are one entry rather than three.
+- The winning list is deduplicated, first occurrence kept.
+- An empty `* Directories` section counts as a list that exists. An empty
+  private section therefore wins, the stack falls back to the project root, and
+  every project entry is reported. Emptying the list is a choice; silently
+  reverting to the shared list would undo it.
+- The private list may name directories the project list does not. Those are
+  never reported — that is what the private list is for.
+
+Warnings go to stderr, after the picker has exited, so `erase_when_done=True`
+does not take them with it. The `--out` file still carries nothing but
+directories.
+
+All three routes into a stack — the picker, `cdproj PROJECT`, and the numbered
+fallback — resolve identically and warn identically.
 
 `directories-private.org` is excluded from task-file discovery, so a project
 whose registry entry has no task-file symlink will not mistake it for one.
@@ -118,7 +166,8 @@ The picker follows the bounded inline contract in `docs/interactive.md`:
 ↑↓/jk · ↵ select · e edit · Esc/q cancel
 ```
 
-- `↵` resolves the highlighted project's directories, writes them, and exits 0, automatically merging public and private lists (public on top) when both exist.
+- `↵` resolves the highlighted project's directories, writes them, and exits 0.
+  When both lists exist the private one wins outright; see "Which list wins".
 - `e` asks which list to edit — always both candidates, so the private file is
   discoverable — opens it in `$VISUAL`/`$EDITOR`, then returns to the picker so
   the edited stack can be selected immediately.

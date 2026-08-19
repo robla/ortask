@@ -116,7 +116,7 @@ Pointers — plus per-project data that must not enter the project's own
 repository. Everything else belongs in the project's Org file, where the user
 can see and edit it directly.
 
-`directories-private.org` (see `docs/projdirs.md`) is the current example. It
+`directories-private.org` (see `docs/cdproj.md`) is the current example. It
 holds absolute machine-local paths that would be noise, or leakage, in a shared
 repo. It is the exception that defines the rule: it lives in the registry
 because it has nowhere else to live, not because the registry is a convenient
