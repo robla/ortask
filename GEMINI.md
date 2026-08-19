@@ -9,7 +9,7 @@ This file provides instructional context for Gemini when working in the `ortask`
 - **Origins:** The project evolved from `status.py`, a simple Org-mode checkbox viewer, into a robust task manager that treats Org-mode as its primary database.
 - **Naming:** The name combines **OR**g-mode and **TASK**. It was chosen for its unique namespace and clarity of purpose.
 - **Primary Language:** Python 3.10+ (Standard library only; no external dependencies).
-- **Core Architecture:** A core CLI script (`ortask.py`) and a terminal project task menu manager (`projtui.py`).
+- **Core Architecture:** Two CLI scripts — `ortask.py` (one task file) and `projmgr.py` (the project registry) — over the shared `ortasklib/` package.
 - **Current State:** The parser supports a formal org-mode `TODO`/`DONE` keyword parser with support for priorities, stable IDs (both numeric `t0001` and week-based `tw26W24`), and tags.
 
 ## The "Ortask Way" (Core Design Principles)
@@ -26,11 +26,11 @@ This file provides instructional context for Gemini when working in the `ortask`
 ## Key Files
 
 - `ortask.py`: The main executable script.
-- `projtui.py`: A stdlib-only terminal project menu helper for selecting and focusing on tasks.
+- `projmgr.py`: The project-layer command; `projmgr.py -i` (`ptui`) is the project navigator. Task UI lives in `ortasklib/taskui.py`.
 - `task.org` / `*.task.org`: Preferred task-file names; legacy `TODO.org`, `todo.org`, and `tasks.org` remain fallbacks.
 - `README.org`: Fallback data file and project quick-start guide.
 - `docs/ortask.md`: The man-page style reference; the **source of truth** for planned subcommand behavior.
-- `docs/orgmgr.md`: Design reference for the planned `orgmgr.py` global manager.
+- `docs/projmgr.md`: Command reference for `projmgr.py`; `docs/projects.md` is the registry model.
 - `docs/format.md`: Reference for task formatting and file discovery conventions.
 - `docs/interactive.md`: Spec for the terminal menu interface.
 - `AGENTS.md`: General repository guidelines for AI agents.
@@ -44,8 +44,8 @@ Since this project uses only the Python standard library, there is no build or i
 - **List Tasks:** `./ortask.py` or `./ortask.py list`.
 - **Limit Output:** `./ortask.py --items 5`.
 - **Custom File:** `./ortask.py --file path/to/file.org`.
-- **Run TUI:** `./projtui.py` or `./projtui.py --registry ~/Projects` to launch the interactive workspace task viewer.
-- **Syntax Check:** `python3 -m py_compile ortask.py projtui.py`.
+- **Run TUI:** `./projmgr.py -i` or `./projmgr.py --registry ~/Projects -i` to launch the project navigator.
+- **Syntax Check:** `python3 -m py_compile ortask.py projmgr.py ortasklib/*.py`.
 - **Testing:** `python3 -m pytest` (Expected command once a test suite is implemented).
 
 ### Subcommands (`ortask.py`)
@@ -89,5 +89,5 @@ The parser matches the following structure:
 
 ## Roadmap & Next Steps
 1. Implement the planned subcommands: `context`, `next`, and `rename`.
-2. Implement `orgmgr.py` to support global Org project operations (first verb: `list`).
+2. `projmgr.py` implements the project layer (`add`, `doctor`, `init`, `list`, `pcd`, `rm`).
 3. Add a test suite (`tests/`) using `pytest` to cover file parsing, filters, ID allocation, and editing safety.

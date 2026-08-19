@@ -16,7 +16,7 @@ context. A user who wants more room should be able to choose a fixed inline
 height or a deliberate full-screen mode. The application should not leave
 every prior menu in scrollback while the session is still running.
 
-The same application shell now serves `orgmgr.py -i`. The plain numbered menus
+The same application shell now serves `projmgr.py -i`. The plain numbered menus
 remain the non-TTY fallback and are not part of this rendering change.
 
 **Status:** The main context migration is implemented at a fixed requested
@@ -26,7 +26,7 @@ picker inside one bounded `InlineMenuSession`. External-editor launch suspends
 and resumes that application. Dirty task sessions resolve Save,
 Discard, or Continue Editing inside the bounded view stack, and task sessions
 with recovery data begin with bounded Keep, Recover, and Discard choices. The
-`orgmgr.py -i` project list now serves as the root of that same view stack. The
+`projmgr.py -i` project list now serves as the root of that same view stack. The
 normal final-frame policy and PTY contract are covered; explicit cleanup and
 PTY coverage for abnormal exits remain. Adaptive sizing and optional
 full-screen presentation are planned as `t0018`.
@@ -158,7 +158,7 @@ selector:
 - `menu.MenuView` describes a title, summary, rows, selected index, available
   commands, optional detail text, sizing preferences, and callbacks for actions
   and resume.
-- `projtui.InteractiveTaskController` constructs task-specific views and owns
+- `taskui.InteractiveTaskController` constructs task-specific views and owns
   Org parsing, `OrgBuffer` edits, stable task selection, and task actions.
 
 The implemented layout follows inedit's proven structure: an `HSplit` with a
@@ -202,7 +202,7 @@ applications. The obsolete API is now eligible for separate cleanup.
 #### 3. Move contexts onto a view stack
 
 **Implemented.** Local task details, nested subtasks, Help, task confirmation,
-priority selection, and the `orgmgr.py -i` project list now push, pop, or
+priority selection, and the `projmgr.py -i` project list now push, pop, or
 replace `MenuView` instances without ending the application. Returning from a
 task context refreshes the project list and restores selection by project name.
 
@@ -273,13 +273,13 @@ backend-neutral SDK first and then forcing both applications through it.
 
 ### Risks Observed So Far
 
-A brief external read of `ortasklib/menu.py`, `projtui.py`, and their git
+A brief external read of `ortasklib/menu.py`, the task UI, and their git
 history against inedit's `_inedit/` split, for context ahead of any shared
 extraction:
 
 - **Compatibility selectors still coexist with the production stack.**
   `_run_selector`, `select_menu`, and `select_project_menu` remain in `menu.py`
-  alongside `InlineMenuSession`/`MenuView`, but `orgmgr.py -i` has now moved to
+  alongside `InlineMenuSession`/`MenuView`, but `projmgr.py -i` has now moved to
   the persistent stack. Removing the unused compatibility path is separate
   cleanup rather than a blocker for the bounded-session roadmap.
 - **One ortask module is doing what inedit splits three ways.** inedit
@@ -388,7 +388,7 @@ Constraints that follow from existing project rules:
   below.
 - The archive file is a destination, not a task file. It must not be picked up
   by `ortask.py`'s discovery order, and it must not appear as a project's task
-  file in `orgmgr.py`. Reading it — `ort list --archived` or similar — is a
+  file in `projmgr.py`. Reading it — `ort list --archived` or similar — is a
   reasonable later addition, but the default views should stay quiet.
 - Writes stay atomic and symlink-resolving for both files. Because two file
   replacements are not one atomic transaction, the operation needs rollback
@@ -577,14 +577,20 @@ considered after the core issue-editing model proves useful.
 Tracked as `t0019`. The model this section builds on is `docs/projects.md`;
 this section covers the tool shape, the names, and the order of the work.
 
+**Status:** implemented on 2026-08-19. `pmgr add` registers the project you are
+in, projects without task files are listed, `orgmgr.py` is `projmgr.py`,
+`projtui.py` is `ortasklib/taskui.py`, `pcd` moved with the project layer, and
+one project view serves the navigator, `pcd`, and both numbered fallbacks.
+`init`, `rm`, and `doctor` exist. What remains is listed under *Still open*.
+
 ### Goal
 
 The project layer should be something the user is eager to start up: one
 command that shows the projects currently being worked on, and one word that
-adds a new one. Today it is neither. Registering a project means recalling
-`orgmgr.py projadd`, a project without a task file does not appear at all, and
-the tool that draws the project list is named `projtui.py`, which is neither
-the manager nor, mostly, about projects.
+adds a new one. Before this work it was neither. Registering a project meant
+recalling `orgmgr.py projadd`, a project without a task file did not appear at
+all, and the tool that drew the project list was named `projtui.py`, which was
+neither the manager nor, mostly, about projects.
 
 Nothing in this section changes the registry model. The symlink registry is
 the part that works, and `docs/projects.md` now records why.
@@ -609,11 +615,11 @@ matches existing muscle memory from `projtui.py`, and gives the surface the
 user most wants to open a name of its own rather than a modifier on another
 name. This is one line of shell configuration and is cheap to reverse.
 
-### The rename is on `orgmgr.py`, not `projtui.py`
+### The rename was on `orgmgr.py`, not `projtui.py`
 
-`projtui.py` is 2103 lines and is imported by both `ortask.py:278` and
-`orgmgr.py:27`. Only its last thirty lines are a front-end. It is library code
-wearing a script name, and that is the largest single source of the muddle
+`projtui.py` was 2103 lines and was imported by both `ortask.py` and
+`orgmgr.py`. Only its last thirty lines were a front-end. It was library code
+wearing a script name, and that was the largest single source of the muddle
 between the tools.
 
 Its contents also do not divide the way the filename suggests. About 105 lines
@@ -624,14 +630,14 @@ with projects and is the subject of `t0016`.
 
 So:
 
-- `orgmgr.py` becomes `projmgr.py`. It is already the project-layer front-end;
-  it gains the name.
-- `projtui.py`'s task UI moves into `ortasklib/` as the shared library it
-  already is, leaving the project browser to `projmgr.py`.
-- `projtui.py` stops existing as a script. `ptui` is an alias for
+- `orgmgr.py` became `projmgr.py`. It was already the project-layer front-end;
+  it gained the name.
+- `projtui.py`'s task UI moved into `ortasklib/taskui.py` as the shared library
+  it already was, leaving the project browser to `projmgr.py`.
+- `projtui.py` stopped existing as a script. `ptui` is an alias for
   `projmgr.py -i`, not a file.
 
-This restores the architecture `docs/architecture.md` already claims: thin
+This restored the architecture `docs/architecture.md` already claimed: thin
 front-ends over `ortasklib/`, with no script importing another script.
 
 ### Verbs
@@ -653,13 +659,15 @@ front-ends over `ortasklib/`, with no script importing another script.
 
 ### One project list, two entry points
 
-`pcd` and `ptui` currently draw two different project pickers over the same
-registry. They should become the same root view, with `--out` deciding what
-`Enter` does: open the project's tasks, or write its directory stack and exit.
+`pcd` and `ptui` drew two different project pickers over the same registry. They
+now share `_project_rows`, `_project_location`, `_anchor_index`, and
+`_project_view` in `projmgr.py`, so only what `Enter` does differs: open the
+project's tasks, or write its directory stack and exit. The numbered fallbacks
+share the same rows.
 
-That convergence is what makes `e` (edit the directory list) and the task view
-reachable from one place, and it removes the second copy of project rendering
-before it grows a third.
+What is still separate is the session wrapper — `_ProjectBrowser` keeps a task
+controller and a resume hook, `_PcdSession` keeps an output path and an edit
+picker. That difference is real, and merging the two classes would only hide it.
 
 ### What the list must show
 
@@ -673,23 +681,37 @@ project you just added is the one you most want to see:
 
 ### Implementation Order
 
-1. Retire the `SKIP_PROJECT_DIRS` blocklist for the directory-symlink marker,
-   and make a task file optional in `manager.discover_projects()`. This is the
-   behavior change; everything after it is naming.
-2. Add `add` with project-root walking, keeping `projadd` working until the
-   rename lands.
-3. Rename `orgmgr.py` to `projmgr.py`, move `pcd` with it, update
-   `misc/ortask-completion.bash` and the `pmgr`/`ptui` aliases, and rename
-   `docs/orgmgr.md` to `docs/projmgr.md`.
-4. Move `projtui.py`'s task UI into `ortasklib/` and its project browser into
-   `projmgr.py`; delete the script.
-5. Converge the `pcd` picker and the `ptui` project list onto one view.
-6. Rename `migrate` to `init`; add `rm` and `doctor`.
+All six steps are complete (`t0019.1`–`t0019.6`):
 
-Steps 1 and 2 are independently useful and do not depend on any rename. Step 4
-should follow `t0011` (obsolete selector removal) rather than race it.
+1. Retired the `SKIP_PROJECT_DIRS` blocklist for the outward-symlink marker, and
+   made a task file optional in `manager.discover_projects()`. This was the
+   behavior change; everything after it was naming.
+2. Added `add` with project-root walking.
+3. Renamed `orgmgr.py` to `projmgr.py`, moved `pcd` with it, updated
+   `misc/ortask-completion.bash`, `misc/pcd.func.sh`, and the `pmgr`/`ptui`
+   aliases, and renamed `docs/orgmgr.md` to `docs/projmgr.md`.
+4. Moved `projtui.py`'s task UI into `ortasklib/taskui.py` and its project
+   browser into `projmgr.py`; deleted the script.
+5. Converged the `pcd` picker and the `ptui` project list onto one row and view
+   builder.
+6. Renamed `migrate` to `init`; added `rm` and `doctor`. `migrate` and `projadd`
+   remain as deprecated aliases.
+
+### Still open
+
+- The marker rule allows one directory symlink per entry. A registry whose
+  entries are *real* project directories rather than symlinks — which is what a
+  fresh `~/Projects` would be — shows nothing. That is deliberate for now
+  (explicit membership is the point), but it is the likeliest reason someone
+  else's registry would look empty.
+- `add` does not offer to create a task file for a project that has none, and
+  `pcd` still has no way to append the current directory to a project's stack
+  (`docs/projdirs.md`).
+- The deprecated `migrate` and `projadd` aliases should eventually go.
 
 ### Completion Criteria
+
+All met:
 
 - `pmgr add` in an arbitrary project directory registers it, with or without a
   task file, and says what it registered.

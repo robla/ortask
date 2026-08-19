@@ -25,7 +25,7 @@ preserving the stored ID on parsed items.
 ## 3. Filter Root TODO Tasks
 
 Given a mixed tree with TODO, DONE, top-level tasks, and subtasks, verify that
-task filtering can produce the `orgmgr.py list` view: only root-level parsed
+task filtering can produce the `projmgr.py list` view: only root-level parsed
 tasks and only TODO tasks by default. Also verify `--all` includes root-level
 DONE tasks but still excludes subtasks, including for files without `* Tasks`.
 
@@ -60,7 +60,7 @@ Verify that validation reports duplicate IDs, TODO/DONE headings without valid
 IDs, and dotted subtask IDs that do not match the current parent. This protects
 the future `repair` implementation even while automatic fixes remain limited.
 
-## 8. Summarize Projects for orgmgr
+## 8. Summarize Projects for projmgr
 
 Build a temporary workspace with multiple project directories, hidden/skipped
 directories, and selected Org files. Verify the manager layer lists only valid
@@ -76,11 +76,11 @@ Run the scripts against temporary fixtures with subprocess:
 ```sh
 ./ortask.py --file /tmp/example.org list
 ./ortask.py --file /tmp/example.org show t0001
-./orgmgr.py --registry /tmp/workspace list --format json
-./orgmgr.py --registry /tmp/workspace -i
+./projmgr.py --registry /tmp/workspace list --format json
+./projmgr.py --registry /tmp/workspace -i
 ```
 
-For `orgmgr.py -i`, provide input such as `q\n` and assert it exits cleanly
+For `projmgr.py -i`, provide input such as `q\n` and assert it exits cleanly
 after printing the project list. These smoke tests confirm the top-level scripts
 still import the refactored library correctly and keep their basic command
 contracts.
@@ -90,7 +90,7 @@ contracts.
 Before and after each architecture step, run:
 
 ```sh
-python3 -m py_compile ortask.py orgmgr.py projtui.py
+python3 -m py_compile ortask.py projmgr.py ortasklib/*.py
 python3 -m pytest -q
 ```
 

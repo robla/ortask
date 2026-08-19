@@ -7,7 +7,7 @@ the registry-aware successor to `nowcd`/`cdnow`, which read one global
 
 It has two halves:
 
-- `orgmgr.py pcd` — an inline picker that resolves one project's directory list
+- `projmgr.py pcd` — an inline picker that resolves one project's directory list
   and writes it to a file.
 - `misc/pcd.func.sh` — a bash function that reads that file and runs
   `cd`/`pushd`. Only the shell can change the shell's own directory stack, so
@@ -90,10 +90,10 @@ Private files follow the `*-private.org` naming convention from
 *-private.org
 ```
 
-## `orgmgr.py pcd`
+## `projmgr.py pcd`
 
 ```sh
-orgmgr.py pcd --out FILE
+projmgr.py pcd --out FILE
 ```
 
 `--out` is required and is the only result channel. On selection, write the
@@ -129,7 +129,7 @@ from `core.editor_argv()`: `VISUAL` before `EDITOR`, `shlex.split()` so
 one. The shell must not re-solve any of this.
 
 Editing the private file creates it, with a `* Directories` skeleton, if it does
-not exist yet — it lives in the registry, which `orgmgr.py` owns. The project's
+not exist yet — it lives in the registry, which `projmgr.py` owns. The project's
 task file is never written. `ortask.py` owns Org content, per `docs/orgmgr.md`,
 so a task file with no `* Directories` section is reported rather than
 bootstrapped.
@@ -137,7 +137,7 @@ bootstrapped.
 ## `pcd`
 
 `pcd` takes no arguments of its own. It forwards whatever it is given to
-`orgmgr.py` and appends its own `--out`, so `pcd --registry ~/other` works
+`projmgr.py` and appends its own `--out`, so `pcd --registry ~/other` works
 without the shell parsing anything, and a new helper flag never requires
 re-sourcing.
 
@@ -145,7 +145,7 @@ re-sourcing.
 # misc/pcd.func.sh
 pcd () {
     local out; out="$(mktemp)" || return 1
-    "${ORTASK_ORGMGR:-orgmgr.py}" "$@" pcd --out "$out" || { rm -f "$out"; return 1; }
+    "${ORTASK_ORGMGR:-projmgr.py}" "$@" pcd --out "$out" || { rm -f "$out"; return 1; }
 
     local want=()
     readarray -t want < "$out"
@@ -224,9 +224,6 @@ function unchanged.
   project's stack? Deferred; it may be `ortask.py`'s business rather than the
   project layer's, since it writes Org content. Writing the *private* list is
   the project layer's, since that file lives in the registry.
-- `pcd` moves to `projmgr.py` with the rename (`t0019.3`), unchanged in
-  behavior, and its project picker should become the same view the project list
-  uses (`t0019.5`).
 - Should `-a` (append) come back as a picker key? Because the output file means
   "the stack you want afterward" rather than "this project's directories", that
   is a Python-side change plus one input argument carrying the current stack,

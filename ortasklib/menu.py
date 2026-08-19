@@ -65,9 +65,15 @@ class MenuRow:
 
 @dataclass(frozen=True)
 class ProjectRow:
+    """One row of a numbered project list.
+
+    ``location`` is where the project is, plus any note the reader needs (no
+    task file yet, a broken link). It is not necessarily a task file path.
+    """
+
     number: int
     name: str
-    org_file: str
+    location: str
 
 
 @dataclass(frozen=True)
@@ -1225,13 +1231,13 @@ def select_project_menu(
             selected = i == selected_index
             cursor = "▶ " if selected else "  "
             if selected:
-                line = f"{cursor}{row.number:>2}  {row.name:<12}  {row.org_file}\n"
+                line = f"{cursor}{row.number:>2}  {row.name:<12}  {row.location}\n"
                 fragments.append(("[SetCursorPosition]", ""))
                 fragments.append(("class:selected.project", line))
             else:
                 fragments.append(("", f"{cursor}{row.number:>2}  "))
                 fragments.append(("class:project.name", f"{row.name:<12}"))
-                fragments.append(("", f"  {row.org_file}\n"))
+                fragments.append(("", f"  {row.location}\n"))
         return FormattedText(fragments)
 
     return _run_selector(
@@ -1285,24 +1291,26 @@ def print_task_dashboard(title: str, source: Path, rows: list[MenuRow]) -> None:
         print("  (no items)")
 
 
-def print_project_dashboard(title: str, source: Path, rows: list[ProjectRow]) -> None:
+def print_project_dashboard(
+    title: str, source: str | Path, rows: list[ProjectRow]
+) -> None:
     print()
     print(f"Projects in {source}")
     if RICH_CONSOLE is not None and Table is not None:
         table = Table(title=title)
         table.add_column("#", justify="right")
         table.add_column("Project")
-        table.add_column("Task file")
+        table.add_column("Location")
         for row in rows:
-            table.add_row(str(row.number), row.name, row.org_file)
+            table.add_row(str(row.number), row.name, row.location)
         RICH_CONSOLE.print(table)
         if not rows:
-            RICH_CONSOLE.print("[dim](no project org files found)[/]")
+            RICH_CONSOLE.print("[dim](no projects found)[/]")
         return
 
     print(title)
-    print("  #  Project  Task file")
+    print("  #  Project  Location")
     for row in rows:
-        print(f"  {row.number:>2}  {row.name:<8}  {row.org_file}")
+        print(f"  {row.number:>2}  {row.name:<8}  {row.location}")
     if not rows:
-        print("  (no project org files found)")
+        print("  (no projects found)")

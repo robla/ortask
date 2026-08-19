@@ -1,6 +1,6 @@
 # Interactive Workflow for the ortask suite
 
-This document specifies interactive use of `ortask.py` and `orgmgr.py`.
+This document specifies interactive use of `ortask.py` and `projmgr.py`.
 The goal is a guided layer over Org task files, not a separate task database.
 It also records lessons from the sibling `castabout` project, whose inline TUI
 has a stronger workflow shape than the current project browser.
@@ -16,20 +16,20 @@ Primary entry points:
 
 ```sh
 ./ortask.py -i
-./orgmgr.py -i
-./orgmgr.py --registry ~/Projects -i
+./projmgr.py -i
+./projmgr.py --registry ~/Projects -i
 ```
 
 `ortask.py -i` opens the task menu for the local task file resolved by
-`ortask.py`. `orgmgr.py -i` starts from the configured project registry. The
-short aliases are expected to be `ort -i` and `orgm -i`.
+`ortask.py`. `projmgr.py -i` starts from the configured project registry. The
+short aliases are `orti` and `ptui`.
 
 ## Current Implementation
 
-`orgmgr.py -i` is the public registry-scoped project browser. It currently
-delegates to `projtui.py`, which remains the implementation shim with detail
-display, editor launch, and state changes for ortask-compatible tasks with IDs.
-Local `ortask.py -i` and project task views use the same castabout-style task
+`projmgr.py -i` (`ptui`) is the public registry-scoped project navigator. It
+owns the project list; the task list, detail display, editor launch, and state
+changes live in `ortasklib/taskui.py`, shared with `ortask.py -i`. Local
+`ortask.py -i` and project task views use the same castabout-style task
 dashboard: an open/done/total summary over a status table of the resolved task
 file.
 
@@ -48,7 +48,7 @@ The task selector has two modes, chosen automatically by
   Org file and clears that history; `C-t` cycles the visibility filter (`all ->
   TODO -> DONE`); `e` opens the editor at the highlighted task's line; `C-g`
   opens contextual command help; and `Esc`, `b`, or `q` goes back exactly one
-  level. In `orgmgr.py -i`,
+  level. In `projmgr.py -i`,
   leaving a task list returns to the project menu; in local `ortask.py -i`, that
   task list is the top level, so leaving it exits. The application renders
   inline (not full screen), defaults to 20 rows, and repaints that region as
@@ -66,7 +66,7 @@ The task selector has two modes, chosen automatically by
   same `C-t` visibility cycle. It lists the complete filtered hierarchy because
   it has no persistent cursor or per-task expansion state.
 
-The top-level `orgmgr.py -i` project list is the root view of the same bounded
+The top-level `projmgr.py -i` project list is the root view of the same bounded
 application. Opening a project pushes its recovery or task view; leaving that
 task context refreshes the project list and restores the same project by name.
 In highlight-bar mode, `C-g` replaces the rows with a modal help view; `C-g`,
@@ -98,7 +98,7 @@ the triangle is part of the highlight bar when that task is selected.
 
 ### Editing buffer (auto-save and save-on-exit)
 
-Each file's task menu runs against a `projtui.OrgBuffer`, modeled on Emacs
+Each file's task menu runs against a `taskui.OrgBuffer`, modeled on Emacs
 (t0006). Task-list edits are buffered, while an explicit task-workspace save
 writes the complete current buffer:
 
@@ -139,7 +139,7 @@ writes the complete current buffer:
 Only the interactive TUI buffers. The one-shot CLI (`ortask.py done`, `add`, …)
 still writes immediately, since it has no editing session to defer within.
 
-For project navigation, `orgmgr.py -i` looks in `~/Projects` unless
+For project navigation, `projmgr.py -i` looks in `~/Projects` unless
 `~/.config/ortask/ortask.ini` sets:
 
 ```ini
@@ -178,7 +178,7 @@ while keeping non-interactive CLI commands stdlib-friendly.
 ## Shared Menu System
 
 The ortask ecosystem should converge on a shared menuing layer used by
-`ortask.py -i`, `orgmgr.py -i`, and workflow tools such as `castabout.py`.
+`ortask.py -i`, `projmgr.py -i`, and workflow tools such as `castabout.py`.
 Individual tools can provide domain-specific actions, but users should not have
 to relearn basic navigation in each program.
 
@@ -259,7 +259,7 @@ Steps 1–3 are implemented for the task selector; step 4 remains the boundary t
 watch.
 
 1. **Done.** The plain numbered menu remains the non-TTY / fallback / scriptable
-   mode (`projtui._numbered_task_menu`), so every interactive selection still has
+   mode (`taskui._numbered_task_menu`), so every interactive selection still has
    a non-interactive equivalent and automation never blocks on a picker.
 2. **Done.** `ortasklib.menu.select_menu()` is a narrow abstraction over rows
    that returns exactly one of: a selected row, an action token (`edit`,
@@ -465,7 +465,7 @@ Initial operations should map to existing or planned CLI behavior:
 
 | TUI action | Command equivalent |
 | --- | --- |
-| list projects | `orgmgr.py list` |
+| list projects | `projmgr.py list` |
 | list tasks | `ortask.py list --todo --file FILE` |
 | show details | `ortask.py show ID --file FILE` |
 | mark done | `ortask.py done ID --file FILE` |

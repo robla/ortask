@@ -1,4 +1,4 @@
-# Bash completion for ortask.py/orgmgr.py and common "ort"/"orgm" aliases.
+# Bash completion for ortask.py/projmgr.py and common "ort"/"pmgr" aliases.
 #
 # Source-tree usage:
 #   source /path/to/ortask/misc/ortask-completion.bash
@@ -104,7 +104,7 @@ complete -o default -F _ortask_complete ortask.py
 complete -o default -F _ortask_complete ./ortask.py
 complete -o default -F _ortask_complete ort
 
-_orgmgr_complete()
+_projmgr_complete()
 {
     local cur prev words cword command
     COMPREPLY=()
@@ -118,12 +118,15 @@ _orgmgr_complete()
         cword=$COMP_CWORD
     fi
 
-    local subcommands="help list migrate pcd projadd"
+    # migrate and projadd remain as deprecated aliases for init and add.
+    local subcommands="add doctor help init list migrate pcd projadd rm"
     local global_opts="-i --interactive --registry --todo-only --help"
+    local add_opts="--name --file --registry --force --dry-run --help"
+    local doctor_opts="--registry --help"
+    local init_opts="--registry --force --dry-run --help"
     local list_opts="--all --format --help"
-    local migrate_opts="--registry --force --dry-run --help"
     local pcd_opts="--out --registry --help"
-    local projadd_opts="--name --file --registry --force --dry-run --help"
+    local rm_opts="--registry --force --dry-run --help"
 
     case "$prev" in
         --format)
@@ -165,17 +168,23 @@ _orgmgr_complete()
 
     if [[ "$cur" == -* ]]; then
         case "$command" in
+            add|projadd)
+                COMPREPLY=( $(compgen -W "$add_opts" -- "$cur") )
+                ;;
+            doctor)
+                COMPREPLY=( $(compgen -W "$doctor_opts" -- "$cur") )
+                ;;
+            init|migrate)
+                COMPREPLY=( $(compgen -W "$init_opts" -- "$cur") )
+                ;;
             list)
                 COMPREPLY=( $(compgen -W "$list_opts" -- "$cur") )
-                ;;
-            migrate)
-                COMPREPLY=( $(compgen -W "$migrate_opts" -- "$cur") )
                 ;;
             pcd)
                 COMPREPLY=( $(compgen -W "$pcd_opts" -- "$cur") )
                 ;;
-            projadd)
-                COMPREPLY=( $(compgen -W "$projadd_opts" -- "$cur") )
+            rm)
+                COMPREPLY=( $(compgen -W "$rm_opts" -- "$cur") )
                 ;;
             *)
                 COMPREPLY=()
@@ -186,6 +195,7 @@ _orgmgr_complete()
     fi
 }
 
-complete -o default -F _orgmgr_complete orgmgr.py
-complete -o default -F _orgmgr_complete ./orgmgr.py
-complete -o default -F _orgmgr_complete orgm
+complete -o default -F _projmgr_complete projmgr.py
+complete -o default -F _projmgr_complete ./projmgr.py
+complete -o default -F _projmgr_complete pmgr
+complete -o default -F _projmgr_complete ptui

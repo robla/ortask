@@ -207,7 +207,7 @@ deadlines, and any subtasks.
     alphabetically.
 
 **-i, --interactive**
-:   Open `projtui.py`'s task menu for the resolved local Org file instead of
+:   Open the shared `taskui` task menu for the resolved local Org file instead of
     listing tasks. This bypasses the global project registry and uses the same
     file lookup rules as other `ortask.py` commands. Interactive task views
     show TODO and DONE rows by default; use `C-t` in the menu to cycle visibility
@@ -342,7 +342,7 @@ source /path/to/ortask/misc/ortask-completion.bash
 ```
 
 The script registers completion for `ortask.py`, `./ortask.py`, the common
-`ort` alias, `orgmgr.py`, `./orgmgr.py`, and the common `orgm` alias. For
+`ort` alias, `projmgr.py`, `./projmgr.py`, and the `pmgr`/`ptui` aliases. For
 example, `ortask.py ad<Tab>` and `ort ad<Tab>` complete to `add`, while
 `orgm -<Tab>` includes `-i` and `--interactive`. A Debian package can install
 the same file under

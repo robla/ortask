@@ -8,9 +8,9 @@ The same rule applies here as everywhere else in ortask: plain files a human can
 read, list, and repair with ordinary shell tools, with only enough convention
 for tooling to help.
 
-The project-layer command is written here as `pmgr`. That is the planned name
-for today's `orgmgr.py`; see `docs/ecosystem.md` for the tool split and
-`docs/roadmap.md` for the rename sequence.
+The project-layer command is `projmgr.py`, aliased `pmgr`. See
+`docs/projmgr.md` for its command reference and `docs/ecosystem.md` for how the
+tools divide.
 
 ## The registry
 
@@ -46,7 +46,7 @@ the registry is edited by hand.
 
 Three models have been tried. `ortask.ini` first held a name-to-path table; a
 recursive `scan` verb was specified in a since-deleted `docs/scan.md` and folded
-away into `orgmgr.py list`; the directory of symlinks replaced both. The
+away into `projmgr.py list`; the directory of symlinks replaced both. The
 reasons the symlink registry won are worth keeping written down, because this
 question has re-opened twice:
 
@@ -67,21 +67,26 @@ run from inside the project. See *Adding a project*.
 
 ## What makes a directory a project
 
-A registry entry is a project when it **contains a symlink to a directory**.
-That symlink is the project; its target is the project root.
+A registry entry is a project when it **points outward**: it contains a symlink
+to a directory, or failing that a symlink to an Org file. A directory symlink is
+the project, and its target is the project root; a task-file symlink alone is
+still a deliberate registration, and the project root is wherever that file
+really lives.
 
-This is a positive marker, and it is the whole test. It replaces the blocklist
-in `manager.SKIP_PROJECT_DIRS`, which had accumulated `docs` because one real
-registry keeps its own notes there. A registry may hold a `README.md`, an
-`AGENTS.md`, a `docs/` directory, a `.git`, or anything else its owner wants;
-none of them become projects, because none of them carry a directory symlink.
+This is a positive marker, and it is the whole test. It replaced a blocklist of
+directory names that had accumulated `docs` because one real registry keeps its
+own notes there. A registry may hold a `README.md`, an `AGENTS.md`, a `docs/`
+directory, a `.git`, or anything else its owner wants; none of them become
+projects, because none of them point anywhere outside the registry.
 
-- Exactly one directory symlink per entry. Two or more is ambiguity: report it
-  and skip the entry, following the `docs/format.md` rule that ambiguity stops
-  resolution rather than choosing alphabetically.
+- Exactly one directory symlink per entry. Two or more is ambiguity: resolution
+  stops rather than choosing alphabetically, per `docs/format.md`, and the entry
+  is listed with a warning instead of a project path.
 - The entry directory's name is the project name. Renaming a project is `mv`.
-- A dangling project symlink is a *broken* project, not a missing one. List it
-  with a warning so it can be fixed; do not let it silently vanish.
+- A dangling symlink is a *broken* project, not a missing one, when it aimed
+  where a project link aims — at a directory or an Org file. List it with a
+  warning so it can be fixed; do not let it silently vanish. A stale link to
+  something else (a `.md` note, say) does not make an entry a project at all.
 
 ## A task file is optional
 
@@ -153,7 +158,13 @@ a task file is discovered, a symlink to it.
 - `add` never writes Org content, and never fails for want of a task file.
 
 Removal is `pmgr rm NAME`, which deletes the registry entry and nothing else.
-Deleting the entry directory by hand is equally valid.
+Because everything in an entry is normally a symlink, that destroys nothing; a
+regular file in the entry needs `--force`, and a real subdirectory is refused
+outright. Deleting the entry directory by hand is equally valid.
+
+`pmgr doctor` reports what is broken, ambiguous, unreadable, or duplicated, and
+notes which subdirectories it ignored as non-projects. It changes nothing and
+exits 2 when it finds a problem.
 
 ## Safety
 

@@ -23,23 +23,19 @@ All scripts are stdlib-only (Python 3.10+, no external dependencies).
   `show`, `add`, `done`, `open`, `repair`, `apply` (instantiate the `* Template`
   subtree as new weekly tasks; see `docs/templates.md`). This is the core tool.
   The intended shell alias is `ort`. Spec: `docs/ortask.md`.
-- **`orgmgr.py`** — the project layer across many projects, organized by a
+- **`projmgr.py`** — the project layer across many projects, organized by a
   registry directory (one subdirectory per project, each holding symlinks to the
   project and its `.org` task file). `ortask.ini` records it as `[projects]
-  registry`. Verbs: `list` (read-only task overview), `migrate` (record the
-  registry in `~/.config/ortask/ortask.ini`), `pcd` (write a project's directory
-  stack; see `docs/projdirs.md`), and `projadd` (create one project's symlink
-  subdirectory under the registry). It edits only config and registry symlinks,
-  never Org content — `ortask.py` owns local task editing. Specs:
-  `docs/orgmgr.md` for the command, `docs/projects.md` for the registry model.
-  **Planned:** renames to `projmgr.py` (`pmgr`), with `projadd` becoming `add`
-  and `-i` aliased `ptui` — see the Project Navigator section of
-  `docs/roadmap.md`.
-- **`projtui.py`** — despite the name, library code rather than a third tool:
-  2103 lines imported by both scripts, holding the `orti` task workspace
-  (`OrgBuffer`, `InteractiveTaskController`) plus ~105 lines of project browser.
-  It is slated to move into `ortasklib/` and stop being a script. Spec:
-  `docs/interactive.md`.
+  registry`. Verbs: `add` (register the project you are in), `doctor` (report
+  broken/ambiguous/unreadable entries), `init` (record the registry in
+  `~/.config/ortask/ortask.ini`), `list` (read-only task overview), `pcd` (write
+  a project's directory stack; see `docs/projdirs.md`), and `rm` (remove one
+  registry entry). `migrate` and `projadd` remain as deprecated aliases for
+  `init` and `add`. It edits only config and registry symlinks, never Org
+  content — `ortask.py` owns local task editing. The intended aliases are `pmgr`
+  and, for `-i`, `ptui`. Specs: `docs/projmgr.md` for the command,
+  `docs/projects.md` for the registry model. Renamed from `orgmgr.py` on
+  2026-08-19.
 
 ## Running
 
@@ -47,8 +43,8 @@ All scripts are stdlib-only (Python 3.10+, no external dependencies).
 ./ortask.py                        # list open tasks (default: task.org)
 ./ortask.py list --todo            # open tasks only
 ./ortask.py --file /path/to.org    # operate on a different file
-./orgmgr.py list                   # overview of all projects' top-level tasks
-./projtui.py                       # interactive project/task menu
+./projmgr.py list                  # overview of all projects' top-level tasks
+./projmgr.py -i                    # interactive project navigator (ptui)
 ```
 
 ## Default file resolution (ortask.py)
@@ -74,27 +70,24 @@ Ambiguous same-tier matches are errors. Do not silently choose alphabetically.
   prefix) and reports them, but auto-fix — renumbering and ID assignment — is
   deferred. `repair --dry-run` exits 2 if problems are found; `repair` without
   `--dry-run` reports and exits 0 without modifying the file.
-- **`orgmgr.py`** implements `list` (read-only), `migrate` (record the registry
-  in `ortask.ini`), and `projadd` (create a project's symlink subdirectory under
-  the registry). `list`/`migrate`/`projadd` and `projtui.py` all resolve the
-  registry via `manager.resolve_registry()` (`--registry` > `[projects]
-  registry` > `~/Projects`). It also implements `pcd`. Future verbs (`projrm`,
-  `doctor`) remain specified but unimplemented; `scan` is explicitly not
-  planned, per `docs/projects.md`.
-- **`projtui.py`** implements the minimal numbered-menu workflow.
+- **`projmgr.py`** implements every specified verb: `add`, `doctor`, `init`,
+  `list`, `pcd`, `rm`, plus `-i`. All of them resolve the registry via
+  `manager.resolve_registry()` (`--registry` > `[projects] registry` >
+  `~/Projects`) and enumerate it via `manager.discover_projects()`. `scan` is
+  explicitly not planned, per `docs/projects.md`.
 - **Shared library (done):** reusable logic lives in the `ortasklib/` package
-  (`core`, `tasks`, `manager`); the three scripts are thin front-ends that no
-  longer import each other. See `docs/architecture.md`. Everything stays
-  stdlib-only even if the TUI later adopts optional dependencies.
+  (`core`, `tasks`, `manager`, `menu`, `taskui`); the two scripts are thin
+  front-ends that do not import each other. See `docs/architecture.md`.
+  Everything except the TUI stays stdlib-only.
 
 ## Key files
 
 - `ortasklib/` — shared package: `core.py` (parse/IDs/discovery/atomic writes),
   `tasks.py` (local formatting/show/edit/validation), `manager.py` (project
-  discovery/config/summaries)
+  discovery/config/summaries), `menu.py` (bounded inline application),
+  `taskui.py` (task list and issue workspace, shared by `ort -i` and `ptui`)
 - `ortask.py` — local task CLI (the core tool)
-- `orgmgr.py` — global read-only project/task overview
-- `projtui.py` — interactive project/task TUI
+- `projmgr.py` — the project layer: registry, project list, `add`, `pcd`
 - `tests/test_ortask_suite.py` — pytest suite; doubles as the refactor gate
 - `README.org` — project docs (no longer the default task data file)
 - `todo.org` — the actual task data file for this repo
@@ -158,13 +151,13 @@ parsing with and without priorities and tags, weekly-ID normalization, ID
 allocation, round-trip edits that preserve unrelated lines, XDG-isolated
 registry behavior, and PTY coverage of the bounded inline session. See
 `docs/testing.md`. New tests follow the same shape: fixture Org documents, and
-for `projtui.py`/`orgmgr.py`, workflow logic separated from terminal I/O so read
+for `taskui`/`projmgr.py`, workflow logic separated from terminal I/O so read
 paths can be asserted never to write to disk.
 
 ## Design docs
 
 - `docs/ortask.md` — man-page-style `ortask.py` subcommand reference (planned-behavior source of truth)
-- `docs/orgmgr.md` — spec for the project-layer `orgmgr.py` command
+- `docs/projmgr.md` — spec for the project-layer `projmgr.py` command
 - `docs/projects.md` — what a project is, and the registry model (the
   multi-project counterpart to `docs/format.md`)
 - `docs/projdirs.md` — the `pcd` project directory stack

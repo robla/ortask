@@ -5,14 +5,18 @@ shared `ortasklib` package. The goal was to move reusable parsing, discovery,
 and project-management behavior out of the top-level scripts so features can be
 added without growing three coupled scripts.
 
-**Status:** implemented. The scripts no longer import each other; they import
-from `ortasklib`. The `docs/testing.md` suite runs unchanged as the refactor
-gate (see *Test compatibility* below). The `orgmgr.py list`/`migrate`/`projadd`
-verbs (see `docs/orgmgr.md`) are implemented in `manager`: the project registry
-is a directory of per-project symlink subdirectories, and `ortask.ini` records
-where that registry lives. All three scripts resolve it through
+**Status:** implemented. There are two scripts, neither importing the other;
+both import from `ortasklib`. The `docs/testing.md` suite runs unchanged as the
+refactor gate (see *Test compatibility* below). The `projmgr.py` verbs (see
+`docs/projmgr.md`) are implemented over `manager`: the project registry is a
+directory of per-project symlink subdirectories, and `ortask.ini` records where
+that registry lives. Both scripts resolve it through
 `manager.resolve_registry()` (`--registry` > `[projects] registry` >
-`~/Projects`).
+`~/Projects`). `docs/projects.md` is the model `manager` implements.
+
+`projtui.py` no longer exists. It was 2103 lines imported by both scripts —
+library code with a script name — and became `ortasklib/taskui.py`, with its
+project browser folded into `projmgr.py`.
 
 ## Package Layout
 
@@ -23,9 +27,9 @@ ortasklib/
   tasks.py
   manager.py
   menu.py
+  taskui.py
 ortask.py
-orgmgr.py
-projtui.py
+projmgr.py
 ```
 
 `ortasklib/` is the package name because a directory named `ortask/` would
@@ -36,17 +40,20 @@ later moved under `bin/` or renamed, the package can be renamed to `ortask/`.
 
 ```text
 core    (stdlib only)
-  ^ ^
-  | |
-tasks  manager     menu
-  ^      ^          ^
-  |      |          |
-ortask.py   orgmgr.py        projtui.py
-(core,tasks) (manager)       (core, tasks, manager, menu)
+  ^ ^ ^
+  | | |
+tasks manager menu
+  ^     ^      ^
+  |     |      |
+  +--- taskui -+
+        ^   ^
+        |   |
+ ortask.py  projmgr.py
 ```
 
 No script imports another script. `core` has no intra-package dependencies;
-`tasks` and `manager` depend only on `core`.
+`tasks` and `manager` depend only on `core`; `taskui` composes `core`, `tasks`,
+`menu`, and the `Project` record from `manager`.
 
 ## Script Responsibilities
 
@@ -58,13 +65,12 @@ modules never call `sys.exit()` or parse CLI arguments.
   `repair`). Each `cmd_*` reads the file, calls a `tasks`/`core` helper,
   translates the result (and `TaskNotFound`) into output and an exit code, and
   writes via `core.write_lines`.
-- `orgmgr.py` — global multi-project commands. `cmd_list` calls
-  `manager.summarize_projects()` and formats the records. `cmd_interactive`
-  launches the registry-scoped project browser. Future `projrm` and registry
-  maintenance also belong here.
-- `projtui.py` — the current project-browser implementation shim. Menu
-  rendering, prompting, and editor launch stay here for now; it imports project
-  discovery from `manager` and parsing/edit helpers from `core`/`tasks`.
+- `projmgr.py` — project-layer commands (`add`, `doctor`, `init`, `list`, `pcd`,
+  `rm`) plus `-i`. `cmd_list` calls `manager.summarize_projects()` and formats
+  the records. It owns the project list itself: `_project_rows`,
+  `_project_location`, `_anchor_index`, and `_project_view` are shared by the
+  navigator (`_ProjectBrowser`), `pcd` (`_PcdSession`), and both numbered
+  fallbacks, so only what `Enter` does differs between them.
 
 ## `core.py`
 
@@ -117,7 +123,7 @@ entirely.
 
 ## `manager.py`
 
-Behavior used by `orgmgr.py` and shared with `projtui.py`:
+Behavior used by `projmgr.py` and by `taskui`:
 
 - the `Project` record
 - registry resolution — `ortask_config_path()` (`ortask.ini`) honors
@@ -131,12 +137,18 @@ Behavior used by `orgmgr.py` and shared with `projtui.py`:
   attaching a `warning` (instead of raising) for unreadable files, files with no
   parseable task headings, or duplicate IDs
 
-`orgmgr.py`'s `migrate` adapter writes the registry into `ortask.ini`; its
-`projadd` adapter creates the per-project symlink subdirectory, using
-`core.discover_org_file()` for local task-file discovery. Both
-`orgmgr.py list` and `projtui.py` resolve the registry through
-`manager.resolve_registry()`, so the interactive and non-interactive tools agree
-on the same project list.
+`projmgr.py`'s `init` adapter writes the registry into `ortask.ini`; its `add`
+adapter creates the per-project symlink subdirectory, using
+`manager.project_root_for()` to find the project root and
+`core.discover_org_file()` for local task-file discovery. Every project surface
+resolves the registry through `manager.resolve_registry()` and enumerates it
+through `manager.discover_projects()`, so the interactive and non-interactive
+paths agree on the same project list.
+
+`manager.read_project_entry()` holds the marker rule: a registry entry is a
+project when it points outward (a symlink to a directory, or failing that to an
+Org file). A task file is optional, and broken or ambiguous entries carry a
+`warning` rather than disappearing.
 
 ## `menu.py`
 
@@ -146,7 +158,7 @@ Shared rendering and bounded-interaction primitives for interactive tools:
 - `ProjectRow` — stable row shape for registry project displays
 - `count_statuses()` — open/done/total summary counts
 - `print_task_dashboard()` — Rich table rendering with a plain text fallback
-- `print_project_dashboard()` — shared project-list rendering for `projtui.py`
+- `print_project_dashboard()` — numbered project-list rendering for `projmgr.py`
 - `select_menu()` / `select_project_menu()` — inline prompt_toolkit
   one-shot highlight-bar selectors retained for compatibility
 - `MenuView` / `TextInputView` / `InlineMenuSession` — a persistent, bounded
@@ -157,11 +169,11 @@ Shared rendering and bounded-interaction primitives for interactive tools:
   plain `input()` fallback
 
 The shared layer owns presentation and interaction mechanics, not workflow
-behavior. `projtui.InteractiveTaskController` decides which task rows to show,
+behavior. `taskui.InteractiveTaskController` decides which task rows to show,
 what each action does, whether recovery data requires an initial choice view,
 whether Back should push its bounded save/discard view, and how accepted task
 text is validated and buffered.
-`projtui.InteractiveProjectController` supplies the project root, attaches task
+`projmgr._ProjectBrowser` supplies the project root, attaches task
 controllers beneath it, and restores stable project selection on return.
 Numbered fallbacks retain their plain prompts by policy.
 
@@ -188,23 +200,21 @@ historical private aliases `_find_tasks_range`, `_build_org_heading`,
 2. Moved local formatting, `show`, ID allocation, edit, and validation logic
    into `ortasklib/tasks.py`, leaving `ortask.py` as argument parsing, dispatch,
    and thin `cmd_*` adapters.
-3. Moved project discovery/config and the `orgmgr list` summary into
+3. Moved project discovery/config and the project-list summary into
    `ortasklib/manager.py`.
-4. Updated `orgmgr.py` and `projtui.py` to import from `manager` instead of from
+4. Updated the scripts to import from `manager` instead of from
    each other (and from `ortask.py`).
 5. Kept the existing tests green at each step via the `ortask.py` re-exports.
 
 ## Future work
 
-- Add `projrm` (and possibly `doctor`) per `docs/orgmgr.md`. `scan` is not
-  planned; see `docs/projects.md`.
-- Move `projtui.py` into `ortasklib/` and rename `orgmgr.py` to `projmgr.py`,
-  per the Project Navigator section of `docs/roadmap.md`. `projtui.py` is
-  imported by both scripts, so it is library code that has not moved yet — the
-  one place this document's "no script imports another script" rule is not yet
-  true.
+- Split `menu.py`: it still holds rendering, session lifecycle, and plain-text
+  dashboards in one module. See the Risks section of `docs/roadmap.md`.
+- Consider whether `taskui.py` should divide further now that it is a library
+  module rather than a script: the buffer, the task list, and the issue
+  workspace are three concerns in one file.
 - Consider repointing the test suite to import from `ortasklib` directly and
   retiring the `ortask.py` compatibility re-exports.
 
-`list`, `migrate`, and `projadd` (the registry-of-symlinks model) are done, with
+The registry-of-symlinks model and every `projmgr.py` verb are done, with
 config-isolation tests (a temp `XDG_CONFIG_HOME`) in `tests/test_ortask_suite.py`.

@@ -31,19 +31,17 @@ and open the local interactive workspace. Its default mode should remain useful
 in shell scripts and simple enough to test with temporary fixtures. `orti` is
 `ortask.py -i`, the issue-editing workspace over the resolved file.
 
-The project layer is `orgmgr.py` today and `projmgr.py` (`pmgr`) as planned. It
-owns the registry, the project list, project registration, and the `pcd`
-directory-stack helper. It must not become a local task editor: it reads Org
-task content and never writes it. `ptui` is `projmgr.py -i`, the project
-navigator. `docs/projects.md` is the model it implements; `docs/roadmap.md`
-carries the rename sequence.
+`projmgr.py` (`pmgr`) is the project layer. It owns the registry, the project
+list, project registration (`add`), removal (`rm`), health (`doctor`), config
+(`init`), and the `pcd` directory-stack helper. It must not become a local task
+editor: it reads Org task content and never writes it. `ptui` is
+`projmgr.py -i`, the project navigator. `docs/projects.md` is the model it
+implements.
 
-`projtui.py` is not a third tool, despite the filename. It is 2103 lines
-imported by both scripts, of which about 105 are the project browser and the
-rest are the `orti` task workspace. It should end up in `ortasklib/`, with the
-project browser folded into the project-layer command and the script deleted.
-Treat it as library code that has not been moved yet, not as a peer of the
-other two.
+`ortasklib/taskui.py` is the shared task UI — the buffered task list and issue
+workspace behind both `orti` and the project navigator. It was `projtui.py`, a
+2103-line script imported by both commands; the name suggested a third tool and
+the content was library code, so it moved into the package.
 
 `castabout.py` is a workflow assistant for recurring ElectoramaWeekly promotion
 chores. It reads a task file, shows a status dashboard, drafts promotional

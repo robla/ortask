@@ -14,16 +14,31 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import orgmgr
 import ortask
-import projtui
-from ortasklib import core, manager, tasks
+import projmgr
+from ortasklib import core, manager, taskui, tasks
 
 
 def write(path: Path, content: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8")
     return path
+
+
+def register(registry: Path, name: str, project_dir: Path) -> Path:
+    """Create one registry entry of symlinks, the way ``projmgr add`` does.
+
+    A registry entry is a project because it points outward; see
+    ``docs/projects.md``. Tests that need a registry build one this way rather
+    than dropping real files into the registry.
+    """
+    entry = registry / name
+    entry.mkdir(parents=True, exist_ok=True)
+    (entry / project_dir.name).symlink_to(project_dir)
+    org_file = manager.choose_org_file(project_dir)
+    if org_file is not None:
+        (entry / org_file.name).symlink_to(org_file)
+    return entry
 
 
 def test_parse_standard_task_tree() -> None:
@@ -89,7 +104,7 @@ def test_normalize_and_match_weekly_ids() -> None:
 
 
 def test_filter_root_todo_tasks() -> None:
-    # This test captures the top-level task view used by orgmgr.py list.
+    # This test captures the top-level task view used by projmgr.py list.
     items = ortask.parse_org(
         textwrap.dedent(
             """
@@ -691,7 +706,7 @@ def test_manager_choose_org_file_prefers_tasks_org(tmp_path: Path) -> None:
     assert manager.choose_org_file(project) == project / "README.org"
 
 
-def test_summarize_projects_for_orgmgr(tmp_path: Path, capsys) -> None:
+def test_summarize_projects_for_projmgr(tmp_path: Path, capsys) -> None:
     # This test covers global project summaries without touching real config.
     workspace = tmp_path / "workspace"
     real_project = tmp_path / "real-alpha"
@@ -707,14 +722,15 @@ def test_summarize_projects_for_orgmgr(tmp_path: Path, capsys) -> None:
     (workspace / "alpha").mkdir(parents=True)
     (workspace / "alpha" / "TODO.org").symlink_to(real_alpha_org)
     write(
-        workspace / "beta" / "README.org",
+        tmp_path / "real-beta" / "README.org",
         """
         * Notes
         No task section.
         """,
     )
+    register(workspace, "beta", tmp_path / "real-beta")
     write(
-        workspace / "gamma" / "README.org",
+        tmp_path / "real-gamma" / "README.org",
         """
         * TODO t0003 Gamma root
         ** TODO t0003.1 Gamma child
@@ -722,11 +738,14 @@ def test_summarize_projects_for_orgmgr(tmp_path: Path, capsys) -> None:
         No dedicated task section.
         """,
     )
+    register(workspace, "gamma", tmp_path / "real-gamma")
+    # Neither of these is a project: the hidden entry is skipped by name, and
+    # the registry's own notes directory points nowhere outside the registry.
     write(workspace / ".hidden" / "TODO.org", "* Tasks\n** TODO t0003 Hidden\n")
     write(workspace / "docs" / "TODO.org", "* Tasks\n** TODO t0004 Docs\n")
 
     args = argparse.Namespace(registry=str(workspace), all=False, format="json")
-    assert orgmgr.cmd_list(args) == 0
+    assert projmgr.cmd_list(args) == 0
     projects = json.loads(capsys.readouterr().out)
 
     by_name = {project["project"]: project for project in projects}
@@ -805,7 +824,7 @@ def test_interactive_uses_resolved_local_org_file(tmp_path: Path, monkeypatch) -
     called: list[tuple[Path, bool]] = []
 
     monkeypatch.setattr(
-        projtui,
+        taskui,
         "local_file_menu",
         lambda path, include_done=False: called.append((path, include_done)) or 0,
     )
@@ -827,7 +846,8 @@ def test_cli_smoke_tests(tmp_path: Path) -> None:
         """,
     )
     workspace = tmp_path / "workspace"
-    write(workspace / "sample" / "TODO.org", org_file.read_text(encoding="utf-8"))
+    write(tmp_path / "real-sample" / "TODO.org", org_file.read_text(encoding="utf-8"))
+    register(workspace, "sample", tmp_path / "real-sample")
 
     list_result = subprocess.run(
         [sys.executable, str(ROOT / "ortask.py"), "--file", str(org_file), "list"],
@@ -863,59 +883,59 @@ def test_cli_smoke_tests(tmp_path: Path) -> None:
     assert "Done: 1" in interactive_result.stdout
     assert "Finished parent" in interactive_result.stdout
 
-    orgmgr_result = subprocess.run(
-        [sys.executable, str(ROOT / "orgmgr.py"), "--registry", str(workspace), "list"],
+    projmgr_result = subprocess.run(
+        [sys.executable, str(ROOT / "projmgr.py"), "--registry", str(workspace), "list"],
         cwd=ROOT,
         text=True,
         capture_output=True,
         check=False,
     )
-    assert orgmgr_result.returncode == 0
-    assert orgmgr_result.stdout.splitlines()[0] == f"Registry: {workspace}"
-    assert "sample" in orgmgr_result.stdout
+    assert projmgr_result.returncode == 0
+    assert projmgr_result.stdout.splitlines()[0] == f"Registry: {workspace}"
+    assert "sample" in projmgr_result.stdout
 
-    orgmgr_json_result = subprocess.run(
-        [sys.executable, str(ROOT / "orgmgr.py"), "--registry", str(workspace), "list", "--format", "json"],
+    projmgr_json_result = subprocess.run(
+        [sys.executable, str(ROOT / "projmgr.py"), "--registry", str(workspace), "list", "--format", "json"],
         cwd=ROOT,
         text=True,
         capture_output=True,
         check=False,
     )
-    assert orgmgr_json_result.returncode == 0
-    assert json.loads(orgmgr_json_result.stdout)[0]["project"] == "sample"
+    assert projmgr_json_result.returncode == 0
+    assert json.loads(projmgr_json_result.stdout)[0]["project"] == "sample"
 
-    projtui_result = subprocess.run(
-        [sys.executable, str(ROOT / "projtui.py"), "--registry", str(workspace)],
-        cwd=ROOT,
-        input="q\n",
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert projtui_result.returncode == 0
-    assert "Projects in" in projtui_result.stdout
-    assert "sample" in projtui_result.stdout
-
-    orgmgr_interactive_result = subprocess.run(
-        [sys.executable, str(ROOT / "orgmgr.py"), "--registry", str(workspace), "-i"],
+    navigator_result = subprocess.run(
+        [sys.executable, str(ROOT / "projmgr.py"), "--registry", str(workspace), "-i"],
         cwd=ROOT,
         input="q\n",
         text=True,
         capture_output=True,
         check=False,
     )
-    assert orgmgr_interactive_result.returncode == 0
-    assert f"Finding project in {workspace}" in orgmgr_interactive_result.stdout
-    assert "Projects in" in orgmgr_interactive_result.stdout
-    assert "sample" in orgmgr_interactive_result.stdout
+    assert navigator_result.returncode == 0
+    assert "Projects in" in navigator_result.stdout
+    assert "sample" in navigator_result.stdout
+
+    projmgr_interactive_result = subprocess.run(
+        [sys.executable, str(ROOT / "projmgr.py"), "--registry", str(workspace), "-i"],
+        cwd=ROOT,
+        input="q\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert projmgr_interactive_result.returncode == 0
+    assert f"Finding project in {workspace}" in projmgr_interactive_result.stdout
+    assert "Projects in" in projmgr_interactive_result.stdout
+    assert "sample" in projmgr_interactive_result.stdout
 
 
-def test_orgmgr_no_args_and_help_show_help() -> None:
-    # This test ensures orgmgr.py is explicit: bare invocation shows help rather
+def test_projmgr_no_args_and_help_show_help() -> None:
+    # This test ensures projmgr.py is explicit: bare invocation shows help rather
     # than listing the configured real registry.
     for args in ([], ["help"]):
         result = subprocess.run(
-            [sys.executable, str(ROOT / "orgmgr.py"), *args],
+            [sys.executable, str(ROOT / "projmgr.py"), *args],
             cwd=ROOT,
             text=True,
             capture_output=True,
@@ -941,11 +961,21 @@ def test_cli_subcommands_are_registered_alphabetically() -> None:
             "repair",
             "show",
         ],
-        "orgm": ["help", "list", "migrate", "pcd", "projadd"],
+        "pmgr": [
+            "add",
+            "doctor",
+            "help",
+            "init",
+            "list",
+            "migrate",
+            "pcd",
+            "projadd",
+            "rm",
+        ],
     }
     parsers = {
         "ort": ortask.build_parser(),
-        "orgm": orgmgr.build_parser(),
+        "pmgr": projmgr.build_parser(),
     }
 
     for command, parser in parsers.items():
@@ -959,11 +989,11 @@ def test_cli_subcommands_are_registered_alphabetically() -> None:
         assert registered == sorted(registered)
 
 
-def test_orgmgr_interactive_uses_registry_project_menu(
+def test_projmgr_interactive_uses_registry_project_menu(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    # orgmgr -i is the public registry-scoped entry point for the project TUI.
-    calls: list[tuple[Path, bool]] = []
+    # pmgr -i (ptui) is the public registry-scoped entry point for the navigator.
+    calls: list[tuple[Path, str, bool]] = []
 
     monkeypatch.setattr(
         manager,
@@ -971,19 +1001,21 @@ def test_orgmgr_interactive_uses_registry_project_menu(
         lambda registry: (tmp_path, "~/Projects"),
     )
     monkeypatch.setattr(
-        projtui,
+        projmgr,
         "project_menu",
-        lambda workspace, include_done: calls.append((workspace, include_done)) or 0,
+        lambda workspace, display, include_done: (
+            calls.append((workspace, display, include_done)) or 0
+        ),
     )
 
-    assert orgmgr.cmd_interactive(
+    assert projmgr.cmd_interactive(
         argparse.Namespace(registry=None, todo_only=True)
     ) == 0
 
     captured = capsys.readouterr()
     assert captured.out == "Finding project in ~/Projects\n"
     assert captured.err == ""
-    assert calls == [(tmp_path, False)]
+    assert calls == [(tmp_path, "~/Projects", False)]
 
 
 def test_bash_completion_for_ortask_and_alias() -> None:
@@ -999,9 +1031,9 @@ def test_bash_completion_for_ortask_and_alias() -> None:
         ("_ortask_complete", "COMP_WORDS=(ortask.py list --fo); COMP_CWORD=2", "--format"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py apply --te); COMP_CWORD=2", "--template"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py apply --template w); COMP_CWORD=3", "weekly"),
-        ("_orgmgr_complete", "COMP_WORDS=(orgm --in); COMP_CWORD=1", "--interactive"),
-        ("_orgmgr_complete", "COMP_WORDS=(orgm li); COMP_CWORD=1", "list"),
-        ("_orgmgr_complete", "COMP_WORDS=(orgmgr.py list --fo); COMP_CWORD=2", "--format"),
+        ("_projmgr_complete", "COMP_WORDS=(orgm --in); COMP_CWORD=1", "--interactive"),
+        ("_projmgr_complete", "COMP_WORDS=(orgm li); COMP_CWORD=1", "list"),
+        ("_projmgr_complete", "COMP_WORDS=(projmgr.py list --fo); COMP_CWORD=2", "--format"),
     ]
 
     for function, setup, expected in cases:
@@ -1042,7 +1074,21 @@ def test_bash_completion_lists_subcommands_alphabetically() -> None:
                 "show",
             ],
         ),
-        ("_orgmgr_complete", "orgm", ["help", "list", "migrate", "pcd", "projadd"]),
+        (
+            "_projmgr_complete",
+            "pmgr",
+            [
+                "add",
+                "doctor",
+                "help",
+                "init",
+                "list",
+                "migrate",
+                "pcd",
+                "projadd",
+                "rm",
+            ],
+        ),
     ]
 
     for function, executable, expected in cases:
@@ -1117,14 +1163,14 @@ def test_cli_add_creates_tasks_org_when_no_task_file_exists(tmp_path: Path) -> N
     ]
 
 
-# --- orgmgr registry model: migrate + projadd ---------------------------------
+# --- projmgr registry model: the project marker, init, add, rm, doctor -------
 # These isolate config by pointing XDG_CONFIG_HOME at a temp directory, so they
 # never read or write (or delete) the real ~/.config/ortask.
 
 
-def _projadd_args(path: Path, **kw) -> argparse.Namespace:
-    base = dict(path=str(path), name=None, file=None, registry=None,
-                force=False, dry_run=False)
+def _add_args(path: Path | None, **kw) -> argparse.Namespace:
+    base = dict(path=None if path is None else str(path), name=None, file=None,
+                registry=None, force=False, dry_run=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -1132,12 +1178,12 @@ def _projadd_args(path: Path, **kw) -> argparse.Namespace:
 def test_migrate_records_registry(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    # migrate records [projects] registry without consulting projtui.ini.
+    # init records [projects] registry without consulting projtui.ini.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     workspace = tmp_path / "ws"
     workspace.mkdir()
 
-    assert orgmgr.cmd_migrate(
+    assert projmgr.cmd_init(
         argparse.Namespace(registry=str(workspace), force=False, dry_run=False)
     ) == 0
     capsys.readouterr()
@@ -1156,7 +1202,7 @@ def test_projadd_creates_symlink_subdir(tmp_path: Path, monkeypatch, capsys) -> 
     project = tmp_path / "src" / "elweek"
     write(project / "TODO.org", "* Tasks\n** TODO t0001 Promote episode\n")
 
-    assert orgmgr.cmd_projadd(_projadd_args(project)) == 0
+    assert projmgr.cmd_add(_add_args(project)) == 0
     capsys.readouterr()
 
     subdir = registry / "elweek"
@@ -1168,7 +1214,7 @@ def test_projadd_creates_symlink_subdir(tmp_path: Path, monkeypatch, capsys) -> 
     assert task_link.resolve() == (project / "TODO.org").resolve()
 
     # Discovery follows the symlinks: list shows the project and its task.
-    assert orgmgr.cmd_list(
+    assert projmgr.cmd_list(
         argparse.Namespace(registry=str(registry), all=False, format="json")
     ) == 0
     projects = json.loads(capsys.readouterr().out)
@@ -1179,9 +1225,9 @@ def test_projadd_creates_symlink_subdir(tmp_path: Path, monkeypatch, capsys) -> 
     ]
 
     # An existing project subdir is a conflict without --force; --force repoints.
-    assert orgmgr.cmd_projadd(_projadd_args(project)) == 1
+    assert projmgr.cmd_add(_add_args(project)) == 1
     assert "already exists" in capsys.readouterr().err
-    assert orgmgr.cmd_projadd(_projadd_args(project, force=True)) == 0
+    assert projmgr.cmd_add(_add_args(project, force=True)) == 0
 
 
 def test_projadd_links_project_only_when_no_task_file(
@@ -1196,12 +1242,181 @@ def test_projadd_links_project_only_when_no_task_file(
     project = tmp_path / "bare"
     project.mkdir()  # no .org inside
 
-    assert orgmgr.cmd_projadd(_projadd_args(project, name="bare")) == 0
+    assert projmgr.cmd_add(_add_args(project, name="bare")) == 0
     capsys.readouterr()
 
     subdir = registry / "bare"
     assert (subdir / "bare").is_symlink()                          # project link
     assert not any(p.suffix == ".org" for p in subdir.iterdir())   # no task link
+
+
+def test_manager_project_marker_ignores_registry_notes(tmp_path: Path) -> None:
+    # A registry entry is a project because it points outward. The registry's own
+    # notes directory holds Org files but links nowhere, so it is not a project.
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "alpha"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Alpha\n")
+    register(registry, "alpha", project)
+
+    write(registry / "docs" / "llm-log.org", "* Notes\n")
+    (registry / "docs" / "guide.md").symlink_to(tmp_path / "elsewhere.md")
+    write(registry / "README.md", "not a project\n")
+
+    names = [p.name for p in manager.discover_projects(registry)]
+    assert names == ["alpha"]
+
+
+def test_manager_lists_a_project_with_no_task_file(tmp_path: Path) -> None:
+    # A project registered before it has any tasks must still be listed; that is
+    # exactly when the user is most likely looking for it.
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "fresh"
+    project.mkdir(parents=True)
+    register(registry, "fresh", project)
+
+    projects = manager.discover_projects(registry)
+    assert [p.name for p in projects] == ["fresh"]
+    assert projects[0].org_file is None
+    assert manager.canonical_org_file(projects[0]) is None
+    assert manager.real_project_path(projects[0]) == project.resolve()
+
+
+def test_manager_registers_a_task_file_link_alone(tmp_path: Path) -> None:
+    # A hand-made entry that links only the task file is still a registration.
+    registry = tmp_path / "registry"
+    org_file = write(tmp_path / "src" / "beta" / "tasks.org", "* Tasks\n")
+    entry = registry / "beta"
+    entry.mkdir(parents=True)
+    (entry / "tasks.org").symlink_to(org_file)
+
+    projects = manager.discover_projects(registry)
+    assert [p.name for p in projects] == ["beta"]
+    assert manager.real_project_path(projects[0]) == org_file.parent.resolve()
+
+
+def test_manager_broken_and_ambiguous_entries_stay_visible(tmp_path: Path) -> None:
+    # A broken project is broken, not missing: hiding it would hide the fix.
+    registry = tmp_path / "registry"
+    (registry / "gone").mkdir(parents=True)
+    (registry / "gone" / "gone").symlink_to(tmp_path / "src" / "gone")
+
+    (registry / "twins").mkdir()
+    first = tmp_path / "src" / "one"
+    second = tmp_path / "src" / "two"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    (registry / "twins" / "one").symlink_to(first)
+    (registry / "twins" / "two").symlink_to(second)
+
+    by_name = {p.name: p for p in manager.discover_projects(registry)}
+    assert set(by_name) == {"gone", "twins"}
+    assert by_name["gone"].warning.startswith("broken project link: gone -> ")
+    assert by_name["twins"].warning == "several project links: one, two"
+    assert by_name["twins"].link is None
+
+
+def test_projmgr_add_walks_up_to_the_project_root(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Run from a subdirectory, `add` registers the project, not the subdirectory.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+
+    project = tmp_path / "src" / "walker"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Root task\n")
+    (project / "docs").mkdir()
+    monkeypatch.chdir(project / "docs")
+
+    assert projmgr.cmd_add(_add_args(None)) == 0
+    out = capsys.readouterr().out
+    assert "using project root" in out
+    assert (registry / "walker" / "walker").resolve() == project.resolve()
+
+    # An explicit path is taken literally: no walking, so the subdirectory wins.
+    assert projmgr.cmd_add(_add_args(project / "docs", name="docs")) == 0
+    capsys.readouterr()
+    assert (registry / "docs" / "docs").resolve() == (project / "docs").resolve()
+
+
+def test_projmgr_list_shows_a_project_with_no_task_file(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+
+    project = tmp_path / "src" / "fresh"
+    project.mkdir(parents=True)
+    register(registry, "fresh", project)
+
+    assert projmgr.cmd_list(
+        argparse.Namespace(registry=None, all=False, format="plain")
+    ) == 0
+    out = capsys.readouterr().out
+    assert "fresh" in out
+    assert "(no task file)" in out
+
+
+def test_projmgr_rm_removes_only_the_registry_entry(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+
+    project = tmp_path / "src" / "doomed"
+    org_file = write(project / "tasks.org", "* Tasks\n** TODO t0001 Survive\n")
+    register(registry, "doomed", project)
+
+    # A real file in the entry is data that lives nowhere else.
+    private = registry / "doomed" / manager.DIRECTORIES_PRIVATE_NAME
+    private.write_text("* Directories\n", encoding="utf-8")
+
+    args = argparse.Namespace(name="doomed", registry=None, force=False, dry_run=False)
+    assert projmgr.cmd_rm(args) == 1
+    assert (registry / "doomed").is_dir()
+    capsys.readouterr()
+
+    args.force = True
+    assert projmgr.cmd_rm(args) == 0
+    capsys.readouterr()
+    assert not (registry / "doomed").exists()
+    assert org_file.read_text(encoding="utf-8") == "* Tasks\n** TODO t0001 Survive\n"
+    assert project.is_dir()
+
+
+def test_projmgr_doctor_reports_problems_and_exits_two(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+
+    healthy = tmp_path / "src" / "healthy"
+    write(healthy / "tasks.org", "* Tasks\n** TODO t0001 Fine\n")
+    register(registry, "healthy", healthy)
+
+    args = argparse.Namespace(registry=None)
+    assert projmgr.cmd_doctor(args) == 0
+    assert "no problems found" in capsys.readouterr().out
+
+    (registry / "gone").mkdir()
+    (registry / "gone" / "gone").symlink_to(tmp_path / "src" / "gone")
+    write(registry / "docs" / "notes.org", "* Notes\n")
+
+    assert projmgr.cmd_doctor(args) == 2
+    out = capsys.readouterr().out
+    assert "problem: gone: broken project link" in out
+    assert "note: docs: not a project entry, ignored" in out
+
+    # A stale task-file link would otherwise read as "no task file".
+    (registry / "healthy" / "tasks.org").unlink()
+    (registry / "healthy" / "tasks.org").symlink_to(tmp_path / "src" / "vanished.org")
+
+    assert projmgr.cmd_doctor(args) == 2
+    out = capsys.readouterr().out
+    assert "problem: healthy: dangling link tasks.org -> " in out
 
 
 def _pcd_registry(tmp_path: Path, monkeypatch, capsys, org_text: str) -> tuple:
@@ -1212,7 +1427,7 @@ def _pcd_registry(tmp_path: Path, monkeypatch, capsys, org_text: str) -> tuple:
 
     project = tmp_path / "myproj"
     write(project / "TODO.org", org_text)
-    assert orgmgr.cmd_projadd(_projadd_args(project, name="myproj")) == 0
+    assert projmgr.cmd_add(_add_args(project, name="myproj")) == 0
     capsys.readouterr()
     return registry, project
 
@@ -1260,7 +1475,7 @@ def test_manager_resolve_directories(tmp_path: Path, monkeypatch) -> None:
     ]
 
 
-def test_orgmgr_pcd_writes_only_directories(
+def test_projmgr_pcd_writes_only_directories(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     from ortasklib import menu
@@ -1273,7 +1488,7 @@ def test_orgmgr_pcd_writes_only_directories(
 
     # With no ``* Directories`` anywhere, the project root is the whole stack.
     out_file = tmp_path / "out1.txt"
-    assert orgmgr.cmd_pcd(
+    assert projmgr.cmd_pcd(
         argparse.Namespace(registry=str(registry), out=str(out_file))
     ) == 0
     assert out_file.read_text(encoding="utf-8").splitlines() == [
@@ -1288,7 +1503,7 @@ def test_orgmgr_pcd_writes_only_directories(
         encoding="utf-8",
     )
     out_file2 = tmp_path / "out2.txt"
-    assert orgmgr.cmd_pcd(
+    assert projmgr.cmd_pcd(
         argparse.Namespace(registry=str(registry), out=str(out_file2))
     ) == 0
     assert out_file2.read_text(encoding="utf-8").splitlines() == [
@@ -1299,7 +1514,7 @@ def test_orgmgr_pcd_writes_only_directories(
     ]
 
 
-def test_orgmgr_pcd_never_edits_the_task_file(
+def test_projmgr_pcd_never_edits_the_task_file(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     """``pcd`` resolves and reports; Org content belongs to ``ortask.py``."""
@@ -1311,13 +1526,13 @@ def test_orgmgr_pcd_never_edits_the_task_file(
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
 
     out_file = tmp_path / "out.txt"
-    assert orgmgr.cmd_pcd(
+    assert projmgr.cmd_pcd(
         argparse.Namespace(registry=str(registry), out=str(out_file))
     ) == 0
     assert (project / "TODO.org").read_text(encoding="utf-8") == original
 
 
-def test_orgmgr_pcd_prefers_the_private_list(
+def test_projmgr_pcd_prefers_the_private_list(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     """A private list is offered first, and chosen without a prompt when alone."""
@@ -1334,7 +1549,7 @@ def test_orgmgr_pcd_prefers_the_private_list(
 
     # Only the private file defines a stack, so there is nothing to ask about.
     out_file = tmp_path / "out1.txt"
-    assert orgmgr.cmd_pcd(
+    assert projmgr.cmd_pcd(
         argparse.Namespace(registry=str(registry), out=str(out_file))
     ) == 0
     assert out_file.read_text(encoding="utf-8").splitlines() == ["/private/one"]
@@ -1352,13 +1567,13 @@ def test_orgmgr_pcd_prefers_the_private_list(
     assert [s.label for s in sources] == ["private", "project"]
 
     out_file2 = tmp_path / "out2.txt"
-    assert orgmgr.cmd_pcd(
+    assert projmgr.cmd_pcd(
         argparse.Namespace(registry=str(registry), out=str(out_file2))
     ) == 0
     assert out_file2.read_text(encoding="utf-8").splitlines() == ["/shared/one", "/private/one"]
 
 
-def test_orgmgr_pcd_empty_section_falls_back_to_the_project_root(
+def test_projmgr_pcd_empty_section_falls_back_to_the_project_root(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     """An empty stack would read as "do nothing" in the shell function."""
@@ -1371,7 +1586,7 @@ def test_orgmgr_pcd_empty_section_falls_back_to_the_project_root(
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
 
     out_file = tmp_path / "out.txt"
-    assert orgmgr.cmd_pcd(
+    assert projmgr.cmd_pcd(
         argparse.Namespace(registry=str(registry), out=str(out_file))
     ) == 0
     assert out_file.read_text(encoding="utf-8").splitlines() == [
@@ -1379,7 +1594,7 @@ def test_orgmgr_pcd_empty_section_falls_back_to_the_project_root(
     ]
 
 
-def test_orgmgr_pcd_cancel_writes_nothing(
+def test_projmgr_pcd_cancel_writes_nothing(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     from ortasklib import menu
@@ -1391,7 +1606,7 @@ def test_orgmgr_pcd_cancel_writes_nothing(
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "q")
 
     out_file = tmp_path / "out.txt"
-    assert orgmgr.cmd_pcd(
+    assert projmgr.cmd_pcd(
         argparse.Namespace(registry=str(registry), out=str(out_file))
     ) != 0
     assert not out_file.exists()
@@ -1420,7 +1635,7 @@ def test_core_editor_argv(monkeypatch) -> None:
     ]
 
 
-def test_projtui_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> None:
+def test_projmgr_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> None:
     # This test reproduces a registry symlink: project selection should show the
     # real task-file target path, not the path inside the registry.
     target = tmp_path / "electorama-weekly"
@@ -1437,7 +1652,7 @@ def test_projtui_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> 
     (project_dir / "TODO-ElWeek.org").symlink_to(task_file)
 
     result = subprocess.run(
-        [sys.executable, str(ROOT / "projtui.py"), "--registry", str(workspace)],
+        [sys.executable, str(ROOT / "projmgr.py"), "--registry", str(workspace), "-i"],
         cwd=ROOT,
         input="1\nb\nq\n",
         text=True,
@@ -1452,19 +1667,20 @@ def test_projtui_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> 
     assert f"ortask — reading {symlink_path}" not in result.stdout
 
 
-def test_projtui_project_task_quit_returns_to_project_menu(tmp_path: Path) -> None:
+def test_projmgr_project_task_quit_returns_to_project_menu(tmp_path: Path) -> None:
     # In project mode, q from a project's task list returns to the parent menu.
     workspace = tmp_path / "workspace"
     write(
-        workspace / "sample" / "tasks.org",
+        tmp_path / "real-sample" / "tasks.org",
         """
         * Tasks
         ** TODO t0001 Sample task
         """,
     )
+    register(workspace, "sample", tmp_path / "real-sample")
 
     result = subprocess.run(
-        [sys.executable, str(ROOT / "projtui.py"), "--registry", str(workspace)],
+        [sys.executable, str(ROOT / "projmgr.py"), "--registry", str(workspace), "-i"],
         cwd=ROOT,
         input="1\nq\nq\n",
         text=True,
@@ -1478,7 +1694,7 @@ def test_projtui_project_task_quit_returns_to_project_menu(tmp_path: Path) -> No
     assert "Sample task" in result.stdout
 
 
-def test_projtui_task_menu_opens_org_file_from_task_list(tmp_path: Path, monkeypatch) -> None:
+def test_projmgr_task_menu_opens_org_file_from_task_list(tmp_path: Path, monkeypatch) -> None:
     # This test ensures the file-scoped task-list menu can open the whole Org
     # file in an editor before a specific task has been selected.
     org_file = write(
@@ -1492,14 +1708,14 @@ def test_projtui_task_menu_opens_org_file_from_task_list(tmp_path: Path, monkeyp
     opened: list[tuple[Path, int | None]] = []
     choices = iter(["e", "b"])
 
-    monkeypatch.setattr(projtui, "_open_editor", lambda buf, line: opened.append((buf.path, line)))
+    monkeypatch.setattr(taskui, "_open_editor", lambda buf, line: opened.append((buf.path, line)))
     monkeypatch.setattr("builtins.input", lambda prompt="": next(choices))
 
-    assert projtui.task_menu(project, include_done=False) is None
+    assert taskui.task_menu(project, include_done=False) is None
     assert opened == [(org_file.resolve(), None)]
 
 
-def test_projtui_escape_cancels_done_confirmation(
+def test_projmgr_escape_cancels_done_confirmation(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     # This test verifies Esc cancels the current focus action without writing.
@@ -1510,13 +1726,13 @@ def test_projtui_escape_cancels_done_confirmation(
         ** TODO t0001 Keep open
         """,
     )
-    buf = projtui.OrgBuffer(org_file)
-    item = projtui.load_menu_items(buf)[0]
+    buf = taskui.OrgBuffer(org_file)
+    item = taskui.load_menu_items(buf)[0]
     choices = iter(["d", "\x1b", "b"])
 
     monkeypatch.setattr("builtins.input", lambda prompt="": next(choices))
 
-    assert projtui.focus_menu(buf, item) is None
+    assert taskui.focus_menu(buf, item) is None
     capsys.readouterr()
     assert "** TODO t0001 Keep open" in org_file.read_text(encoding="utf-8")
     assert buf.dirty is False  # Esc cancelled the toggle; nothing buffered
@@ -1532,19 +1748,19 @@ def test_focus_menu_q_returns_to_immediate_parent(tmp_path: Path, monkeypatch) -
         *** TODO t0001.1 Child
         """,
     )
-    buf = projtui.OrgBuffer(org_file)
-    parent = projtui.load_menu_items(buf)[0]
+    buf = taskui.OrgBuffer(org_file)
+    parent = taskui.load_menu_items(buf)[0]
     shown: list[str] = []
     choices = iter(["1", "q", "q"])
 
     monkeypatch.setattr(
-        projtui,
+        taskui,
         "_show_context",
         lambda _buf, selected: shown.append(selected.task.id),
     )
     monkeypatch.setattr("builtins.input", lambda prompt="": next(choices))
 
-    assert projtui.focus_menu(buf, parent) is None
+    assert taskui.focus_menu(buf, parent) is None
     assert shown == ["t0001", "t0001.1", "t0001"]
 
 
@@ -1663,7 +1879,7 @@ def test_apply_template_creates_tasks_section_if_missing(tmp_path: Path) -> None
 
 
 # ---------------------------------------------------------------------------
-# Interactive task selector (ortasklib.menu / projtui)
+# Interactive task selector (ortasklib.menu / taskui)
 # ---------------------------------------------------------------------------
 
 from ortasklib import menu  # noqa: E402 — grouped with the interactive tests
@@ -1828,7 +2044,7 @@ def test_priority_scale_clamps_and_rejects_invalid_values() -> None:
 
 
 def test_toggle_state_buffers_change_until_save(tmp_path: Path) -> None:
-    # t0006: projtui._toggle_state edits the in-memory buffer (and the auto-save
+    # t0006: taskui._toggle_state edits the in-memory buffer (and the auto-save
     # file), NOT the real file. The real file changes only on buf.save(), and
     # then only the selected heading line, leaving the rest byte-for-byte intact.
     org_file = write(
@@ -1842,11 +2058,11 @@ def test_toggle_state_buffers_change_until_save(tmp_path: Path) -> None:
         """,
     )
     original = org_file.read_text(encoding="utf-8")
-    buf = projtui.OrgBuffer(org_file)
-    target = next(i for i in projtui.load_menu_items(buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    target = next(i for i in taskui.load_menu_items(buf, include_done=True)
                   if i.task and i.task.id == "t0001")
 
-    projtui._toggle_state(buf, target)
+    taskui._toggle_state(buf, target)
     # Real file untouched; change lives in the buffer and the auto-save sibling.
     assert org_file.read_text(encoding="utf-8") == original
     assert buf.dirty is True
@@ -1870,10 +2086,10 @@ def test_priority_change_stays_buffered_until_save(tmp_path: Path) -> None:
         "* Tasks\n** TODO t0001 Target  :tag:\nBody line\n",
     )
     original = org_file.read_text(encoding="utf-8")
-    buf = projtui.OrgBuffer(org_file)
-    item = projtui.load_menu_items(buf)[0]
+    buf = taskui.OrgBuffer(org_file)
+    item = taskui.load_menu_items(buf)[0]
 
-    projtui._shift_priority(buf, item, 1)
+    taskui._shift_priority(buf, item, 1)
 
     assert "** TODO [#C] t0001 Target  :tag:" in buf.read()
     assert org_file.read_text(encoding="utf-8") == original
@@ -1938,7 +2154,7 @@ def test_select_menu_keybindings_headless() -> None:
 def test_selector_help_uses_action_metadata_once() -> None:
     # Help should discover custom commands without listing aliases as duplicates.
     help_view = menu._selector_help(
-        projtui.TASK_MENU_ACTIONS,
+        taskui.TASK_MENU_ACTIONS,
         select_help="Open task details",
         back_help="Return to tasks",
     )
@@ -2110,7 +2326,7 @@ def test_inline_task_contexts_share_one_bounded_application(
     )
     original = org_file.read_text(encoding="utf-8")
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     real_application = menu.Application
     applications = []
 
@@ -2120,7 +2336,7 @@ def test_inline_task_contexts_share_one_bounded_application(
         return app
 
     monkeypatch.setattr(menu, "Application", tracked_application)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -2628,10 +2844,10 @@ def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) 
         *** TODO t0001.1 Child
         """,
     )
-    buf = projtui.OrgBuffer(org_file)
-    parent = projtui.load_menu_items(buf)[0]
+    buf = taskui.OrgBuffer(org_file)
+    parent = taskui.load_menu_items(buf)[0]
     project = manager.Project("demo", tmp_path, org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     view = controller._focus_view(parent)
 
@@ -2651,7 +2867,7 @@ def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) 
     assert view.status_text is not None and view.status_text() == ""
     view.focus_targets[2].buffer.insert_text(" changed")
     assert view.is_dirty() is True
-    projtui._shift_priority(buf, parent, 1)
+    taskui._shift_priority(buf, parent, 1)
     assert view.status_text() == "FILE MODIFIED: 1 edit"
 
 
@@ -2675,11 +2891,11 @@ def test_task_workspace_subtasks_follow_org_tree_without_truncation(
         ** TODO t0002 Sibling
         """,
     )
-    buf = projtui.OrgBuffer(org_file)
-    parent = projtui.load_menu_items(buf)[0]
+    buf = taskui.OrgBuffer(org_file)
+    parent = taskui.load_menu_items(buf)[0]
 
-    descendants = projtui._descendant_subtasks(buf, parent)
-    fragments = projtui._workspace_subtask_fragments(
+    descendants = taskui._descendant_subtasks(buf, parent)
+    fragments = taskui._workspace_subtask_fragments(
         parent.task,
         descendants,
         5,
@@ -2725,10 +2941,10 @@ def test_task_workspace_subtask_viewport_scrolls_to_selection(tmp_path: Path) ->
         "*** TODO t0001.5 Child five\n"
         "*** TODO t0001.6 Child six\n",
     )
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     project = manager.Project("demo", tmp_path, org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
-    view = controller._focus_view(projtui.load_menu_items(buf)[0])
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
+    view = controller._focus_view(taskui.load_menu_items(buf)[0])
     assert isinstance(view, menu.WorkspaceView)
     assert view.on_list_move is not None
 
@@ -2744,9 +2960,9 @@ def test_task_workspace_subtask_viewport_scrolls_to_selection(tmp_path: Path) ->
             pin.send_text("\x1b")
             menu.InlineMenuSession(view).run()
 
-    assert viewport.render_info.window_height == projtui.WORKSPACE_SUBTASK_HEIGHT
+    assert viewport.render_info.window_height == taskui.WORKSPACE_SUBTASK_HEIGHT
     assert viewport.vertical_scroll <= 5
-    assert 5 < viewport.vertical_scroll + projtui.WORKSPACE_SUBTASK_HEIGHT
+    assert 5 < viewport.vertical_scroll + taskui.WORKSPACE_SUBTASK_HEIGHT
 
 
 def test_task_workspace_opens_selected_subtask_workspace(tmp_path: Path) -> None:
@@ -2758,10 +2974,10 @@ def test_task_workspace_opens_selected_subtask_workspace(tmp_path: Path) -> None
         "*** TODO t0001.1 First child\n"
         "*** TODO t0001.2 Second child\n",
     )
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     project = manager.Project("demo", tmp_path, org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
-    parent_view = controller._focus_view(projtui.load_menu_items(buf)[0])
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
+    parent_view = controller._focus_view(taskui.load_menu_items(buf)[0])
     pushed: list[menu.InlineView] = []
 
     class ImmediateSession:
@@ -2800,11 +3016,11 @@ def test_task_workspace_button_opens_editor_at_task_line(
         "* Tasks\n** TODO t0001 Open me\nBody\n",
     )
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
     opened: list[tuple[Path, int | None]] = []
     monkeypatch.setattr(
-        projtui,
+        taskui,
         "_open_editor",
         lambda target, line: opened.append((target.path, line)),
     )
@@ -2817,7 +3033,7 @@ def test_task_workspace_button_opens_editor_at_task_line(
         def replace_view(self, replacement) -> None:
             self.replacement = replacement
 
-    view = controller._focus_view(projtui.load_menu_items(buf)[0])
+    view = controller._focus_view(taskui.load_menu_items(buf)[0])
     session = ImmediateSession()
     assert isinstance(view, menu.WorkspaceView)
     assert view.on_activate is not None
@@ -2841,11 +3057,11 @@ def test_task_workspace_dirty_editor_button_defaults_to_continue(
     original = "* Tasks\n** TODO t0001 Original\n"
     org_file = write(tmp_path / "tasks.org", original)
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
     opened: list[int | None] = []
     monkeypatch.setattr(
-        projtui,
+        taskui,
         "_open_editor",
         lambda _target, line: opened.append(line),
     )
@@ -2872,8 +3088,8 @@ def test_bounded_task_text_edit_validates_buffers_and_saves(tmp_path: Path) -> N
         "* Tasks\n** TODO [#B] t0001 Original  :work:\nBody line\n",
     )
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -2911,8 +3127,8 @@ def test_bounded_task_editor_updates_title_and_multiline_body(tmp_path: Path) ->
         ),
     )
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -2951,8 +3167,8 @@ def test_task_workspace_ctrl_s_saves_whole_file_and_resets_undo(tmp_path: Path) 
         "* Tasks\n** TODO t0001 Original\nBody\n",
     )
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -2981,8 +3197,8 @@ def test_task_workspace_compact_controls_save_state_and_priority(tmp_path: Path)
         "* Tasks\n** TODO t0001 Original\nBody\n",
     )
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -3008,8 +3224,8 @@ def test_task_workspace_compact_controls_discard_with_other_fields(tmp_path: Pat
     original = "* Tasks\n** TODO t0001 Original\n"
     org_file = write(tmp_path / "tasks.org", original)
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -3034,8 +3250,8 @@ def test_task_list_undo_redo_and_save_shortcuts(tmp_path: Path) -> None:
         "* Tasks\n** TODO t0001 Original\n",
     )
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -3066,9 +3282,9 @@ def test_dirty_workspace_escape_continues_by_default(tmp_path: Path) -> None:
         "* Tasks\n** TODO t0001 Original\n",
     )
     project = manager.Project("demo", tmp_path, org_file)
-    controller = projtui.InteractiveTaskController(
+    controller = taskui.InteractiveTaskController(
         project,
-        projtui.OrgBuffer(org_file),
+        taskui.OrgBuffer(org_file),
         include_done=True,
     )
 
@@ -3095,9 +3311,9 @@ def test_dirty_workspace_escape_can_save_and_return(tmp_path: Path) -> None:
         "* Tasks\n** TODO t0001 Original\n",
     )
     project = manager.Project("demo", tmp_path, org_file)
-    controller = projtui.InteractiveTaskController(
+    controller = taskui.InteractiveTaskController(
         project,
-        projtui.OrgBuffer(org_file),
+        taskui.OrgBuffer(org_file),
         include_done=True,
     )
 
@@ -3122,8 +3338,8 @@ def test_dirty_workspace_escape_can_discard_unapplied_edits(tmp_path: Path) -> N
     original = "* Tasks\n** TODO t0001 Original\n"
     org_file = write(tmp_path / "tasks.org", original)
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -3232,7 +3448,7 @@ def test_project_menu_uses_one_application_for_nested_task_views(
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
 
-    project_dir = tmp_path / "registry" / "sample"
+    project_dir = tmp_path / "sample"
     write(
         project_dir / "todo.org",
         """
@@ -3240,6 +3456,7 @@ def test_project_menu_uses_one_application_for_nested_task_views(
         ** TODO t0001 Pick me
         """,
     )
+    register(tmp_path / "registry", "sample", project_dir)
     real_application = menu.Application
     applications = []
 
@@ -3254,14 +3471,15 @@ def test_project_menu_uses_one_application_for_nested_task_views(
     monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
     monkeypatch.setattr(menu, "Application", tracked_application)
     monkeypatch.setattr(menu, "select_project_menu", obsolete_path)
-    monkeypatch.setattr(projtui, "task_menu", obsolete_path)
+    monkeypatch.setattr(projmgr.taskui, "task_menu", obsolete_path)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Open project/workspace, visit Help, then use task-list priority/back.
             pin.send_text("\r\r\x07q\x1bpqqq")
-            assert projtui.project_menu(
+            assert projmgr.project_menu(
                 tmp_path / "registry",
+                str(tmp_path / "registry"),
                 include_done=True,
             ) == 0
 
@@ -3278,14 +3496,16 @@ def test_project_task_save_returns_to_same_project(tmp_path: Path) -> None:
 
     registry = tmp_path / "registry"
     first = write(
-        registry / "alpha" / "tasks.org",
+        tmp_path / "src" / "alpha" / "tasks.org",
         "* Tasks\n** TODO t0001 First\n",
     )
+    register(registry, "alpha", first.parent)
     second = write(
-        registry / "beta" / "tasks.org",
+        tmp_path / "src" / "beta" / "tasks.org",
         "* Tasks\n** TODO t0001 Second\n",
     )
-    controller = projtui.InteractiveProjectController(registry, include_done=True)
+    register(registry, "beta", second.parent)
+    controller = projmgr._ProjectBrowser(registry, str(registry), include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -3316,12 +3536,12 @@ def test_task_menu_order_preserves_org_file_hierarchy(tmp_path: Path) -> None:
         ** TODO t0003 last
         """,
     )
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
 
-    ids = [item.task.id for item in projtui.load_menu_items(buf, include_done=True)]
+    ids = [item.task.id for item in taskui.load_menu_items(buf, include_done=True)]
     sorted_ids = [
         task.id
-        for task in sorted(core.parse_org(buf.read()), key=projtui._stable_sort_key)
+        for task in sorted(core.parse_org(buf.read()), key=taskui._stable_sort_key)
     ]
 
     assert ids == ["t0001", "t0001.1", "t0002", "t0002.1", "t0003"]
@@ -3343,9 +3563,9 @@ def test_interactive_task_tree_starts_collapsed_with_disclosure_cues(
         """,
     )
     project = manager.Project("demo", tmp_path, org_file)
-    controller = projtui.InteractiveTaskController(
+    controller = taskui.InteractiveTaskController(
         project,
-        projtui.OrgBuffer(org_file),
+        taskui.OrgBuffer(org_file),
         include_done=True,
     )
 
@@ -3372,10 +3592,10 @@ def test_task_tree_respects_non_task_heading_boundaries(tmp_path: Path) -> None:
         *** TODO t0003.1 Child through non-task heading
         """,
     )
-    buf = projtui.OrgBuffer(org_file)
-    items = projtui.load_menu_items(buf)
+    buf = taskui.OrgBuffer(org_file)
+    items = taskui.load_menu_items(buf)
 
-    parents, children, depths = projtui._task_tree(items, buf.read())
+    parents, children, depths = taskui._task_tree(items, buf.read())
 
     assert parents == {"t0003.1": "t0003"}
     assert children == {"t0003": ["t0003.1"]}
@@ -3397,9 +3617,9 @@ def test_interactive_task_tree_actions_preserve_hierarchy_and_selection(
         """,
     )
     project = manager.Project("demo", tmp_path, org_file)
-    controller = projtui.InteractiveTaskController(
+    controller = taskui.InteractiveTaskController(
         project,
-        projtui.OrgBuffer(org_file),
+        taskui.OrgBuffer(org_file),
         include_done=True,
     )
 
@@ -3450,9 +3670,9 @@ def test_filtered_task_tree_retains_ancestors_as_context(tmp_path: Path) -> None
         """,
     )
     project = manager.Project("demo", tmp_path, org_file)
-    controller = projtui.InteractiveTaskController(
+    controller = taskui.InteractiveTaskController(
         project,
-        projtui.OrgBuffer(org_file),
+        taskui.OrgBuffer(org_file),
         include_done=False,
     )
 
@@ -3476,9 +3696,9 @@ def test_interactive_task_tree_keybindings(tmp_path: Path) -> None:
         "** TODO t0002 Sibling\n",
     )
     project = manager.Project("demo", tmp_path, org_file)
-    controller = projtui.InteractiveTaskController(
+    controller = taskui.InteractiveTaskController(
         project,
-        projtui.OrgBuffer(org_file),
+        taskui.OrgBuffer(org_file),
         include_done=True,
     )
 
@@ -3509,16 +3729,16 @@ def test_load_menu_items_defaults_to_all_task_states(tmp_path: Path) -> None:
         ** DONE t0002 done
         """,
     )
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
 
-    assert [item.task.id for item in projtui.load_menu_items(buf)] == [
+    assert [item.task.id for item in taskui.load_menu_items(buf)] == [
         "t0001",
         "t0002",
     ]
-    assert [item.task.id for item in projtui.load_menu_items(buf, include_done=False)] == [
+    assert [item.task.id for item in taskui.load_menu_items(buf, include_done=False)] == [
         "t0001",
     ]
-    assert [item.task.id for item in projtui.load_menu_items(buf, filter_mode="done")] == [
+    assert [item.task.id for item in taskui.load_menu_items(buf, filter_mode="done")] == [
         "t0002",
     ]
 
@@ -3527,9 +3747,9 @@ def test_leaf_tree_navigation_uses_transient_warning(tmp_path: Path) -> None:
     # Right on a leaf task should report a temporary notice, not a sticky footer.
     org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 Leaf\n")
     project = manager.Project("demo", tmp_path, org_file)
-    controller = projtui.InteractiveTaskController(
+    controller = taskui.InteractiveTaskController(
         project,
-        projtui.OrgBuffer(org_file),
+        taskui.OrgBuffer(org_file),
         include_done=True,
     )
     view = controller.initial_view()
@@ -3548,13 +3768,13 @@ def test_anchor_index_follows_task_and_clamps() -> None:
     # Build MenuItems directly so the helper is tested in isolation.
     org = "* Tasks\n** TODO t0001 a\n** TODO t0002 b\n** TODO t0003 c\n"
     items = [
-        projtui.MenuItem(label=t.text, detail="ortask task", task=t, line_num=t.line_num)
+        taskui.MenuItem(label=t.text, detail="ortask task", task=t, line_num=t.line_num)
         for t in core.parse_org(org)
     ]
-    assert projtui._anchor_index(items, "t0002", 0) == 1     # follows the id
-    assert projtui._anchor_index(items, "t0999", 2) == 2     # missing -> fallback
-    assert projtui._anchor_index(items, "t0999", 99) == 2    # fallback clamped
-    assert projtui._anchor_index([], "t0001", 5) == 0        # empty list
+    assert taskui._anchor_index(items, "t0002", 0) == 1     # follows the id
+    assert taskui._anchor_index(items, "t0999", 2) == 2     # missing -> fallback
+    assert taskui._anchor_index(items, "t0999", 99) == 2    # fallback clamped
+    assert taskui._anchor_index([], "t0001", 5) == 0        # empty list
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
@@ -3576,14 +3796,14 @@ def test_interactive_toggle_keeps_highlight_on_same_task(tmp_path: Path, monkeyp
     )
     original = org_file.read_text(encoding="utf-8")
     project = manager.Project(name="demo", path=tmp_path, org_file=org_file)
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Shift-Right twice toggles highlighted, toggles it back, then quits.
             pin.send_text("\x1b[1;2C\x1b[1;2Cq")
-            projtui._interactive_task_menu(project, buf, include_done=True)
+            taskui._interactive_task_menu(project, buf, include_done=True)
 
     # Two toggles of the same task cancel out in the buffer (so the highlight
     # stayed put), and nothing was written to the real file (still buffered).
@@ -3606,13 +3826,13 @@ def test_interactive_priority_shortcuts_keep_selected_task(
     )
     original = org_file.read_text(encoding="utf-8")
     project = manager.Project(name="demo", path=tmp_path, org_file=org_file)
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             pin.send_text("\x1b[1;2A\x1b[1;2Aq\r")
-            projtui._interactive_task_menu(project, buf, include_done=True)
+            taskui._interactive_task_menu(project, buf, include_done=True)
 
     assert "** TODO [#B] t0001 alpha" in buf.read()
     assert "** TODO t0002 beta" in buf.read()
@@ -3629,8 +3849,8 @@ def test_interactive_save_view_saves_by_default(tmp_path: Path) -> None:
 
     org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 alpha\n")
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -3656,8 +3876,8 @@ def test_interactive_save_view_cancel_then_discard(tmp_path: Path) -> None:
     org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 alpha\n")
     original = org_file.read_text(encoding="utf-8")
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -3690,7 +3910,7 @@ def test_interactive_recovery_view_keeps_data_by_default(
     original = "* Tasks\n** TODO t0001 alpha\n"
     recovered = "* Tasks\n** DONE t0001 alpha\n"
     org_file = write(tmp_path / "tasks.org", original)
-    autosave = projtui.autosave_path_for(org_file)
+    autosave = taskui.autosave_path_for(org_file)
     autosave.write_text(recovered, encoding="utf-8")
     project = manager.Project("demo", tmp_path, org_file)
 
@@ -3703,7 +3923,7 @@ def test_interactive_recovery_view_keeps_data_by_default(
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             pin.send_text(keep_keys)
-            projtui.task_menu(project, include_done=True)
+            taskui.task_menu(project, include_done=True)
 
     assert org_file.read_text(encoding="utf-8") == original
     assert autosave.read_text(encoding="utf-8") == recovered
@@ -3719,11 +3939,11 @@ def test_interactive_recovery_view_recovers_then_saves(tmp_path: Path) -> None:
     original = "* Tasks\n** TODO t0001 alpha\n"
     recovered = "* Tasks\n** DONE t0001 alpha\n"
     org_file = write(tmp_path / "tasks.org", original)
-    autosave = projtui.autosave_path_for(org_file)
+    autosave = taskui.autosave_path_for(org_file)
     autosave.write_text(recovered, encoding="utf-8")
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -3747,11 +3967,11 @@ def test_interactive_recovery_view_discards_explicitly(tmp_path: Path) -> None:
     original = "* Tasks\n** TODO t0001 alpha\n"
     recovered = "* Tasks\n** DONE t0001 alpha\n"
     org_file = write(tmp_path / "tasks.org", original)
-    autosave = projtui.autosave_path_for(org_file)
+    autosave = taskui.autosave_path_for(org_file)
     autosave.write_text(recovered, encoding="utf-8")
     project = manager.Project("demo", tmp_path, org_file)
-    buf = projtui.OrgBuffer(org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
@@ -3768,14 +3988,14 @@ def test_interactive_recovery_view_discards_explicitly(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_org_buffer_autosave_path_naming(tmp_path: Path) -> None:
-    assert projtui.autosave_path_for(tmp_path / "todo.org") == tmp_path / "#todo.org#"
-    assert projtui.autosave_path_for(tmp_path / "a.task.org") == tmp_path / "#a.task.org#"
+    assert taskui.autosave_path_for(tmp_path / "todo.org") == tmp_path / "#todo.org#"
+    assert taskui.autosave_path_for(tmp_path / "a.task.org") == tmp_path / "#a.task.org#"
 
 
 def test_org_buffer_apply_save_and_discard(tmp_path: Path) -> None:
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
     original = org_file.read_text(encoding="utf-8")
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     assert buf.dirty is False and not buf.autosave_path.exists()
 
     buf.apply(["* Tasks", "** DONE t0001 one"])
@@ -3804,7 +4024,7 @@ def test_org_buffer_undo_redo_tracks_logical_edits_and_autosave(tmp_path: Path) 
     # History should reverse whole task actions and mirror every state to autosave.
     original = "* Tasks\n** TODO t0001 one\n"
     org_file = write(tmp_path / "todo.org", original)
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
 
     buf.apply(
         ["* Tasks", "** DONE t0001 one"],
@@ -3838,14 +4058,14 @@ def test_org_buffer_undo_redo_tracks_logical_edits_and_autosave(tmp_path: Path) 
 def test_task_controller_reports_file_history_status(tmp_path: Path) -> None:
     # Header status should distinguish modified data from clean redo history.
     org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 one\n")
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     project = manager.Project("demo", tmp_path, org_file)
-    controller = projtui.InteractiveTaskController(project, buf, include_done=True)
-    item = projtui.load_menu_items(buf)[0]
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
+    item = taskui.load_menu_items(buf)[0]
     view = controller.initial_view()
 
     assert view.status_text is not None and view.status_text() == ""
-    projtui._toggle_state(buf, item)
+    taskui._toggle_state(buf, item)
     assert view.status_text() == "FILE MODIFIED: 1 edit"
     assert buf.undo() == "Set t0001 state to DONE"
     assert view.status_text() == "FILE CLEAN · Redo available"
@@ -3856,7 +4076,7 @@ def test_task_controller_reports_file_history_status(tmp_path: Path) -> None:
 def test_org_buffer_apply_back_to_original_clears_autosave(tmp_path: Path) -> None:
     # Editing back to the saved content marks the buffer clean and drops the file.
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     buf.apply(["* Tasks", "** DONE t0001 one"])
     assert buf.autosave_path.exists()
     buf.apply(["* Tasks", "** TODO t0001 one"])  # back to original
@@ -3866,7 +4086,7 @@ def test_org_buffer_apply_back_to_original_clears_autosave(tmp_path: Path) -> No
 
 def test_org_buffer_recover_adopts_autosave(tmp_path: Path) -> None:
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     recovered = "* Tasks\n** DONE t0001 one\n"
     buf.recover(recovered)
     assert buf.read() == recovered
@@ -3876,10 +4096,10 @@ def test_org_buffer_recover_adopts_autosave(tmp_path: Path) -> None:
 
 def test_resolve_buffer_save_prompt_yes(tmp_path: Path, monkeypatch) -> None:
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     buf.apply(["* Tasks", "** DONE t0001 one"])
     monkeypatch.setattr(menu, "prompt_text", lambda _label: "y")
-    assert projtui._resolve_buffer(buf) is True  # exit proceeds
+    assert taskui._resolve_buffer(buf) is True  # exit proceeds
     assert org_file.read_text(encoding="utf-8") == "* Tasks\n** DONE t0001 one\n"
     assert not buf.autosave_path.exists()
 
@@ -3887,20 +4107,20 @@ def test_resolve_buffer_save_prompt_yes(tmp_path: Path, monkeypatch) -> None:
 def test_resolve_buffer_save_prompt_default_enter_saves(tmp_path: Path, monkeypatch) -> None:
     # The prompt defaults to yes, so a bare Enter ("") preserves the work.
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     buf.apply(["* Tasks", "** DONE t0001 one"])
     monkeypatch.setattr(menu, "prompt_text", lambda _label: "")
-    projtui._resolve_buffer(buf)
+    taskui._resolve_buffer(buf)
     assert org_file.read_text(encoding="utf-8") == "* Tasks\n** DONE t0001 one\n"
 
 
 def test_resolve_buffer_save_prompt_no_discards(tmp_path: Path, monkeypatch) -> None:
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
     original = org_file.read_text(encoding="utf-8")
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     buf.apply(["* Tasks", "** DONE t0001 one"])
     monkeypatch.setattr(menu, "prompt_text", lambda _label: "n")
-    assert projtui._resolve_buffer(buf) is True  # discard still exits
+    assert taskui._resolve_buffer(buf) is True  # discard still exits
     assert org_file.read_text(encoding="utf-8") == original
     assert not buf.autosave_path.exists()
 
@@ -3910,14 +4130,14 @@ def test_resolve_buffer_escape_stays_in_context(tmp_path: Path, monkeypatch) -> 
     # dirty and the auto-save in place, and never writes the real file.
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
     original = org_file.read_text(encoding="utf-8")
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     buf.apply(["* Tasks", "** DONE t0001 one"])
 
     def _esc(_label):
         raise menu.ContextCancelled()
 
     monkeypatch.setattr(menu, "prompt_text", _esc)
-    assert projtui._resolve_buffer(buf) is False  # stay in the running context
+    assert taskui._resolve_buffer(buf) is False  # stay in the running context
     assert buf.dirty is True
     assert buf.autosave_path.exists()
     assert org_file.read_text(encoding="utf-8") == original
@@ -3925,22 +4145,22 @@ def test_resolve_buffer_escape_stays_in_context(tmp_path: Path, monkeypatch) -> 
 
 def test_resolve_buffer_clean_buffer_exits_without_prompt(tmp_path: Path, monkeypatch) -> None:
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
-    buf = projtui.OrgBuffer(org_file)  # not dirty
+    buf = taskui.OrgBuffer(org_file)  # not dirty
 
     def _boom(_label):
         raise AssertionError("should not prompt when nothing is pending")
 
     monkeypatch.setattr(menu, "prompt_text", _boom)
-    assert projtui._resolve_buffer(buf) is True
+    assert taskui._resolve_buffer(buf) is True
 
 
 def test_maybe_recover_yes_loads_autosave(tmp_path: Path, monkeypatch) -> None:
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
-    autosave = projtui.autosave_path_for(org_file)
+    autosave = taskui.autosave_path_for(org_file)
     autosave.write_text("* Tasks\n** DONE t0001 one\n", encoding="utf-8")
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     monkeypatch.setattr(menu, "prompt_text", lambda _label: "y")
-    projtui._maybe_recover(buf)
+    taskui._maybe_recover(buf)
     assert buf.read() == "* Tasks\n** DONE t0001 one\n"
     assert buf.dirty is True
 
@@ -3949,11 +4169,11 @@ def test_maybe_recover_no_discards_autosave(tmp_path: Path, monkeypatch) -> None
     # Explicit "n"/"no" is the only thing that throws away recovery data.
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
     original = org_file.read_text(encoding="utf-8")
-    autosave = projtui.autosave_path_for(org_file)
+    autosave = taskui.autosave_path_for(org_file)
     autosave.write_text("* Tasks\n** DONE t0001 one\n", encoding="utf-8")
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     monkeypatch.setattr(menu, "prompt_text", lambda _label: "n")
-    projtui._maybe_recover(buf)
+    taskui._maybe_recover(buf)
     assert buf.read() == original
     assert buf.dirty is False
     assert not autosave.exists()
@@ -3963,16 +4183,16 @@ def test_maybe_recover_escape_keeps_autosave_for_later(tmp_path: Path, monkeypat
     # Esc leaves #todo.org# untouched and proceeds from the on-disk file.
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
     original = org_file.read_text(encoding="utf-8")
-    autosave = projtui.autosave_path_for(org_file)
+    autosave = taskui.autosave_path_for(org_file)
     recovery_data = "* Tasks\n** DONE t0001 one\n"
     autosave.write_text(recovery_data, encoding="utf-8")
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
 
     def _esc(_label):
         raise menu.ContextCancelled()
 
     monkeypatch.setattr(menu, "prompt_text", _esc)
-    projtui._maybe_recover(buf)
+    taskui._maybe_recover(buf)
     assert buf.read() == original          # not recovered; buffer is the disk file
     assert buf.dirty is False
     assert autosave.exists()               # recovery data left in place...
@@ -3982,10 +4202,10 @@ def test_maybe_recover_escape_keeps_autosave_for_later(tmp_path: Path, monkeypat
 def test_maybe_recover_default_enter_keeps_autosave(tmp_path: Path, monkeypatch) -> None:
     # The default (bare Enter) also keeps the recovery data for later.
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 one\n")
-    autosave = projtui.autosave_path_for(org_file)
+    autosave = taskui.autosave_path_for(org_file)
     autosave.write_text("* Tasks\n** DONE t0001 one\n", encoding="utf-8")
-    buf = projtui.OrgBuffer(org_file)
+    buf = taskui.OrgBuffer(org_file)
     monkeypatch.setattr(menu, "prompt_text", lambda _label: "")
-    projtui._maybe_recover(buf)
+    taskui._maybe_recover(buf)
     assert buf.dirty is False
     assert autosave.exists()

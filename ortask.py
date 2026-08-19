@@ -275,9 +275,9 @@ def cmd_apply(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_interactive(args: argparse.Namespace) -> int:
-    import projtui
+    from ortasklib import taskui
 
-    return projtui.local_file_menu(args.file, include_done=True)
+    return taskui.local_file_menu(args.file, include_done=True)
 
 
 # ---------------------------------------------------------------------------

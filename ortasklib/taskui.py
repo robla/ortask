@@ -1,13 +1,14 @@
-#!/usr/bin/env python3
-"""Minimal project task menu for org-backed workspaces.
+"""Interactive task UI: the buffered task list and issue workspace.
 
-This script owns the interactive terminal UI. Project discovery, config
-resolution, and task parsing/editing come from ``ortasklib``.
+Used by ``ortask.py -i`` for one local file and by ``projmgr.py -i`` for a
+project selected from the registry. This module owns the task-side terminal UI;
+project discovery and config resolution come from ``manager``, parsing and
+editing from ``core``/``tasks``, and the bounded application shell from
+``menu``.
 """
 
 from __future__ import annotations
 
-import argparse
 import subprocess
 import sys
 from collections.abc import Callable
@@ -35,20 +36,8 @@ except ImportError:  # pragma: no cover - optional interactive dependency
     Window = None
     TextArea = None
 
-# Make ``ortasklib`` importable regardless of the working directory.
-_SCRIPT_DIR = Path(__file__).resolve().parent
-if str(_SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPT_DIR))
-
-from ortasklib import core, menu, tasks
-from ortasklib.manager import (
-    Project,
-    canonical_org_file,
-    discover_projects,
-    friendly_path,
-    real_project_path,
-    resolve_registry,
-)
+from . import core, menu, tasks
+from .manager import Project, canonical_org_file
 
 
 DETAIL_LINE_LIMIT = 20
@@ -454,15 +443,6 @@ def _print_dashboard(title: str, org_file: Path, items: list[MenuItem]) -> None:
     menu.print_task_dashboard(title, org_file, rows)
 
 
-def _project_rows(workspace: Path, projects: list[Project]) -> list[menu.ProjectRow]:
-    rows: list[menu.ProjectRow] = []
-    for idx, project in enumerate(projects, start=1):
-        real_p_path = real_project_path(project)
-        friendly_p_path = friendly_path(real_p_path)
-        rows.append(menu.ProjectRow(idx, project.name, friendly_p_path))
-    return rows
-
-
 def _context_lines(
     buf: OrgBuffer,
     item: MenuItem,
@@ -686,6 +666,11 @@ TASK_MENU_ACTIONS = {
 
 def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -> None:
     org_file = canonical_org_file(project)
+    if org_file is None:
+        # A registered project need not have a task file yet; see
+        # ``docs/projects.md``. There is simply nothing to open.
+        print(f"{project.name}: no task file")
+        return
     buf = OrgBuffer(org_file)
     if menu.interactive_select_available():
         _interactive_task_menu(project, buf, include_done)
@@ -1960,144 +1945,3 @@ def _numbered_focus_menu(buf: OrgBuffer, item: MenuItem) -> None:
 
 def focus_menu(buf: OrgBuffer, item: MenuItem) -> None:
     _numbered_focus_menu(buf, item)
-
-
-PROJECT_MENU_INSTRUCTION = "↑↓/jk · ↵ open · C-g help · Esc/b/q exit"
-
-
-class InteractiveProjectController:
-    """Build the project/task view stack for one bounded menu application."""
-
-    def __init__(self, workspace: Path, include_done: bool) -> None:
-        self.workspace = workspace
-        self.include_done = include_done
-        self.session: menu.InlineMenuSession | None = None
-
-    def run(self) -> None:
-        session = menu.InlineMenuSession(
-            self._project_view(),
-            action_keys=InteractiveTaskController.action_keys(),
-            final_message="No task changes",
-        )
-        self.session = session
-        session.run()
-        if session.error:
-            print(session.error, file=sys.stderr)
-
-    def _project_view(
-        self,
-        selected_name: str | None = None,
-        fallback_index: int = 0,
-    ) -> menu.MenuView:
-        projects = discover_projects(self.workspace)
-        project_rows = _project_rows(self.workspace, projects)
-        rows = [
-            menu.MenuRow(
-                row.number,
-                "PROJECT",
-                f"{row.name:<12}  {row.org_file}",
-            )
-            for row in project_rows
-        ]
-        start_index = self._anchor_index(projects, selected_name, fallback_index)
-
-        def handle(
-            session: menu.InlineMenuSession,
-            result: menu.MenuResult,
-        ) -> None:
-            if result.action != "select" or result.index is None:
-                return
-            if not 0 <= result.index < len(projects):
-                return
-            project = projects[result.index]
-            controller = InteractiveTaskController(
-                project,
-                OrgBuffer(canonical_org_file(project)),
-                self.include_done,
-            )
-            controller.attach(session)
-
-        def resume(session: menu.InlineMenuSession) -> None:
-            view = session.current_view
-            index = view.selected_index
-            name = projects[index].name if 0 <= index < len(projects) else None
-            session.replace_view(self._project_view(name, index))
-
-        return menu.MenuView(
-            rows=rows,
-            on_result=handle,
-            title="Projects",
-            summary=f"Registry: {self.workspace}",
-            instruction=PROJECT_MENU_INSTRUCTION,
-            empty_text="(no projects)",
-            select_help="Open the highlighted project",
-            selected_index=start_index,
-            on_resume=resume,
-        )
-
-    @staticmethod
-    def _anchor_index(
-        projects: list[Project],
-        selected_name: str | None,
-        fallback_index: int,
-    ) -> int:
-        if selected_name is not None:
-            for index, project in enumerate(projects):
-                if project.name == selected_name:
-                    return index
-        if not projects:
-            return 0
-        return min(max(fallback_index, 0), len(projects) - 1)
-
-
-def project_menu(workspace: Path, include_done: bool) -> int:
-    if menu.interactive_select_available():
-        InteractiveProjectController(workspace, include_done).run()
-        return 0
-
-    while True:
-        projects = discover_projects(workspace)
-        rows = _project_rows(workspace, projects)
-        menu.print_project_dashboard("Projects", workspace, rows)
-        try:
-            choice = _prompt_choice(len(projects), allow_back=False)
-        except menu.ContextCancelled:
-            return 0
-        if choice in {"b", "q"}:
-            return 0
-        if not choice.isdigit() or not 1 <= int(choice) <= len(projects):
-            print("invalid choice")
-            continue
-        task_menu(projects[int(choice) - 1], include_done)
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Minimal project menu for org task files.",
-    )
-    parser.add_argument(
-        "--registry",
-        dest="registry",
-        default=None,
-        help="project registry directory containing project subdirectories",
-    )
-    parser.add_argument(
-        "--todo-only",
-        action="store_true",
-        help="start task views with only TODO tasks visible",
-    )
-    return parser
-
-
-def main() -> int:
-    args = build_parser().parse_args()
-    workspace, display_path = resolve_registry(args.registry)
-    print(f"Finding project in {display_path}")
-    if not workspace.is_dir():
-        print(f"project directory not found: {workspace}", file=sys.stderr)
-        return 1
-    return project_menu(workspace, include_done=not args.todo_only)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

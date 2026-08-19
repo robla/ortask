@@ -9,13 +9,13 @@
 # should have afterwards, top entry first. Never a mode, never a file to edit.
 # Editing happens inside the picker (press "e") and never reaches this function.
 #
-# Usage: pcd [orgmgr options]
-# Arguments are forwarded to orgmgr.py untouched, so a new helper flag never
+# Usage: pcd [projmgr options]
+# Arguments are forwarded to projmgr.py untouched, so a new helper flag never
 # requires re-sourcing this file.
 
 pcd () {
     local out; out="$(mktemp)" || return 1
-    "${ORTASK_ORGMGR:-orgmgr.py}" "$@" pcd --out "$out" || { rm -f "$out"; return 1; }
+    "${ORTASK_PROJMGR:-projmgr.py}" "$@" pcd --out "$out" || { rm -f "$out"; return 1; }
 
     local want=()
     readarray -t want < "$out"

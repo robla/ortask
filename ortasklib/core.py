@@ -1,7 +1,7 @@
 """Core Org parsing, models, ID helpers, discovery, and atomic writes.
 
 This module is shared by both the local task tool (``ortask.py`` via
-``ortasklib.tasks``) and the global project tools (``orgmgr.py``/``projtui.py``
+``ortasklib.tasks``) and the project-layer tools (``projmgr.py``/``taskui``
 via ``ortasklib.manager``). It contains no CLI parsing, no ``sys.exit`` calls,
 and no command names — just reusable building blocks that operate on in-memory
 strings and individual files.
@@ -116,6 +116,16 @@ def _preferred_task_file_in(directory: Path) -> Path | None:
     return None
 
 
+def preferred_task_file_in(directory: Path) -> Path | None:
+    """The canonical task file in one directory, if any.
+
+    Stricter than :func:`discover_org_file`: it never falls back to "exactly one
+    generic ``*.org``", so callers can use it to ask whether a directory looks
+    like a project root.
+    """
+    return _preferred_task_file_in(directory)
+
+
 def _walk_up(start: Path) -> list[Path]:
     directory = start.resolve()
     return [directory, *directory.parents]
@@ -151,7 +161,7 @@ def resolve_org_file() -> Path | None:
 def discover_org_file(directory: Path) -> Path | None:
     """Probe one directory for its task file (no env var, no parent walk).
 
-    Used by ``orgmgr.py projadd`` to register an arbitrary project directory
+    Used by ``projmgr.py add`` to register an arbitrary project directory
     without accidentally selecting a parent project's task file.
     """
     found = _preferred_task_file_in(directory)

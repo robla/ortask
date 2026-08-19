@@ -1,10 +1,10 @@
-"""Project management helpers shared by ``orgmgr.py`` and ``projtui.py``.
+"""Project management helpers shared by ``projmgr.py`` and the project browser.
 
 Covers registry resolution (``ortask.ini`` records where the project registry
 directory lives), project discovery over that registry's per-project
 subdirectories, per-project Org-file selection, and JSON-ready multi-project
-task summaries. Like the rest of ``ortasklib``, it does no argument parsing and
-never calls ``sys.exit``.
+task summaries. ``docs/projects.md`` is the model this implements. Like the rest
+of ``ortasklib``, it does no argument parsing and never calls ``sys.exit``.
 """
 
 from __future__ import annotations
@@ -17,8 +17,11 @@ from pathlib import Path
 
 from . import core
 
-SKIP_PROJECT_DIRS = {".git", ".hg", ".svn", "__pycache__", "docs"}
 DEFAULT_REGISTRY = "~/Projects"
+
+# Directory names that mark a project root during an upward walk, alongside the
+# canonical task-file names in ``core``.
+VCS_DIR_NAMES = (".git", ".hg", ".svn")
 
 # A project's private directory stack lives in the registry rather than in the
 # project itself, so it is never part of the project's own repository.
@@ -32,25 +35,43 @@ REGISTRY_OPTION = "registry"
 
 @dataclass(frozen=True)
 class Project:
+    """One registry entry.
+
+    ``path`` is the registry subdirectory; ``link`` is the symlink inside it
+    that marks the entry as a project. ``org_file`` is ``None`` for a project
+    that has no task file yet, which is a normal state rather than an error.
+    ``warning`` describes a broken or ambiguous entry that should still be
+    listed so it can be fixed.
+    """
+
     name: str
     path: Path
-    org_file: Path
+    org_file: Path | None = None
+    link: Path | None = None
+    warning: str | None = None
 
 
-def canonical_org_file(project: Project) -> Path:
+def canonical_org_file(project: Project) -> Path | None:
     """Return the real task-file path, resolving any registry symlinks."""
-    return project.org_file.resolve()
+    return project.org_file.resolve() if project.org_file is not None else None
 
 
 def real_project_path(project: Project) -> Path:
     """Return the real project directory path, resolving any registry symlinks."""
+    if project.link is not None:
+        try:
+            return project.link.resolve()
+        except OSError:
+            pass
     try:
         for item in project.path.iterdir():
             if item.is_symlink() and item.resolve().is_dir():
                 return item.resolve()
     except OSError:
         pass
-    return project.org_file.resolve().parent
+    if project.org_file is not None:
+        return project.org_file.resolve().parent
+    return project.path
 
 
 # ---------------------------------------------------------------------------
@@ -181,21 +202,93 @@ def choose_org_file(project_dir: Path) -> Path | None:
     return nested[0] if nested else None
 
 
+def read_project_entry(entry: Path) -> Project | None:
+    """Read one registry subdirectory as a project, or ``None`` if it is not one.
+
+    A registry entry is a project when it points outward: a symlink to a
+    directory, or failing that a symlink to an Org file. That positive marker is
+    the whole test, and it is what replaced a blocklist of directory names — a
+    registry may also hold a README, its own notes, or its own VCS directory,
+    and none of those become projects because none of them point anywhere. See
+    ``docs/projects.md``.
+
+    A dangling symlink marks a *broken* project rather than a missing one, and
+    several directory symlinks are ambiguous. Both are returned with a
+    ``warning`` so they stay visible and fixable.
+    """
+    try:
+        children = sorted(entry.iterdir(), key=lambda p: p.name.lower())
+    except OSError:
+        return None
+
+    links = [p for p in children if p.is_symlink()]
+    dir_links = [p for p in links if p.is_dir()]
+    org_links = [p for p in links if p.is_file() and p.suffix == ".org"]
+    # A dangling link is evidence of a broken project only if it aimed at what a
+    # project link aims at. A registry's notes directory with one stale .md link
+    # is not a broken project.
+    broken = [
+        p for p in links
+        if not p.exists() and Path(os.readlink(p)).suffix in ("", ".org")
+    ]
+
+    link: Path | None = None
+    warning: str | None = None
+    if len(dir_links) == 1:
+        link = dir_links[0]
+    elif len(dir_links) > 1:
+        warning = "several project links: " + ", ".join(p.name for p in dir_links)
+    elif org_links:
+        # A task-file link alone is still a deliberate registration; the project
+        # directory is wherever that file really lives.
+        link = None
+    elif broken:
+        target = os.readlink(broken[0])
+        warning = f"broken project link: {broken[0].name} -> {target}"
+    else:
+        return None
+
+    return Project(entry.name, entry, choose_org_file(entry), link, warning)
+
+
 def discover_projects(workspace: Path) -> list[Project]:
+    """Every project in a registry directory, in case-insensitive name order."""
     projects: list[Project] = []
     for child in sorted(workspace.iterdir(), key=lambda p: p.name.lower()):
-        if not child.is_dir():
+        if not child.is_dir() or child.name.startswith("."):
             continue
-        if child.name in SKIP_PROJECT_DIRS or child.name.startswith("."):
-            continue
-        org_file = choose_org_file(child)
-        if org_file:
-            projects.append(Project(child.name, child, org_file))
+        project = read_project_entry(child)
+        if project is not None:
+            projects.append(project)
     return projects
 
 
+def project_root_for(start: Path) -> Path:
+    """Walk upward from ``start`` for the directory that looks like a project root.
+
+    The nearest ancestor holding a task file or a VCS directory wins, so
+    registering from a subdirectory registers the project rather than the
+    subdirectory. ``start`` itself is returned when nothing above it qualifies,
+    and the walk never rises above the user's home directory.
+    """
+    start = start.resolve()
+    home = Path.home().resolve()
+    for directory in [start, *start.parents]:
+        if any((directory / name).exists() for name in VCS_DIR_NAMES):
+            return directory
+        try:
+            if core.preferred_task_file_in(directory) is not None:
+                return directory
+        except core.OrgFileDiscoveryError:
+            # Ambiguity here only means "not obviously a root"; keep walking.
+            pass
+        if directory == home:
+            break
+    return start
+
+
 # ---------------------------------------------------------------------------
-# Project directory stacks (orgmgr pcd)
+# Project directory stacks (projmgr pcd)
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -227,8 +320,10 @@ def directory_candidates(project: Project) -> list[DirectorySource]:
     """
     candidates: list[tuple[str, Path]] = [
         ("private", project.path / DIRECTORIES_PRIVATE_NAME),
-        ("project", canonical_org_file(project)),
     ]
+    org_file = canonical_org_file(project)
+    if org_file is not None:
+        candidates.append(("project", org_file))
     sources: list[DirectorySource] = []
     for label, path in candidates:
         try:
@@ -256,23 +351,40 @@ def resolve_directories(entries: list[str], root: Path) -> list[Path]:
 
 
 # ---------------------------------------------------------------------------
-# Multi-project summaries (orgmgr list)
+# Multi-project summaries (projmgr list)
 # ---------------------------------------------------------------------------
 
 def summarize_projects(workspace: Path, include_all: bool = False) -> list[dict]:
     """Return JSON-ready records for each project in a workspace.
 
-    Each record has ``project`` and ``file`` (the resolved Org file path with
-    ``$HOME`` collapsed to ``~`` where possible). Valid projects also carry
-    ``tasks`` — top-level tasks, TODO-only unless ``include_all``. Projects
-    whose Org file is unreadable, has no parseable task headings, or has
-    duplicate IDs carry a ``warning`` and empty ``tasks`` instead of raising.
+    Each record has ``project``, ``path`` (the real project directory), ``file``
+    (the resolved Org file path, or ``None`` when the project has no task file),
+    and ``tasks`` — top-level tasks, TODO-only unless ``include_all``. Projects
+    that are broken or ambiguous, or whose Org file is unreadable, has no
+    parseable task headings, or has duplicate IDs, carry a ``warning`` and empty
+    ``tasks`` instead of raising.
     """
     records: list[dict] = []
 
     for project in discover_projects(workspace):
         real_org_file = canonical_org_file(project)
-        record: dict = {"project": project.name, "file": friendly_path(real_org_file)}
+        record: dict = {
+            "project": project.name,
+            "path": friendly_path(real_project_path(project)),
+            "file": friendly_path(real_org_file) if real_org_file else None,
+            "tasks": [],
+        }
+
+        if project.warning:
+            record["warning"] = project.warning
+            records.append(record)
+            continue
+
+        if real_org_file is None:
+            # Normal state, not a warning: a project can be registered before it
+            # has any tasks, and directory-stack navigation never needs one.
+            records.append(record)
+            continue
 
         try:
             text = real_org_file.read_text(encoding="utf-8")
