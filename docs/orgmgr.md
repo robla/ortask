@@ -142,16 +142,39 @@ longer a compatibility bridge from the old projtui-specific config.
 
 ## `pcd`
 
-`orgmgr.py pcd` opens an interactive, inline project selection menu. On selection, it writes the directory stack configured for that project to a file. This is intended to be used by the shell function `pcd`.
+`orgmgr.py pcd` opens an inline project picker and writes the selected project's
+directory stack to a file, for the `pcd` shell function in `misc/pcd.func.sh` to
+apply to the calling shell. See `docs/projdirs.md` for the whole design.
 
 ```sh
-orgmgr.py pcd --out <file> [--edit] [--registry <path>]
+orgmgr.py pcd --out FILE
+orgmgr.py --registry ~/tmpsorta/proj2026 pcd --out FILE
 ```
 
 Options:
-- `--out <file>`: The output file path to write resolved directories to.
-- `--edit`: Write the path of the selected project's `.projdirs` file to the output file (bootstrapping it with a single `.` if it doesn't exist).
-- `--registry <path>`: Override the default project registry path.
+
+- `--out FILE`: required. The only result channel.
+- `--registry PATH`: override the resolved registry.
+
+The output file has exactly one meaning: the directory stack the calling shell
+should have afterwards, one absolute path per line, top entry first. It is never
+a mode header and never a file to edit, so the shell function only ever reads a
+list of directories.
+
+Behavior:
+
+- `↵` writes the highlighted project's stack and exits 0.
+- `e` edits a directory list in `$VISUAL`/`$EDITOR` and returns to the picker.
+- `Esc`/`q` exits nonzero, leaving FILE untouched.
+
+A project's stack comes from a `* Directories` section in either the project's
+Org task file or a private `directories-private.org` in the project's registry
+subdirectory. When both define one, `pcd` asks which to use. With neither, the
+stack is the project root alone.
+
+`pcd` reads Org content and never writes it. The one file it creates is the
+private list in the registry, which `orgmgr.py` owns, and only when asked to
+edit it.
 
 ## `projadd`
 
@@ -194,4 +217,6 @@ editing verbs in `ortask.py`.
 ## Safety
 
 `list` is read-only with respect to Org content. `projadd` creates directories
-and symlinks only inside the registry. `migrate` writes only `ortask.ini`.
+and symlinks only inside the registry. `migrate` writes only `ortask.ini`. `pcd`
+writes the file named by `--out`, and creates a project's private directory list
+inside the registry when asked to edit it; it never writes Org task content.

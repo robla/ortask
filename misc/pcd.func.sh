@@ -1,96 +1,50 @@
 #!/bin/bash
 # misc/pcd.func.sh
-# Bash function to select an ortask project and switch to its directory stack.
-# Follows the handrail-style UX and integrates with orgmgr.py.
+#
+# Select a project from the ortask registry and load its directory stack into
+# this shell. Only the shell can change the shell's own directory stack, which
+# is the whole reason this half is not Python.
+#
+# The helper writes one thing to its --out file: the directory stack this shell
+# should have afterwards, top entry first. Never a mode, never a file to edit.
+# Editing happens inside the picker (press "e") and never reaches this function.
+#
+# Usage: pcd [orgmgr options]
+# Arguments are forwarded to orgmgr.py untouched, so a new helper flag never
+# requires re-sourcing this file.
 
 pcd () {
-    local orgmgr="${ORTASK_ORGMGR:-orgmgr.py}"
-    local append=false edit=false reg="" args=()
+    local out; out="$(mktemp)" || return 1
+    "${ORTASK_ORGMGR:-orgmgr.py}" "$@" pcd --out "$out" || { rm -f "$out"; return 1; }
 
-    # Parse arguments
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -a|--append)   append=true; shift ;;
-            -e|--edit)     edit=true; shift ;;
-            -r|--registry) reg="$2"; shift 2 ;;
-            *) echo "Usage: pcd [-a] [-e] [-r PATH]" >&2; return 1 ;;
-        esac
+    local want=()
+    readarray -t want < "$out"
+    rm -f "$out"
+    (( ${#want[@]} )) || return 0
+
+    # Report what this drops, the way nowcd did.
+    local old=() cur keep dropped=false
+    readarray -t old < <(dirs -l -p)
+    echo "dropped:"
+    for cur in "${old[@]}"; do
+        for keep in "${want[@]}"; do [[ "$cur" == "$keep" ]] && continue 2; done
+        echo "  - ${cur/#$HOME/\~}"; dropped=true
     done
+    [[ $dropped == true ]] || echo "  (none)"
 
-    # Prepare helper arguments
-    [[ -n "$reg" ]] && args+=(--registry "$reg")
-    local out; out="$(mktemp)"
-    args+=(pcd --out "$out")
-    [[ "$edit" == true ]] && args+=(--edit)
-
-    # Run the interactive picker
-    "$orgmgr" "${args[@]}"
-    local rc=$?
-    if [[ $rc -ne 0 ]]; then
-        rm -f "$out"
-        return $rc
-    fi
-
-    # Read selected targets
-    local lines=()
-    if [[ -f "$out" ]]; then
-        readarray -t lines < "$out"
-        rm -f "$out"
-    fi
-
-    [[ ${#lines[@]} -eq 0 ]] && return 0
-
-    # Handle Edit Mode (either from CLI flag or if the first target is a regular file)
-    if [[ "$edit" == true || -f "${lines[0]}" ]]; then
-        local editor_cmd=(${EDITOR:-vi})
-        "${editor_cmd[@]}" "${lines[0]}"
-        return 0
-    fi
-
-    # Save current directory stack
-    local old_dirstack=()
-    readarray -t old_dirstack < <(dirs -l -p)
-
-    if [[ "$append" == true ]]; then
-        echo "mode: append project directories to dirstack"
-    else
-        echo "mode: reset dirstack to project directories"
-        
-        # Show directories removed by the reset (inline diff)
-        echo "removed by reset:"
-        local old_dir removed=false
-        for old_dir in "${old_dirstack[@]}"; do
-            local found=false dir
-            for dir in "${lines[@]}"; do
-                [[ "$old_dir" == "$dir" ]] && found=true && break
-            done
-            if [[ "$found" == false ]]; then
-                echo "  - ${old_dir/#$HOME/\~}"
-                removed=true
-            fi
-        done
-        [[ "$removed" == false ]] && echo "  (none)"
-
-        dirs -c
-    fi
-
-    # Load new directory stack in reverse order to preserve their order in the dirstack
-    local i
-    local first_push=true
-    for ((i=${#lines[@]}-1; i>=0; i--)); do
-        local target_dir="${lines[$i]}"
-        if [[ -d "$target_dir" ]]; then
-            if [[ "$first_push" == true && "$append" == false ]]; then
-                cd "$target_dir"
-                first_push=false
-            else
-                pushd "$target_dir" > /dev/null
-            fi
-        else
-            echo "Warning: directory does not exist: $target_dir" >&2
-        fi
+    local have=() d i
+    for d in "${want[@]}"; do
+        if [[ -d "$d" ]]; then have+=("$d"); else echo "missing: $d" >&2; fi
     done
+    (( ${#have[@]} )) || { echo "no usable directories" >&2; return 1; }
 
-    echo "stack:"
+    # The first entry becomes the working directory. "pushd" would put each
+    # argument on top and invert the list, so the rest go in with "pushd -n",
+    # which inserts just below the top without changing directory.
+    dirs -c
+    cd "${have[0]}" || return 1
+    for ((i = ${#have[@]} - 1; i > 0; i--)); do
+        pushd -n "${have[$i]}" > /dev/null
+    done
     dirs -v
 }

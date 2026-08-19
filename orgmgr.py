@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -18,7 +19,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from ortasklib import core, manager
+from ortasklib import core, manager, menu
 
 
 def cmd_interactive(args: argparse.Namespace) -> int:
@@ -167,11 +168,254 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_pcd(args: argparse.Namespace) -> int:
-    """Select a project and output its directory stack config to a file."""
-    import os
-    from ortasklib import menu
+class _PcdSession:
+    """Pick a project, resolve its directory stack, and write it to a file.
 
+    The output file has exactly one meaning: the directory stack the calling
+    shell should have afterwards, top entry first. Editing happens inside this
+    session and never travels back through that channel, so ``misc/pcd.func.sh``
+    only ever reads a list of directories.
+    """
+
+    def __init__(
+        self,
+        display_path: str,
+        projects: list[manager.Project],
+        out_path: Path,
+    ) -> None:
+        self.display_path = display_path
+        self.projects = projects
+        self.out_path = out_path
+        self.status = 1
+        self.error: str | None = None
+
+    # -- output ----------------------------------------------------------
+
+    def write_stack(self, directories: list[Path]) -> str:
+        """Write the resolved stack and record success. Returns a footer line."""
+        try:
+            text = "".join(f"{d}\n" for d in directories)
+            self.out_path.write_text(text, encoding="utf-8")
+        except OSError as exc:
+            self.error = f"could not write {self.out_path}: {exc}"
+            return "Could not write the directory stack"
+        self.status = 0
+        count = len(directories)
+        return f"{count} {'directory' if count == 1 else 'directories'}"
+
+    def stack_for(
+        self, source: manager.DirectorySource, project: manager.Project
+    ) -> list[Path]:
+        root = manager.real_project_path(project)
+        # A section that exists but lists nothing would otherwise write an empty
+        # stack, which the shell function reads as "do nothing at all".
+        return manager.resolve_directories(source.entries or [], root) or [root]
+
+    # -- views -----------------------------------------------------------
+
+    def run(self) -> int:
+        session = menu.InlineMenuSession(
+            self.project_view(),
+            action_keys=["e"],
+            final_message="No project selected",
+        )
+        session.run()
+        if self.error:
+            print(self.error, file=sys.stderr)
+        return self.status
+
+    def project_view(self) -> menu.MenuView:
+        rows = [
+            menu.MenuRow(
+                index + 1,
+                "PROJECT",
+                f"{project.name:<12}  "
+                f"{manager.friendly_path(manager.real_project_path(project))}",
+            )
+            for index, project in enumerate(self.projects)
+        ]
+
+        def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+            if result.index is None or not 0 <= result.index < len(self.projects):
+                return
+            project = self.projects[result.index]
+            if result.action == "select":
+                self.select_stack(session, project)
+            elif result.action == "edit":
+                session.push_view(self.edit_view(project))
+
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title="Projects",
+            summary=f"Registry: {self.display_path}",
+            instruction="↑↓/jk · ↵ select · e edit · Esc/q cancel",
+            empty_text="(no projects)",
+            select_help="Load the highlighted project's directory stack",
+            back_help="Cancel without changing the directory stack",
+            actions={
+                "e": menu.MenuAction(
+                    "edit", "e", "Edit the highlighted project's directory list"
+                )
+            },
+        )
+
+    def select_stack(
+        self, session: menu.InlineMenuSession, project: manager.Project
+    ) -> None:
+        """Resolve the stack, asking first when more than one source defines one."""
+        sources = manager.directory_sources(project)
+        if not sources:
+            # No ``* Directories`` anywhere: the project root is the whole stack.
+            message = self.write_stack([manager.real_project_path(project)])
+            session.pop_view(message=f"{project.name}: {message} (project root)")
+            return
+        if len(sources) == 1:
+            message = self.write_stack(self.stack_for(sources[0], project))
+            session.pop_view(message=f"{project.name}: {message}")
+            return
+        session.push_view(self.source_view(project, sources))
+
+    def source_view(
+        self,
+        project: manager.Project,
+        sources: list[manager.DirectorySource],
+    ) -> menu.MenuView:
+        rows = [
+            menu.MenuRow(
+                index + 1,
+                source.label.upper(),
+                f"{len(source.entries or []):>2} dirs  "
+                f"{manager.friendly_path(source.path)}",
+            )
+            for index, source in enumerate(sources)
+        ]
+
+        def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+            if result.action != "select" or result.index is None:
+                return
+            if not 0 <= result.index < len(sources):
+                return
+            source = sources[result.index]
+            message = self.write_stack(self.stack_for(source, project))
+            session.pop_view()
+            session.pop_view(message=f"{project.name} ({source.label}): {message}")
+
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title=f"{project.name}: which directory stack?",
+            summary="The private list is not part of the project's repository",
+            instruction="↑↓/jk · ↵ use this list · Esc/b/q back",
+            select_help="Load the highlighted list",
+            back_help="Back to the project list",
+        )
+
+    def edit_view(self, project: manager.Project) -> menu.MenuView:
+        candidates = manager.directory_candidates(project)
+        rows = []
+        for index, candidate in enumerate(candidates):
+            if candidate.entries is not None:
+                note = f"{len(candidate.entries):>2} dirs"
+            elif candidate.path.exists():
+                note = "no * Directories"
+            else:
+                note = "       new"
+            rows.append(
+                menu.MenuRow(
+                    index + 1,
+                    candidate.label.upper(),
+                    f"{note}  {manager.friendly_path(candidate.path)}",
+                )
+            )
+
+        def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+            if result.action != "select" or result.index is None:
+                return
+            if not 0 <= result.index < len(candidates):
+                return
+            self.edit_source(session, candidates[result.index])
+
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title=f"{project.name}: edit which directory list?",
+            summary="The private list is not part of the project's repository",
+            instruction="↑↓/jk · ↵ edit · Esc/b/q back",
+            select_help="Open the highlighted file in your editor",
+            back_help="Back to the project list",
+        )
+
+    def edit_source(
+        self, session: menu.InlineMenuSession, candidate: manager.DirectorySource
+    ) -> None:
+        """Open one directory list in the user's editor, then return to the picker.
+
+        The private file lives in the registry, which ``orgmgr.py`` owns, so it
+        is created on demand. The project's task file is never written here —
+        ``ortask.py`` owns Org content — so a missing section is only reported.
+        """
+        if candidate.label == "private" and not candidate.path.exists():
+            try:
+                core.atomic_write(candidate.path, "* Directories\n")
+            except OSError as exc:
+                session.set_transient_message(f"could not create the file: {exc}")
+                return
+        argv = core.editor_argv(candidate.path)
+        if argv is None:
+            session.set_transient_message("VISUAL or EDITOR is not set")
+            return
+        hint = ""
+        if candidate.label == "project" and candidate.entries is None:
+            hint = " (add a '* Directories' section to use it)"
+
+        def run_editor() -> None:
+            subprocess.run(argv, check=False)
+
+        def done() -> None:
+            session.pop_view(
+                message=f"Edited {manager.friendly_path(candidate.path)}{hint}"
+            )
+
+        session.suspend(run_editor, on_done=done)
+
+
+def _pcd_fallback(session: _PcdSession) -> int:
+    """Numbered-menu path for pipes and terminals without prompt_toolkit."""
+    for index, project in enumerate(session.projects, start=1):
+        real = manager.friendly_path(manager.real_project_path(project))
+        print(f"{index:>3}  {project.name:<12}  {real}")
+    try:
+        choice = menu.prompt_text("number, Esc/q=cancel").strip().lower()
+    except menu.ContextCancelled:
+        return 1
+    if not choice.isdigit() or not 1 <= int(choice) <= len(session.projects):
+        return 1
+
+    project = session.projects[int(choice) - 1]
+    sources = manager.directory_sources(project)
+    if not sources:
+        session.write_stack([manager.real_project_path(project)])
+        return session.status
+    if len(sources) > 1:
+        for index, source in enumerate(sources, start=1):
+            print(f"{index:>3}  {source.label:<8}  "
+                  f"{manager.friendly_path(source.path)}")
+        try:
+            pick = menu.prompt_text("directory list, Esc/q=cancel").strip()
+        except menu.ContextCancelled:
+            return 1
+        if not pick.isdigit() or not 1 <= int(pick) <= len(sources):
+            return 1
+        sources = [sources[int(pick) - 1]]
+    session.write_stack(session.stack_for(sources[0], project))
+    if session.error:
+        print(session.error, file=sys.stderr)
+    return session.status
+
+
+def cmd_pcd(args: argparse.Namespace) -> int:
+    """Select a project and write its directory stack to ``--out``."""
     workspace, display_path = manager.resolve_registry(args.registry)
     if not workspace.is_dir():
         print(f"project directory not found: {workspace}", file=sys.stderr)
@@ -180,140 +424,16 @@ def cmd_pcd(args: argparse.Namespace) -> int:
     projects = manager.discover_projects(workspace)
     if not projects:
         print("No projects discovered.", file=sys.stderr)
-        return 0
+        return 1
 
-    rows = []
-    for idx, project in enumerate(projects, start=1):
-        real_p_path = manager.real_project_path(project)
-        friendly_p_path = manager.friendly_path(real_p_path)
-        rows.append(menu.ProjectRow(idx, project.name, friendly_p_path))
-
-    project = None
+    session = _PcdSession(
+        display_path,
+        projects,
+        Path(args.out).expanduser().resolve(),
+    )
     if menu.interactive_select_available():
-        result = menu.select_project_menu(
-            rows,
-            title="Projects",
-            summary=f"Registry: {display_path}",
-            instruction="↑↓/jk · ↵ select · e edit · Esc/q exit",
-            actions={"e": menu.MenuAction("edit", "e", "Edit project directories")},
-            start_index=0,
-        )
-        if result.action == "select" and result.index is not None:
-            project = projects[result.index]
-        elif result.action == "edit" and result.index is not None:
-            project = projects[result.index]
-            args.edit = True
-    else:
-        # Non-interactive fallback
-        while True:
-            menu.print_project_dashboard("Projects", workspace, rows)
-            try:
-                choice = menu.prompt_text("number, Esc/b/q=exit").lower()
-            except menu.ContextCancelled:
-                return 1
-            if choice in {"b", "q"}:
-                return 1
-            if choice.isdigit() and 1 <= int(choice) <= len(projects):
-                project = projects[int(choice) - 1]
-                break
-            print("invalid choice", file=sys.stderr)
-
-    if project is None:
-        return 1
-
-    real_path = manager.real_project_path(project)
-    out_path = Path(args.out).expanduser().resolve()
-
-    real_org_file = project.org_file.resolve() if project.org_file else None
-
-    if args.edit:
-        if not real_org_file:
-            print("Error: project has no org file to edit", file=sys.stderr)
-            return 1
-
-        try:
-            content = real_org_file.read_text(encoding="utf-8")
-        except Exception as e:
-            print(f"Error reading {real_org_file}: {e}", file=sys.stderr)
-            return 1
-
-        has_dirs = False
-        for line in content.splitlines():
-            if line.startswith("* "):
-                parts = line.split(None, 1)
-                header_title = parts[1].split(":")[0].strip() if len(parts) > 1 else ""
-                if header_title == "Directories":
-                    has_dirs = True
-                    break
-
-        if not has_dirs:
-            try:
-                prefix = "" if content.endswith("\n\n") else ("\n" if content.endswith("\n") else "\n\n")
-                new_section = prefix + "* Directories\n.\n"
-                core.atomic_write(real_org_file, content + new_section)
-            except Exception as e:
-                print(f"Error bootstrapping '* Directories' in {real_org_file}: {e}", file=sys.stderr)
-                return 1
-
-        try:
-            out_path.write_text(str(real_org_file) + "\n", encoding="utf-8")
-        except Exception as e:
-            print(f"Error writing to output file {out_path}: {e}", file=sys.stderr)
-            return 1
-        return 0
-
-    # Resolve directories from '* Directories' section
-    resolved_dirs = []
-    if real_org_file and real_org_file.exists():
-        try:
-            content = real_org_file.read_text(encoding="utf-8")
-            in_dirs_section = False
-            for line in content.splitlines():
-                if line.startswith("* "):
-                    parts = line.split(None, 1)
-                    header_title = parts[1].split(":")[0].strip() if len(parts) > 1 else ""
-                    if header_title == "Directories":
-                        in_dirs_section = True
-                        continue
-                    else:
-                        in_dirs_section = False
-
-                if in_dirs_section:
-                    # Strip leading asterisks and whitespace
-                    cleaned = line.lstrip("*").strip()
-
-                    # Strip org link wrappers [[...]] if present
-                    if cleaned.startswith("[[") and "]]" in cleaned:
-                        link_content = cleaned[2:].split("]]")[0]
-                        cleaned = link_content.split("][")[0].strip()
-
-                    # Strip optional "file:" prefix
-                    if cleaned.startswith("file:"):
-                        cleaned = cleaned[5:].strip()
-
-                    if not cleaned or cleaned.startswith("#"):
-                        continue
-
-                    expanded = os.path.expandvars(os.path.expanduser(cleaned))
-                    path = Path(expanded)
-                    if not path.is_absolute():
-                        path = (real_path / path).resolve()
-                    else:
-                        path = path.resolve()
-                    resolved_dirs.append(str(path))
-        except Exception as e:
-            print(f"Warning: could not parse '* Directories' section in {real_org_file}: {e}", file=sys.stderr)
-
-    if not resolved_dirs:
-        resolved_dirs = [str(real_path.resolve())]
-
-    try:
-        out_path.write_text("\n".join(resolved_dirs) + "\n", encoding="utf-8")
-    except Exception as e:
-        print(f"Error writing to output file {out_path}: {e}", file=sys.stderr)
-        return 1
-
-    return 0
+        return session.run()
+    return _pcd_fallback(session)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -375,11 +495,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--out",
         required=True,
         help="output file to write selected paths to",
-    )
-    p_pcd.add_argument(
-        "--edit",
-        action="store_true",
-        help="write the path to the project's .projdirs file instead of the directories",
     )
     # SUPPRESS default so this subparser does not clobber a global override.
     p_pcd.add_argument("--registry", default=argparse.SUPPRESS,

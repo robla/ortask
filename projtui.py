@@ -8,8 +8,6 @@ resolution, and task parsing/editing come from ``ortasklib``.
 from __future__ import annotations
 
 import argparse
-import os
-import shlex
 import subprocess
 import sys
 from collections.abc import Callable
@@ -610,32 +608,19 @@ def _workspace_subtask_fragments(
 
 
 def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
-    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
-    if not editor:
+    argv = core.editor_argv(
+        buf.path,
+        None if line_num is None else line_num + 1,
+    )
+    if argv is None:
         print("VISUAL or EDITOR is not set")
-        return
-    parts = shlex.split(editor)
-    if not parts:
-        print("VISUAL or EDITOR is empty")
         return
     # The external editor edits the real file, so flush any buffered changes
     # first, then re-read whatever it wrote back into the buffer.
     if buf.dirty:
         buf.save()
         print(f"saved pending changes to {buf.path.name} before opening the editor")
-    org_file = buf.path
-    editor_name = Path(parts[0]).name
-    line = None if line_num is None else line_num + 1
-    if line is not None and editor_name in {"vi", "vim", "nvim", "less"}:
-        subprocess.run(parts + [f"+{line}", str(org_file)], check=False)
-    elif line is not None and editor_name in {"emacs", "emacsclient"}:
-        subprocess.run(parts + [f"+{line}", str(org_file)], check=False)
-    elif line is not None and editor_name in {"nano", "pico"}:
-        subprocess.run(parts + [f"+{line}", str(org_file)], check=False)
-    elif line is not None and editor_name in {"code", "codium"}:
-        subprocess.run(parts + ["--goto", f"{org_file}:{line}"], check=False)
-    else:
-        subprocess.run(parts + [str(org_file)], check=False)
+    subprocess.run(argv, check=False)
     buf.reload()
 
 

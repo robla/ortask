@@ -1204,133 +1204,222 @@ def test_projadd_links_project_only_when_no_task_file(
     assert not any(p.suffix == ".org" for p in subdir.iterdir())   # no task link
 
 
-def test_orgmgr_pcd_resolves_directories(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
-    from ortasklib import menu
-
+def _pcd_registry(tmp_path: Path, monkeypatch, capsys, org_text: str) -> tuple:
+    """Register one project and return ``(registry, project_dir)``."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     registry = tmp_path / "projects"
     manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
 
     project = tmp_path / "myproj"
-    write(project / "TODO.org", "* Tasks\n** TODO t0001 task\n")
-
+    write(project / "TODO.org", org_text)
     assert orgmgr.cmd_projadd(_projadd_args(project, name="myproj")) == 0
     capsys.readouterr()
+    return registry, project
 
-    # Stub interactive select to use fallback, and select project "1"
+
+def test_core_parse_directories() -> None:
+    # No section at all is distinct from a section that lists nothing.
+    assert core.parse_directories("* Tasks\n** TODO t0001 x\n") is None
+    assert core.parse_directories("* Directories\n") == []
+
+    text = (
+        "* Directories\n"
+        "# a comment\n"
+        "\n"
+        "** .\n"
+        "** file:docs\n"
+        "** [[/absolute/path]]\n"
+        "** [[file:$SOME_VAR]]\n"
+        "- ~/bullet\n"
+        "plain/relative\n"
+        "* Tasks\n"
+        "** TODO t0001 not a directory\n"
+    )
+    assert core.parse_directories(text) == [
+        ".",
+        "docs",
+        "/absolute/path",
+        "$SOME_VAR",
+        "~/bullet",
+        "plain/relative",
+    ]
+
+
+def test_manager_resolve_directories(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PCD_TEST_VAR", "from_env")
+    root = tmp_path / "root"
+    root.mkdir()
+    resolved = manager.resolve_directories(
+        [".", "docs", "/absolute/path", "$PCD_TEST_VAR"], root
+    )
+    assert resolved == [
+        root.resolve(),
+        (root / "docs").resolve(),
+        Path("/absolute/path"),
+        (root / "from_env").resolve(),
+    ]
+
+
+def test_orgmgr_pcd_writes_only_directories(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    from ortasklib import menu
+
+    registry, project = _pcd_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
     monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
 
-    # Case 1: No * Directories config
+    # With no ``* Directories`` anywhere, the project root is the whole stack.
     out_file = tmp_path / "out1.txt"
     assert orgmgr.cmd_pcd(
-        argparse.Namespace(registry=str(registry), out=str(out_file), edit=False)
+        argparse.Namespace(registry=str(registry), out=str(out_file))
     ) == 0
+    assert out_file.read_text(encoding="utf-8").splitlines() == [
+        str(project.resolve())
+    ]
 
-    resolved_paths = out_file.read_text(encoding="utf-8").splitlines()
-    assert len(resolved_paths) == 1
-    assert resolved_paths[0] == str(project.resolve())
-
-    # Case 2: With * Directories config inside TODO.org
-    org_file = project / "TODO.org"
-    monkeypatch.setenv("TEST_ENV_VAR", "subdir_env")
-    org_file.write_text(
-        "* Tasks\n** TODO t0001 task\n\n* Directories\n# Comment line\n\n** .\n** file:docs\n** [[/absolute/path]]\n** [[file:$TEST_ENV_VAR]]\n",
-        encoding="utf-8"
+    monkeypatch.setenv("PCD_TEST_VAR", "subdir_env")
+    (project / "TODO.org").write_text(
+        "* Tasks\n** TODO t0001 task\n\n"
+        "* Directories\n# Comment line\n\n"
+        "** .\n** file:docs\n** [[/absolute/path]]\n** [[file:$PCD_TEST_VAR]]\n",
+        encoding="utf-8",
     )
-
     out_file2 = tmp_path / "out2.txt"
     assert orgmgr.cmd_pcd(
-        argparse.Namespace(registry=str(registry), out=str(out_file2), edit=False)
+        argparse.Namespace(registry=str(registry), out=str(out_file2))
     ) == 0
+    assert out_file2.read_text(encoding="utf-8").splitlines() == [
+        str(project.resolve()),
+        str((project / "docs").resolve()),
+        "/absolute/path",
+        str((project / "subdir_env").resolve()),
+    ]
 
-    resolved_paths = out_file2.read_text(encoding="utf-8").splitlines()
-    assert len(resolved_paths) == 4
-    assert resolved_paths[0] == str(project.resolve())
-    assert resolved_paths[1] == str((project / "docs").resolve())
-    assert resolved_paths[2] == "/absolute/path"
-    assert resolved_paths[3] == str((project / "subdir_env").resolve())
 
-
-def test_orgmgr_pcd_edit_mode(
+def test_orgmgr_pcd_never_edits_the_task_file(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
+    """``pcd`` resolves and reports; Org content belongs to ``ortask.py``."""
     from ortasklib import menu
 
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    registry = tmp_path / "projects"
-    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
-
-    project = tmp_path / "myproj"
-    write(project / "TODO.org", "* Tasks\n** TODO t0001 task\n")
-
-    assert orgmgr.cmd_projadd(_projadd_args(project, name="myproj")) == 0
-    capsys.readouterr()
-
-    # Stub interactive select to use fallback, and select project "1"
+    original = "* Tasks\n** TODO t0001 task\n"
+    registry, project = _pcd_registry(tmp_path, monkeypatch, capsys, original)
     monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
 
-    # Verify --edit mode (appends "* Directories" section if missing)
     out_file = tmp_path / "out.txt"
-    org_file = project / "TODO.org"
-
-    content_before = org_file.read_text(encoding="utf-8")
-    assert "* Directories" not in content_before
-
     assert orgmgr.cmd_pcd(
-        argparse.Namespace(registry=str(registry), out=str(out_file), edit=True)
+        argparse.Namespace(registry=str(registry), out=str(out_file))
     ) == 0
-
-    content_after = org_file.read_text(encoding="utf-8")
-    assert "* Directories" in content_after
-    assert content_after.rstrip().endswith(".\n") or content_after.rstrip().endswith(".")
-
-    expected_org_link = registry / "myproj" / "TODO.org"
-    assert out_file.read_text(encoding="utf-8").strip() == str(expected_org_link.resolve())
+    assert (project / "TODO.org").read_text(encoding="utf-8") == original
 
 
-def test_orgmgr_pcd_interactive_edit_action(
+def test_orgmgr_pcd_prefers_the_private_list(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """A private list is offered first, and chosen without a prompt when alone."""
+    from ortasklib import menu
+
+    registry, project = _pcd_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
+    private.write_text("* Directories\n** file:/private/one\n", encoding="utf-8")
+
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
+    monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
+
+    # Only the private file defines a stack, so there is nothing to ask about.
+    out_file = tmp_path / "out1.txt"
+    assert orgmgr.cmd_pcd(
+        argparse.Namespace(registry=str(registry), out=str(out_file))
+    ) == 0
+    assert out_file.read_text(encoding="utf-8").splitlines() == ["/private/one"]
+
+    # The private file must not be mistaken for the project's task file.
+    projects = manager.discover_projects(registry)
+    assert manager.canonical_org_file(projects[0]).name == "TODO.org"
+
+    # Two sources: private is listed first and both are reachable.
+    (project / "TODO.org").write_text(
+        "* Tasks\n** TODO t0001 task\n* Directories\n** file:/shared/one\n",
+        encoding="utf-8",
+    )
+    sources = manager.directory_sources(projects[0])
+    assert [s.label for s in sources] == ["private", "project"]
+
+    answers = iter(["1", "2"])
+    monkeypatch.setattr(menu, "prompt_text", lambda prompt: next(answers))
+    out_file2 = tmp_path / "out2.txt"
+    assert orgmgr.cmd_pcd(
+        argparse.Namespace(registry=str(registry), out=str(out_file2))
+    ) == 0
+    assert out_file2.read_text(encoding="utf-8").splitlines() == ["/shared/one"]
+
+
+def test_orgmgr_pcd_empty_section_falls_back_to_the_project_root(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """An empty stack would read as "do nothing" in the shell function."""
+    from ortasklib import menu
+
+    registry, project = _pcd_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n* Directories\n"
+    )
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
+    monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
+
+    out_file = tmp_path / "out.txt"
+    assert orgmgr.cmd_pcd(
+        argparse.Namespace(registry=str(registry), out=str(out_file))
+    ) == 0
+    assert out_file.read_text(encoding="utf-8").splitlines() == [
+        str(project.resolve())
+    ]
+
+
+def test_orgmgr_pcd_cancel_writes_nothing(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     from ortasklib import menu
 
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    registry = tmp_path / "projects"
-    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
-
-    project = tmp_path / "myproj"
-    write(project / "TODO.org", "* Tasks\n** TODO t0001 task\n")
-
-    assert orgmgr.cmd_projadd(_projadd_args(project, name="myproj")) == 0
-    capsys.readouterr()
-
-    # Stub interactive select to be available, and return MenuResult("edit", index=0)
-    monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
-    monkeypatch.setattr(
-        menu,
-        "select_project_menu",
-        lambda *args, **kwargs: menu.MenuResult("edit", index=0)
+    registry, _ = _pcd_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
     )
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
+    monkeypatch.setattr(menu, "prompt_text", lambda prompt: "q")
 
     out_file = tmp_path / "out.txt"
-    org_file = project / "TODO.org"
-
-    content_before = org_file.read_text(encoding="utf-8")
-    assert "* Directories" not in content_before
-
     assert orgmgr.cmd_pcd(
-        argparse.Namespace(registry=str(registry), out=str(out_file), edit=False)
-    ) == 0
+        argparse.Namespace(registry=str(registry), out=str(out_file))
+    ) != 0
+    assert not out_file.exists()
 
-    content_after = org_file.read_text(encoding="utf-8")
-    assert "* Directories" in content_after
 
-    expected_org_link = registry / "myproj" / "TODO.org"
-    assert out_file.read_text(encoding="utf-8").strip() == str(expected_org_link.resolve())
+def test_core_editor_argv(monkeypatch) -> None:
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.delenv("EDITOR", raising=False)
+    assert core.editor_argv(Path("/tmp/x.org")) is None
 
+    # An editor carrying arguments must survive as separate argv entries.
+    monkeypatch.setenv("EDITOR", "emacs -nw")
+    assert core.editor_argv(Path("/tmp/x.org")) == ["emacs", "-nw", "/tmp/x.org"]
+    assert core.editor_argv(Path("/tmp/x.org"), 12) == [
+        "emacs",
+        "-nw",
+        "+12",
+        "/tmp/x.org",
+    ]
+
+    monkeypatch.setenv("VISUAL", "code")
+    assert core.editor_argv(Path("/tmp/x.org"), 12) == [
+        "code",
+        "--goto",
+        "/tmp/x.org:12",
+    ]
 
 
 def test_projtui_task_menu_displays_canonical_symlink_target(tmp_path: Path) -> None:

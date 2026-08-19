@@ -122,7 +122,7 @@ _orgmgr_complete()
     local global_opts="-i --interactive --registry --todo-only --help"
     local list_opts="--all --format --help"
     local migrate_opts="--registry --force --dry-run --help"
-    local pcd_opts="--out --edit --registry --help"
+    local pcd_opts="--out --registry --help"
     local projadd_opts="--name --file --registry --force --dry-run --help"
 
     case "$prev" in

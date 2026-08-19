@@ -60,7 +60,28 @@ section in the project's Org task file:
   as given; `~` and `$VAR` are expanded.
 - The section ends at the next top-level (`* `) heading.
 - With no `* Directories` section, the stack is a single entry: the project
-  root. Most projects should never need the section.
+  root. A section that exists but lists nothing falls back the same way, since
+  an empty stack would read as "do nothing" in the shell function.
+
+## Private and shared lists
+
+A project can have two directory lists:
+
+| Label     | Location                                        | Shared? |
+|-----------|-------------------------------------------------|---------|
+| `private` | `<registry>/<project>/directories-private.org`   | No      |
+| `project` | the project's Org task file                      | Usually |
+
+The private list lives in the registry rather than in the project, so it is
+never part of the project's own repository and needs no per-project
+`.gitignore` entry. Both files use the same `* Directories` format and the same
+parser.
+
+When more than one file defines a stack, `pcd` asks which one to use, private
+first. When only one does, it is used without a prompt.
+
+`directories-private.org` is excluded from task-file discovery, so a project
+whose registry entry has no task-file symlink will not mistake it for one.
 
 ## `orgmgr.py pcd`
 
@@ -88,21 +109,24 @@ The picker follows the bounded inline contract in `docs/interactive.md`:
 ↑↓/jk · ↵ select · e edit · Esc/q cancel
 ```
 
-- `↵` resolves the highlighted project's directories, writes them, and exits 0.
-- `e` opens the project's Org file in `$VISUAL`/`$EDITOR`, then returns to the
-  picker so the edited stack can be selected immediately.
+- `↵` resolves the highlighted project's directories, writes them, and exits 0,
+  asking which list to use when more than one defines a stack.
+- `e` asks which list to edit — always both candidates, so the private file is
+  discoverable — opens it in `$VISUAL`/`$EDITOR`, then returns to the picker so
+  the edited stack can be selected immediately.
 - `Esc`/`q` exits nonzero without writing.
 
-`e` runs entirely inside the helper. Use `InlineMenuSession.suspend()`, which
-already hands the terminal over and repaints the view afterward, and launch the
-editor the way `projtui._open_editor()` does: `shlex.split()` on the variable,
-`VISUAL` before `EDITOR`, per-editor line arguments. That path already works
-with `EDITOR="emacs -nw"`; the shell must not re-solve it.
+`e` runs entirely inside the helper, through `InlineMenuSession.suspend()`,
+which hands the terminal over and repaints the view afterward. The argv comes
+from `core.editor_argv()`: `VISUAL` before `EDITOR`, `shlex.split()` so
+`EDITOR="emacs -nw"` works, and a line argument only for editors known to take
+one. The shell must not re-solve any of this.
 
-If the project has no `* Directories` section, `e` still just opens the file.
-`orgmgr.py` does not write Org content — that is `ortask.py`'s job, per
-`docs/orgmgr.md` — so it prints a one-line hint rather than bootstrapping a
-section into the user's task file.
+Editing the private file creates it, with a `* Directories` skeleton, if it does
+not exist yet — it lives in the registry, which `orgmgr.py` owns. The project's
+task file is never written. `ortask.py` owns Org content, per `docs/orgmgr.md`,
+so a task file with no `* Directories` section is reported rather than
+bootstrapped.
 
 ## `pcd`
 
@@ -172,34 +196,28 @@ project's directories," append can later be added as a picker key plus one input
 argument telling the helper the current stack, with the apply logic in the shell
 function unchanged.
 
-## What this changes in the current implementation
+## Layers
 
-- `misc/pcd.func.sh`: delete the argument-parsing loop, the append branch, the
-  edit branch, and the `-f "${lines[0]}"` sniff. About 96 lines become about 35.
-- `orgmgr.py`: drop the `--edit` flag and the code that appends a `* Directories`
-  section to the user's Org file.
-- `orgmgr.py`: move the roughly 60 lines of inline `* Directories` parsing out of
-  `cmd_pcd` into the shared library — `core` for the Org syntax, `manager` for
-  resolving entries against the project root — so it is unit-testable without
-  driving the CLI, and so `ortask.py` can reuse it later.
-- `orgmgr.py`: build the picker on `InlineMenuSession` rather than
-  `menu.select_project_menu`. `cmd_pcd` currently depends on `_run_selector` and
-  `select_project_menu`, which `t0011` exists to delete.
-- Tests: the two-mode `--out` assertions collapse to one. Add direct unit tests
-  for the `* Directories` parser covering plain paths, `**` prefixes, `file:`
-  prefixes, `[[...]]` links, comments, `$VAR`, `~`, relative paths, section
-  termination at the next `* ` heading, and the no-section fallback.
-
-Keep the `in_executor=False` change in `menu.suspend()`. Running an interactive
-child in a background executor thread is what broke `emacs -nw`, and the fix
-applies to `ort -i` as much as to `pcd`.
+- `core.parse_directories()` — the Org syntax. Returns the raw entries under a
+  top-level `* Directories` heading, or `None` when there is no such section, so
+  a candidate location can be told apart from a real source. Bare paths, list
+  bullets, `file:` prefixes, and `[[...]]` brackets all parse.
+- `core.editor_argv()` — the editor argv, shared with `projtui._open_editor()`.
+- `manager.directory_candidates()` / `directory_sources()` — the two locations,
+  private first, and the subset of them that defines a stack.
+- `manager.resolve_directories()` — `~`, `$VAR`, and relative-to-project-root
+  expansion. Separate from parsing, because resolving needs a project root that
+  `core` has no opinion about.
+- `orgmgr.cmd_pcd` — views and output only. It runs on `InlineMenuSession`, not
+  the one-shot `select_project_menu`/`_run_selector` path that `t0011` exists to
+  delete, with a numbered fallback for pipes.
 
 ## Open questions
 
-- Should the directory list be shared or private? It now lives in the project's
-  Org file, which is usually committed, while the `nowdirs.txt` it descends from
-  was strictly personal. No override mechanism is proposed; the question is
-  whether one is needed before this gets used on a shared repo.
 - Should `pcd` offer a way to add the current directory to the highlighted
-  project's stack, or is that squarely `ortask.py`'s business?
-- Is `pcd` worth a mention in `docs/ecosystem.md`?
+  project's stack? Deferred; it may be `ortask.py`'s business rather than
+  `orgmgr.py`'s, since it writes Org content.
+- Should `-a` (append) come back as a picker key? Because the output file means
+  "the stack you want afterward" rather than "this project's directories", that
+  is a Python-side change plus one input argument carrying the current stack,
+  with the shell function unchanged.

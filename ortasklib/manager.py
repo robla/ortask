@@ -20,6 +20,10 @@ from . import core
 SKIP_PROJECT_DIRS = {".git", ".hg", ".svn", "__pycache__", "docs"}
 DEFAULT_REGISTRY = "~/Projects"
 
+# A project's private directory stack lives in the registry rather than in the
+# project itself, so it is never part of the project's own repository.
+DIRECTORIES_PRIVATE_NAME = "directories-private.org"
+
 # Canonical suite config: ortask.ini records where the registry directory lives.
 ORTASK_INI_NAME = "ortask.ini"
 PROJECTS_SECTION = "projects"
@@ -152,7 +156,13 @@ def _org_sort_key(path: Path) -> tuple[int, str]:
 
 def choose_org_file(project_dir: Path) -> Path | None:
     root_files = sorted(
-        (p for p in project_dir.iterdir() if p.is_file() and p.suffix == ".org"),
+        (
+            p
+            for p in project_dir.iterdir()
+            if p.is_file()
+            and p.suffix == ".org"
+            and p.name != DIRECTORIES_PRIVATE_NAME
+        ),
         key=_org_sort_key,
     )
     if root_files:
@@ -182,6 +192,67 @@ def discover_projects(workspace: Path) -> list[Project]:
         if org_file:
             projects.append(Project(child.name, child, org_file))
     return projects
+
+
+# ---------------------------------------------------------------------------
+# Project directory stacks (orgmgr pcd)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class DirectorySource:
+    """One file that can define a project's ``* Directories`` section.
+
+    ``label`` is ``"private"`` for the registry-local file, which is not part of
+    the project's own repository, or ``"project"`` for the project's task file,
+    which usually is. ``entries`` is ``None`` when the file has no
+    ``* Directories`` section, which is how a candidate location is
+    distinguished from a real source.
+    """
+
+    label: str
+    path: Path
+    entries: list[str] | None
+
+    @property
+    def defines_stack(self) -> bool:
+        return self.entries is not None
+
+
+def directory_candidates(project: Project) -> list[DirectorySource]:
+    """Both places a project's directory stack may live, private first.
+
+    Candidates are returned whether or not they exist, so callers can offer to
+    create the private file. Use :func:`directory_sources` for the subset that
+    actually defines a stack.
+    """
+    candidates: list[tuple[str, Path]] = [
+        ("private", project.path / DIRECTORIES_PRIVATE_NAME),
+        ("project", canonical_org_file(project)),
+    ]
+    sources: list[DirectorySource] = []
+    for label, path in candidates:
+        try:
+            entries = core.parse_directories(path.read_text(encoding="utf-8"))
+        except OSError:
+            entries = None
+        sources.append(DirectorySource(label, path, entries))
+    return sources
+
+
+def directory_sources(project: Project) -> list[DirectorySource]:
+    """The candidates that actually define a ``* Directories`` section."""
+    return [c for c in directory_candidates(project) if c.defines_stack]
+
+
+def resolve_directories(entries: list[str], root: Path) -> list[Path]:
+    """Expand ``~`` and ``$VAR`` and resolve relative entries against ``root``."""
+    resolved: list[Path] = []
+    for entry in entries:
+        path = Path(os.path.expandvars(os.path.expanduser(entry)))
+        if not path.is_absolute():
+            path = root / path
+        resolved.append(path.resolve())
+    return resolved
 
 
 # ---------------------------------------------------------------------------

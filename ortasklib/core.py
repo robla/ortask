@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +43,9 @@ ORG_HEADING_RE = re.compile(r"^\*+\s+")
 
 TASKS_HEADING_RE = re.compile(r"^\*\s+Tasks\s*$")
 TEMPLATE_HEADING_RE = re.compile(r"^\*\s+Template\s*$")
+DIRECTORIES_HEADING_RE = re.compile(r"^\*\s+Directories\s*$")
+TOPLEVEL_HEADING_RE = re.compile(r"^\*\s")
+LIST_BULLET_RE = re.compile(r"^[-+]\s+")
 
 
 @dataclass
@@ -210,6 +214,48 @@ def find_template_range(lines: list[str]) -> tuple[int, int]:
 def count_template_sections(lines: list[str]) -> int:
     """Count top-level ``* Template`` headings (used to reject 0 or >1)."""
     return sum(1 for line in lines if TEMPLATE_HEADING_RE.match(line))
+
+
+def _strip_directory_entry(line: str) -> str:
+    """Strip the optional Org decoration around one ``* Directories`` entry.
+
+    Entries are usually written as subheadings with ``file:`` links
+    (``** file:~/src/ortask``), but a bare path, a list bullet, and Org link
+    brackets are all accepted so the section stays comfortable to hand-edit.
+    """
+    entry = line.strip().lstrip("*").strip()
+    entry = LIST_BULLET_RE.sub("", entry)
+    if entry.startswith("[[") and "]]" in entry:
+        entry = entry[2:entry.index("]]")].split("][")[0].strip()
+    if entry.startswith("file:"):
+        entry = entry[len("file:"):].strip()
+    return entry
+
+
+def parse_directories(text: str) -> list[str] | None:
+    """Return the raw entries under a top-level ``* Directories`` heading.
+
+    Returns ``None`` when the text has no such section, which is different from
+    an empty list for a section that exists but lists nothing. The section runs
+    until the next top-level heading. Blank lines and ``#`` comments are
+    skipped; everything else is stripped of Org decoration but left otherwise
+    unexpanded, since resolving a path needs a project root this module has no
+    opinion about.
+    """
+    entries: list[str] | None = None
+    for line in text.splitlines():
+        if DIRECTORIES_HEADING_RE.match(line):
+            entries = []
+            continue
+        if entries is None:
+            continue
+        if TOPLEVEL_HEADING_RE.match(line):
+            break
+        entry = _strip_directory_entry(line)
+        if not entry or entry.startswith("#"):
+            continue
+        entries.append(entry)
+    return entries
 
 
 def _parse_task_headings(lines: list[str], start: int, end: int) -> list[TodoItem]:
@@ -391,3 +437,45 @@ def lines_to_text(lines: list[str]) -> str:
 
 def write_lines(path: Path, lines: list[str]) -> None:
     atomic_write(path, lines_to_text(lines))
+
+
+# ---------------------------------------------------------------------------
+# External editor
+# ---------------------------------------------------------------------------
+
+_EDITOR_LINE_FLAG = {
+    "vi": "plus",
+    "vim": "plus",
+    "nvim": "plus",
+    "less": "plus",
+    "emacs": "plus",
+    "emacsclient": "plus",
+    "nano": "plus",
+    "pico": "plus",
+    "code": "goto",
+    "codium": "goto",
+}
+
+
+def editor_argv(path: Path, line: int | None = None) -> list[str] | None:
+    """Build the argv for opening ``path`` in the user's editor.
+
+    ``VISUAL`` wins over ``EDITOR``, and the value is split with :mod:`shlex` so
+    settings that carry arguments (``EDITOR="emacs -nw"``) work. ``line`` is
+    1-based and only added for editors known to accept it. Returns ``None`` when
+    neither variable is set to anything useful.
+    """
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+    if not editor:
+        return None
+    parts = shlex.split(editor)
+    if not parts:
+        return None
+    if line is None:
+        return parts + [str(path)]
+    style = _EDITOR_LINE_FLAG.get(Path(parts[0]).name)
+    if style == "plus":
+        return parts + [f"+{line}", str(path)]
+    if style == "goto":
+        return parts + ["--goto", f"{path}:{line}"]
+    return parts + [str(path)]
