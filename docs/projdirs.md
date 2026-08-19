@@ -77,8 +77,7 @@ never part of the project's own repository and needs no per-project
 `.gitignore` entry. Both files use the same `* Directories` format and the same
 parser.
 
-When more than one file defines a stack, `pcd` asks which one to use, private
-first. When only one does, it is used without a prompt.
+When both files define a stack, `pcd` automatically merges them, placing public (project) items on top of the stack and private items below, deduplicating any duplicate entries (retaining the first occurrence).
 
 `directories-private.org` is excluded from task-file discovery, so a project
 whose registry entry has no task-file symlink will not mistake it for one.
@@ -109,8 +108,7 @@ The picker follows the bounded inline contract in `docs/interactive.md`:
 ↑↓/jk · ↵ select · e edit · Esc/q cancel
 ```
 
-- `↵` resolves the highlighted project's directories, writes them, and exits 0,
-  asking which list to use when more than one defines a stack.
+- `↵` resolves the highlighted project's directories, writes them, and exits 0, automatically merging public and private lists (public on top) when both exist.
 - `e` asks which list to edit — always both candidates, so the private file is
   discoverable — opens it in `$VISUAL`/`$EDITOR`, then returns to the picker so
   the edited stack can be selected immediately.

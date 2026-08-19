@@ -1351,13 +1351,11 @@ def test_orgmgr_pcd_prefers_the_private_list(
     sources = manager.directory_sources(projects[0])
     assert [s.label for s in sources] == ["private", "project"]
 
-    answers = iter(["1", "2"])
-    monkeypatch.setattr(menu, "prompt_text", lambda prompt: next(answers))
     out_file2 = tmp_path / "out2.txt"
     assert orgmgr.cmd_pcd(
         argparse.Namespace(registry=str(registry), out=str(out_file2))
     ) == 0
-    assert out_file2.read_text(encoding="utf-8").splitlines() == ["/shared/one"]
+    assert out_file2.read_text(encoding="utf-8").splitlines() == ["/shared/one", "/private/one"]
 
 
 def test_orgmgr_pcd_empty_section_falls_back_to_the_project_root(

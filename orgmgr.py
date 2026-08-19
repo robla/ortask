@@ -263,53 +263,35 @@ class _PcdSession:
     def select_stack(
         self, session: menu.InlineMenuSession, project: manager.Project
     ) -> None:
-        """Resolve the stack, asking first when more than one source defines one."""
+        """Resolve the stack, merging public and private sources (public on top)."""
         sources = manager.directory_sources(project)
         if not sources:
             # No ``* Directories`` anywhere: the project root is the whole stack.
             message = self.write_stack([manager.real_project_path(project)])
             session.pop_view(message=f"{project.name}: {message} (project root)")
             return
-        if len(sources) == 1:
-            message = self.write_stack(self.stack_for(sources[0], project))
-            session.pop_view(message=f"{project.name}: {message}")
-            return
-        session.push_view(self.source_view(project, sources))
 
-    def source_view(
-        self,
-        project: manager.Project,
-        sources: list[manager.DirectorySource],
-    ) -> menu.MenuView:
-        rows = [
-            menu.MenuRow(
-                index + 1,
-                source.label.upper(),
-                f"{len(source.entries or []):>2} dirs  "
-                f"{manager.friendly_path(source.path)}",
-            )
-            for index, source in enumerate(sources)
-        ]
+        public_source = next((s for s in sources if s.label == "project"), None)
+        private_source = next((s for s in sources if s.label == "private"), None)
 
-        def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
-            if result.action != "select" or result.index is None:
-                return
-            if not 0 <= result.index < len(sources):
-                return
-            source = sources[result.index]
-            message = self.write_stack(self.stack_for(source, project))
-            session.pop_view()
-            session.pop_view(message=f"{project.name} ({source.label}): {message}")
+        resolved_dirs = []
+        seen = set()
+        for src in (public_source, private_source):
+            if src is not None:
+                paths = self.stack_for(src, project)
+                for p in paths:
+                    p_str = str(p)
+                    if p_str not in seen:
+                        seen.add(p_str)
+                        resolved_dirs.append(p)
 
-        return menu.MenuView(
-            rows=rows,
-            on_result=handle,
-            title=f"{project.name}: which directory stack?",
-            summary="The private list is not part of the project's repository",
-            instruction="↑↓/jk · ↵ use this list · Esc/b/q back",
-            select_help="Load the highlighted list",
-            back_help="Back to the project list",
-        )
+        message = self.write_stack(resolved_dirs)
+        active_labels = []
+        if public_source:
+            active_labels.append("project")
+        if private_source:
+            active_labels.append("private")
+        session.pop_view(message=f"{project.name} ({' + '.join(active_labels)}): {message}")
 
     def edit_view(self, project: manager.Project) -> menu.MenuView:
         candidates = manager.directory_candidates(project)
@@ -397,18 +379,22 @@ def _pcd_fallback(session: _PcdSession) -> int:
     if not sources:
         session.write_stack([manager.real_project_path(project)])
         return session.status
-    if len(sources) > 1:
-        for index, source in enumerate(sources, start=1):
-            print(f"{index:>3}  {source.label:<8}  "
-                  f"{manager.friendly_path(source.path)}")
-        try:
-            pick = menu.prompt_text("directory list, Esc/q=cancel").strip()
-        except menu.ContextCancelled:
-            return 1
-        if not pick.isdigit() or not 1 <= int(pick) <= len(sources):
-            return 1
-        sources = [sources[int(pick) - 1]]
-    session.write_stack(session.stack_for(sources[0], project))
+
+    public_source = next((s for s in sources if s.label == "project"), None)
+    private_source = next((s for s in sources if s.label == "private"), None)
+
+    resolved_dirs = []
+    seen = set()
+    for src in (public_source, private_source):
+        if src is not None:
+            paths = session.stack_for(src, project)
+            for p in paths:
+                p_str = str(p)
+                if p_str not in seen:
+                    seen.add(p_str)
+                    resolved_dirs.append(p)
+
+    session.write_stack(resolved_dirs)
     if session.error:
         print(session.error, file=sys.stderr)
     return session.status
