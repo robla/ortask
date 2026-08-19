@@ -13,7 +13,7 @@ Originally conceived as =status.py= (a simple checkbox viewer), the project has 
 ** The "Ortask Way" (Core Design Principles)
 
 1. **Org-mode as Source of Truth**: No external databases; the =.org= file is the authoritative store.
-2. **Stable, Hierarchical IDs**: Human-readable IDs (e.g., =T0001=, =T0001.1=) in the heading ensure references stay valid.
+2. **Stable, Hierarchical IDs**: Human-readable numeric (e.g., =t0001=, =t0001.1=) or week-based (e.g., =tw26W24=) IDs in the heading ensure references stay valid.
 3. **LLM-First Design**: Optimized for AI agent consumption via compact state summaries.
 4. **Surgical Persistence**: Modifications must preserve all surrounding prose and non-task content.
 5. **Human-Readable & Greppable**: Simple structure allows standard CLI tools to interact with the data easily.
@@ -48,12 +48,12 @@ Since this is an AI-integrated workspace, =ortask.py= caters to LLM needs:
 
 The parser is transitioning from legacy checkboxes to a formal Org-mode structure:
 #+begin_example
-** TODO [#A] T0001 Task Title :tag1:tag2:
+** TODO [#A] t0001 Task Title :tag1:tag2:
 #+end_example
 
 Revised Regex Suggestion:
 #+begin_example
-^\*+\s+(?P<state>TODO|DONE)\s+(?:\[#(?P<priority>[A-C])\]\s+)?(?P<id>T\d{4}(?:\.\d+)*)\s+(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$
+^\*+\s+(?P<state>TODO|DONE)\s+(?:\[#(?P<priority>[A-C])\]\s+)?(?P<id>(?:t\d{4}|tw\d{2,4}[wW]\d{2})(?:\.\d+)*)\s+(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$
 #+end_example
 
 ** File Modification Strategy
@@ -67,6 +67,35 @@ To prevent data loss:
 
 - **AGENTS.md Integration**: Update agents to use =ortask.py add= instead of manual editing.
 - **Automated Summary**: Tools can run =ortask.py context= to quickly understand current priorities.
+
+* The Project Layer and TUI Design
+
+** The Duality of ptui and cdproj
+Both =ptui= (the project navigator) and =cdproj= (the directory stack selector) present a list of projects. Because they share the same list renderer, they can look confusingly similar.
+
+To keep their contexts visually distinct and improve usability, we recommend the following enhancements:
+
+1. **Explicit Title Differentiation**:
+   - =ptui=: Title should be =Project Navigator=.
+   - =cdproj=: Title should be =Select Project Directory=.
+
+2. **Custom Row Labels**:
+   - Instead of a generic =PROJECT= header label for both, use context-specific labels:
+     - =ptui=: Use =NAV= or =PROJ=.
+     - =cdproj=: Use =CD= or =DIR=.
+
+3. **Dynamic Directory Previews in cdproj**:
+   - In =cdproj=, the help/status footer should dynamically display the resolved directory stack (e.g. =Dirs: ~/src/ortask + directories-private.org=) for the currently highlighted project as the user scrolls.
+
+4. **Task Count Previews in ptui**:
+   - In =ptui=, the list should display task counts (e.g. =[ 3 TODO ]=) next to the project name, making the navigator clearly about tasks.
+
+** Directory Stack Resolution & Precedence (Public & Private)
+The =cdproj= command resolves project directory stacks from:
+1. Public project list (=* Directories= section in task file)
+2. Private project list (=directories-private.org= in project's registry entry)
+
+Precedence model: The private list wins outright. When both exist, the stack is the private list in its own order. If the private list lacks entries defined in the public list, a warning is printed to stderr naming those entries. When neither is defined, the project root is used as the fallback stack.
 
 * Future Considerations
 
