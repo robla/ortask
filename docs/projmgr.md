@@ -12,7 +12,7 @@ form, `projmgr.py -i`. `pmgr` with no subcommand shows help, as `ort` does.
 This command was named `orgmgr.py` (`orgm`) until 2026-08-19. `migrate` and
 `projadd` survive as deprecated aliases for `init` and `add`.
 
-Verbs: `add`, `doctor`, `init`, `list`, `pcd`, `rm`.
+Verbs: `add`, `cdproj`, `doctor`, `init`, `list`, `rm`.
 
 ## Registry Model
 
@@ -70,7 +70,7 @@ orgm -i
 `ptui` is the short alias. The browser shows the project list first using the
 same highlight-bar selector as task lists when a TTY is available;
 non-interactive runs keep the numbered fallback. It is the same project list
-`pcd` shows, differing only in what `Enter` does. Selecting a project opens that
+`cdproj` shows, differing only in what `Enter` does. Selecting a project opens that
 project's Org task file; a project with no task file says so and stays put. Task views
 show TODO and DONE rows by default; use `C-t` inside the task menu to cycle
 visibility through `all -> TODO -> DONE`, or start with:
@@ -204,15 +204,15 @@ Task selection rules:
 - Warn per project, rather than crashing, for unreadable files, files with no
   parseable task headings, or duplicate task IDs.
 
-## `pcd`
+## `cdproj`
 
-`projmgr.py pcd` opens an inline project picker and writes the selected project's
-directory stack to a file, for the `pcd` shell function in `misc/pcd.func.sh` to
-apply to the calling shell. See `docs/projdirs.md` for the whole design.
+`projmgr.py cdproj` opens an inline project picker and writes the selected project's
+directory stack to a file, for the `cdproj` shell function in `misc/cdproj.func.sh` to
+apply to the calling shell. See `docs/cdproj.md` for the whole design.
 
 ```sh
-projmgr.py pcd --out FILE
-projmgr.py --registry ~/tmpsorta/proj2026 pcd --out FILE
+projmgr.py cdproj --out FILE
+projmgr.py --registry ~/tmpsorta/proj2026 cdproj --out FILE
 ```
 
 Options:
@@ -233,10 +233,10 @@ Behavior:
 
 A project's stack comes from a `* Directories` section in either the project's
 Org task file or a private `directories-private.org` in the project's registry
-subdirectory. When both define one, `pcd` asks which to use. With neither, the
+subdirectory. When both define one, `cdproj` automatically merges them. With neither, the
 stack is the project root alone.
 
-`pcd` reads Org content and never writes it. The one file it creates is the
+`cdproj` reads Org content and never writes it. The one file it creates is the
 private list in the registry, which `projmgr.py` owns, and only when asked to
 edit it.
 
@@ -278,7 +278,7 @@ friction is answered by `add` instead.
 
 `list` and `doctor` are read-only. `add` creates directories and symlinks only
 inside the registry; `rm` removes only a registry entry, and only its symlinks
-unless `--force` is given. `init` writes only `ortask.ini`. `pcd` writes the file
+unless `--force` is given. `init` writes only `ortask.ini`. `cdproj` writes the file
 named by `--out`, and creates a project's private directory list inside the
 registry when asked to edit it; it never writes Org task content.
 `docs/projects.md` states the general rule these follow: the registry,

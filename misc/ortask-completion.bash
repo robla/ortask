@@ -119,13 +119,13 @@ _projmgr_complete()
     fi
 
     # migrate and projadd remain as deprecated aliases for init and add.
-    local subcommands="add doctor help init list migrate pcd projadd rm"
+    local subcommands="add cdproj doctor help init list migrate projadd rm"
     local global_opts="-i --interactive --registry --todo-only --help"
     local add_opts="--name --file --registry --force --dry-run --help"
     local doctor_opts="--registry --help"
     local init_opts="--registry --force --dry-run --help"
     local list_opts="--all --format --help"
-    local pcd_opts="--out --registry --help"
+    local cdproj_opts="--out --registry --help"
     local rm_opts="--registry --force --dry-run --help"
 
     case "$prev" in
@@ -180,8 +180,8 @@ _projmgr_complete()
             list)
                 COMPREPLY=( $(compgen -W "$list_opts" -- "$cur") )
                 ;;
-            pcd)
-                COMPREPLY=( $(compgen -W "$pcd_opts" -- "$cur") )
+            cdproj)
+                COMPREPLY=( $(compgen -W "$cdproj_opts" -- "$cur") )
                 ;;
             rm)
                 COMPREPLY=( $(compgen -W "$rm_opts" -- "$cur") )

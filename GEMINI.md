@@ -89,5 +89,5 @@ The parser matches the following structure:
 
 ## Roadmap & Next Steps
 1. Implement the planned subcommands: `context`, `next`, and `rename`.
-2. `projmgr.py` implements the project layer (`add`, `doctor`, `init`, `list`, `pcd`, `rm`).
+2. `projmgr.py` implements the project layer (`add`, `cdproj`, `doctor`, `init`, `list`, `rm`).
 3. Add a test suite (`tests/`) using `pytest` to cover file parsing, filters, ID allocation, and editing safety.

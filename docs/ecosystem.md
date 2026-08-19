@@ -33,7 +33,7 @@ in shell scripts and simple enough to test with temporary fixtures. `orti` is
 
 `projmgr.py` (`pmgr`) is the project layer. It owns the registry, the project
 list, project registration (`add`), removal (`rm`), health (`doctor`), config
-(`init`), and the `pcd` directory-stack helper. It must not become a local task
+(`init`), and the `cdproj` directory-stack helper. It must not become a local task
 editor: it reads Org task content and never writes it. `ptui` is
 `projmgr.py -i`, the project navigator. `docs/projects.md` is the model it
 implements.

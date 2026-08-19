@@ -1,15 +1,15 @@
-# Project Directory Stack (`pcd`)
+# Project Directory Stack (`cdproj`)
 
-`pcd` is a shell function that picks a project from the ortask registry and
+`cdproj` is a shell function that picks a project from the ortask registry and
 loads that project's working directories into the shell's directory stack. It is
 the registry-aware successor to `nowcd`/`cdnow`, which read one global
 `nowdirs.txt` instead of per-project configuration.
 
 It has two halves:
 
-- `projmgr.py pcd` — an inline picker that resolves one project's directory list
+- `projmgr.py cdproj` — an inline picker that resolves one project's directory list
   and writes it to a file.
-- `misc/pcd.func.sh` — a bash function that reads that file and runs
+- `misc/cdproj.func.sh` — a bash function that reads that file and runs
   `cd`/`pushd`. Only the shell can change the shell's own directory stack, so
   this half cannot move into Python.
 
@@ -77,7 +77,7 @@ never part of the project's own repository and needs no per-project
 `.gitignore` entry. Both files use the same `* Directories` format and the same
 parser.
 
-When both files define a stack, `pcd` automatically merges them, placing public (project) items on top of the stack and private items below, deduplicating any duplicate entries (retaining the first occurrence).
+When both files define a stack, `cdproj` automatically merges them, placing public (project) items on top of the stack and private items below, deduplicating any duplicate entries (retaining the first occurrence).
 
 `directories-private.org` is excluded from task-file discovery, so a project
 whose registry entry has no task-file symlink will not mistake it for one.
@@ -90,10 +90,10 @@ Private files follow the `*-private.org` naming convention from
 *-private.org
 ```
 
-## `projmgr.py pcd`
+## `projmgr.py cdproj`
 
 ```sh
-projmgr.py pcd --out FILE
+projmgr.py cdproj --out FILE
 ```
 
 `--out` is required and is the only result channel. On selection, write the
@@ -134,18 +134,18 @@ task file is never written. `ortask.py` owns Org content, per `docs/orgmgr.md`,
 so a task file with no `* Directories` section is reported rather than
 bootstrapped.
 
-## `pcd`
+## `cdproj`
 
-`pcd` takes no arguments of its own. It forwards whatever it is given to
-`projmgr.py` and appends its own `--out`, so `pcd --registry ~/other` works
+`cdproj` takes no arguments of its own. It forwards whatever it is given to
+`projmgr.py` and appends its own `--out`, so `cdproj --registry ~/other` works
 without the shell parsing anything, and a new helper flag never requires
 re-sourcing.
 
 ```bash
-# misc/pcd.func.sh
-pcd () {
+# misc/cdproj.func.sh
+cdproj () {
     local out; out="$(mktemp)" || return 1
-    "${ORTASK_ORGMGR:-projmgr.py}" "$@" pcd --out "$out" || { rm -f "$out"; return 1; }
+    "${ORTASK_PROJMGR:-projmgr.py}" "$@" cdproj --out "$out" || { rm -f "$out"; return 1; }
 
     local want=()
     readarray -t want < "$out"
@@ -168,7 +168,9 @@ pcd () {
     done
     (( ${#have[@]} )) || { echo "no usable directories" >&2; return 1; }
 
-    # First entry becomes the working directory; the rest stack beneath it in order.
+    # The first entry becomes the working directory. "pushd" would put each
+    # argument on top and invert the list, so the rest go in with "pushd -n",
+    # which inserts just below the top without changing directory.
     dirs -c
     cd "${have[0]}" || return 1
     for ((i = ${#have[@]} - 1; i > 0; i--)); do
@@ -214,13 +216,13 @@ function unchanged.
 - `manager.resolve_directories()` — `~`, `$VAR`, and relative-to-project-root
   expansion. Separate from parsing, because resolving needs a project root that
   `core` has no opinion about.
-- `orgmgr.cmd_pcd` — views and output only. It runs on `InlineMenuSession`, not
+- `projmgr.cmd_cdproj` — views and output only. It runs on `InlineMenuSession`, not
   the one-shot `select_project_menu`/`_run_selector` path that `t0011` exists to
   delete, with a numbered fallback for pipes.
 
 ## Open questions
 
-- Should `pcd` offer a way to add the current directory to the highlighted
+- Should `cdproj` offer a way to add the current directory to the highlighted
   project's stack? Deferred; it may be `ortask.py`'s business rather than the
   project layer's, since it writes Org content. Writing the *private* list is
   the project layer's, since that file lives in the registry.

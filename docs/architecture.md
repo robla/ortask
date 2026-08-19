@@ -65,11 +65,11 @@ modules never call `sys.exit()` or parse CLI arguments.
   `repair`). Each `cmd_*` reads the file, calls a `tasks`/`core` helper,
   translates the result (and `TaskNotFound`) into output and an exit code, and
   writes via `core.write_lines`.
-- `projmgr.py` — project-layer commands (`add`, `doctor`, `init`, `list`, `pcd`,
+- `projmgr.py` — project-layer commands (`add`, `cdproj`, `doctor`, `init`, `list`,
   `rm`) plus `-i`. `cmd_list` calls `manager.summarize_projects()` and formats
   the records. It owns the project list itself: `_project_rows`,
   `_project_location`, `_anchor_index`, and `_project_view` are shared by the
-  navigator (`_ProjectBrowser`), `pcd` (`_PcdSession`), and both numbered
+  navigator (`_ProjectBrowser`), `cdproj` (`_CdprojSession`), and both numbered
   fallbacks, so only what `Enter` does differs between them.
 
 ## `core.py`

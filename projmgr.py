@@ -726,6 +726,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--dry-run", action="store_true",
                        help="show what would be created without changing anything")
 
+    p_cdproj = sub.add_parser(
+        "cdproj",
+        help="select a project and write its directories to a file",
+    )
+    p_cdproj.add_argument(
+        "--out",
+        required=True,
+        help="output file to write selected paths to",
+    )
+    # SUPPRESS default so this subparser does not clobber a global override.
+    p_cdproj.add_argument("--registry", default=argparse.SUPPRESS,
+                       help="registry directory to select from")
+
     p_doctor = sub.add_parser(
         "doctor",
         help="report broken, ambiguous, or unreadable registry entries",
@@ -771,19 +784,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_mig.add_argument("--dry-run", action="store_true",
                        help="show what would be written and removed")
 
-    p_cdproj = sub.add_parser(
-        "cdproj",
-        help="select a project and write its directories to a file",
-    )
-    p_cdproj.add_argument(
-        "--out",
-        required=True,
-        help="output file to write selected paths to",
-    )
-    # SUPPRESS default so this subparser does not clobber a global override.
-    p_cdproj.add_argument("--registry", default=argparse.SUPPRESS,
-                       help="registry directory to select from")
-
     p_projadd = sub.add_parser(
         "projadd",
         help="deprecated alias for add",
@@ -825,11 +825,11 @@ def main() -> int:
 
     dispatch = {
         "add": cmd_add,
+        "cdproj": cmd_cdproj,
         "doctor": cmd_doctor,
         "init": cmd_init,
         "list": cmd_list,
         "migrate": cmd_init,        # deprecated alias
-        "cdproj": cmd_cdproj,
         "projadd": cmd_add,         # deprecated alias
         "rm": cmd_rm,
     }

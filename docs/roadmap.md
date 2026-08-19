@@ -579,8 +579,8 @@ this section covers the tool shape, the names, and the order of the work.
 
 **Status:** implemented on 2026-08-19. `pmgr add` registers the project you are
 in, projects without task files are listed, `orgmgr.py` is `projmgr.py`,
-`projtui.py` is `ortasklib/taskui.py`, `pcd` moved with the project layer, and
-one project view serves the navigator, `pcd`, and both numbered fallbacks.
+`projtui.py` is `ortasklib/taskui.py`, `cdproj` moved with the project layer, and
+one project view serves the navigator, `cdproj`, and both numbered fallbacks.
 `init`, `rm`, and `doctor` exist. What remains is listed under *Still open*.
 
 ### Goal
@@ -603,7 +603,7 @@ Two commands, four names, matching what actually exists:
 | --- | --- |
 | `ort` | `ortask.py` — one task file |
 | `orti` | `ortask.py -i` — the issue workspace over that file |
-| `pmgr` | `projmgr.py` — the project layer: registry, list, `add`, `pcd` |
+| `pmgr` | `projmgr.py` — the project layer: registry, list, `add`, `cdproj` |
 | `ptui` | `projmgr.py -i` — the project navigator |
 
 `pmgr` alone lists, as `ort` alone lists.
@@ -642,8 +642,8 @@ front-ends over `ortasklib/`, with no script importing another script.
 
 ### Verbs
 
-`projmgr.py` verbs, alphabetical as usual: `add`, `doctor`, `help`, `init`,
-`list`, `pcd`, `rm`.
+`projmgr.py` verbs, alphabetical as usual: `add`, `cdproj`, `doctor`, `help`, `init`,
+`list`, `rm`.
 
 - `add` replaces `projadd`, and is specified in `docs/projects.md`. The prefix
   was only ever there to disambiguate from local task verbs in a tool that also
@@ -653,20 +653,20 @@ front-ends over `ortasklib/`, with no script importing another script.
   written the registry path into `ortask.ini` since `projtui.ini` was removed.
   Low priority, but a verb whose name describes a job it no longer does is the
   kind of drift this section exists to clear.
-- `pcd` moves here from `orgmgr.py` unchanged in behavior. It was always a
-  project-layer command; it landed in `orgmgr.py` because that was where the
-  registry lived.
+- `cdproj` moves here from `orgmgr.py` unchanged in behavior (originally named `pcd`).
+  It was always a project-layer command; it landed in `orgmgr.py` because that was
+  where the registry lived.
 
 ### One project list, two entry points
 
-`pcd` and `ptui` drew two different project pickers over the same registry. They
+`cdproj` and `ptui` drew two different project pickers over the same registry. They
 now share `_project_rows`, `_project_location`, `_anchor_index`, and
 `_project_view` in `projmgr.py`, so only what `Enter` does differs: open the
 project's tasks, or write its directory stack and exit. The numbered fallbacks
 share the same rows.
 
 What is still separate is the session wrapper — `_ProjectBrowser` keeps a task
-controller and a resume hook, `_PcdSession` keeps an output path and an edit
+controller and a resume hook, `_CdprojSession` keeps an output path and an edit
 picker. That difference is real, and merging the two classes would only hide it.
 
 ### What the list must show
@@ -687,12 +687,12 @@ All six steps are complete (`t0019.1`–`t0019.6`):
    made a task file optional in `manager.discover_projects()`. This was the
    behavior change; everything after it was naming.
 2. Added `add` with project-root walking.
-3. Renamed `orgmgr.py` to `projmgr.py`, moved `pcd` with it, updated
-   `misc/ortask-completion.bash`, `misc/pcd.func.sh`, and the `pmgr`/`ptui`
+3. Renamed `orgmgr.py` to `projmgr.py`, moved `cdproj` (initially `pcd`) with it, updated
+   `misc/ortask-completion.bash`, `misc/cdproj.func.sh`, and the `pmgr`/`ptui`
    aliases, and renamed `docs/orgmgr.md` to `docs/projmgr.md`.
 4. Moved `projtui.py`'s task UI into `ortasklib/taskui.py` and its project
    browser into `projmgr.py`; deleted the script.
-5. Converged the `pcd` picker and the `ptui` project list onto one row and view
+5. Converged the `cdproj` picker and the `ptui` project list onto one row and view
    builder.
 6. Renamed `migrate` to `init`; added `rm` and `doctor`. `migrate` and `projadd`
    remain as deprecated aliases.
