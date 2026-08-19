@@ -166,7 +166,18 @@ projmgr.py list
 projmgr.py --registry ~/tmpsorta/proj2026 list
 projmgr.py list --all
 projmgr.py list --format json
+projmgr.py list --format names
 ```
+
+Options:
+
+- `--all`: include top-level `DONE` tasks as well as open ones.
+- `--format plain|json|names`: `names` prints one bare project name per line and
+  nothing else, skipping task-file parsing. It exists so shell completion can
+  ask for the registry's contents instead of globbing it — the marker rule that
+  decides what counts as a project lives in Python, and a glob would offer the
+  registry's own README and notes directories as if they were projects. See
+  "Shell completion" below.
 
 A project with no task file is listed with its project directory and
 `(no task file)` in place of task rows; a broken or ambiguous entry is listed
@@ -217,7 +228,9 @@ projmgr.py --registry ~/tmpsorta/proj2026 cdproj --out FILE [PROJECT]
 
 Options:
 
-- `PROJECT`: optional name of a registered project to resolve immediately without launching the picker.
+- `PROJECT`: optional name of a registered project to resolve immediately
+  without launching the picker. The match is exact; TAB completes it from the
+  registry, see "Shell completion" below.
 - `--out FILE`: required. The only result channel.
 - `--registry PATH`: override the resolved registry.
 
@@ -261,6 +274,24 @@ nothing. Anything else in the entry is real data that exists nowhere else:
   this command does not delete trees.
 
 Removing the entry directory by hand is equally valid.
+
+## Shell completion
+
+`misc/ortask-completion.bash` registers completion for `projmgr.py`,
+`./projmgr.py`, `pmgr`, `ptui`, and the `cdproj` shell function. Subcommands and
+options complete from static lists; the arguments that name a project —
+`cdproj PROJECT` and `rm NAME` — complete from `list --format names`, so a TAB
+sees exactly the projects the registry holds.
+
+`cdproj` needs its own completion function rather than sharing `pmgr`'s. The
+shell function supplies `cdproj --out FILE` itself, so the first word the user
+types is already the project name, and there is no subcommand in the words for
+`_projmgr_complete` to find.
+
+Completion runs `projmgr.py` (or `$ORTASK_PROJMGR`, the same variable
+`misc/cdproj.func.sh` uses) once per TAB, about 150ms. Failures are silent: a
+missing registry or an unreadable one yields no completions rather than an error
+in the middle of the prompt.
 
 ## Deprecated aliases
 

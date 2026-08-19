@@ -216,6 +216,14 @@ def cmd_list(args: argparse.Namespace) -> int:
         print(f"project directory not found: {workspace}", file=sys.stderr)
         return 1
 
+    if args.format == "names":
+        # One bare project name per line. This is the shell completions' only
+        # view of the registry, so the marker rule stays here in Python instead
+        # of being re-implemented (wrongly) as a glob in bash.
+        for project in manager.discover_projects(workspace):
+            print(project.name)
+        return 0
+
     projects_data = manager.summarize_projects(workspace, include_all=args.all)
 
     if args.format == "json":
@@ -786,9 +794,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_list.add_argument(
         "--format",
-        choices=["plain", "json"],
+        choices=["plain", "json", "names"],
         default="plain",
-        help="output format (plain or json)",
+        help="output format: plain, json, or bare project names for completion",
     )
 
     p_mig = sub.add_parser(

@@ -705,8 +705,8 @@ All six steps are complete (`t0019.1`–`t0019.6`):
   (explicit membership is the point), but it is the likeliest reason someone
   else's registry would look empty.
 - `add` does not offer to create a task file for a project that has none, and
-  `pcd` still has no way to append the current directory to a project's stack
-  (`docs/projdirs.md`).
+  `cdproj` still has no way to append the current directory to a project's stack
+  (`docs/cdproj.md`).
 - The deprecated `migrate` and `projadd` aliases should eventually go.
 
 ### Completion Criteria
@@ -718,6 +718,6 @@ All met:
 - `ptui` opens a list of every registered project, including new and
   task-less ones, as the root of the same bounded session.
 - No script imports another script; `projtui.py` is gone.
-- `pcd`, `pmgr`, and `ptui` share one project list and one project record.
+- `cdproj`, `pmgr`, and `ptui` share one project list and one project record.
 - The registry remains readable, editable, and repairable with `ls`, `ln -s`,
   and `rm`.

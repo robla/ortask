@@ -188,6 +188,18 @@ the working directory and everything else in file order beneath it. This also
 keeps the `cd` target equal to the final working directory, instead of
 transiting through the deepest entry on the way there.
 
+## Completion
+
+`cdproj <Tab>` completes registered project names, so the exact-match `PROJECT`
+argument does not have to be typed from memory. The names come from
+`projmgr.py list --format names`; `misc/ortask-completion.bash` registers a
+`_cdproj_complete` for the function and must be sourced alongside this file.
+
+The names deliberately come from Python rather than from a glob of the registry.
+A registry holds more than projects — its own README, a notes directory — and
+only the outward-symlink marker rule in `ortasklib/manager.py` separates the
+two, so a `ls`-based completion would offer entries that `cdproj` then rejects.
+
 ## Why `-a` and `-e` are gone
 
 `-e` is redundant. Editing is `e` in the picker, which is both more discoverable

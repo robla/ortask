@@ -9,9 +9,13 @@
 # should have afterwards, top entry first. Never a mode, never a file to edit.
 # Editing happens inside the picker (press "e") and never reaches this function.
 #
-# Usage: cdproj [projmgr options]
-# Arguments are forwarded to projmgr.py untouched, so a new helper flag never
-# requires re-sourcing this file.
+# Usage: cdproj [PROJECT] [cdproj options]
+# Arguments are forwarded to "projmgr.py cdproj" after --out, so a new option on
+# that subcommand never requires re-sourcing this file. They land after the
+# subcommand, so projmgr.py's own global-only flags (-i, --todo-only) are not
+# reachable from here; --registry is, because the cdproj subparser accepts it.
+#
+# Tab completion for PROJECT lives in misc/ortask-completion.bash.
 
 cdproj () {
     local out; out="$(mktemp)" || return 1

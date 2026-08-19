@@ -288,7 +288,7 @@ def project_root_for(start: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Project directory stacks (projmgr pcd)
+# Project directory stacks (projmgr cdproj)
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)

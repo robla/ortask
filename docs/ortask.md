@@ -342,8 +342,10 @@ source /path/to/ortask/misc/ortask-completion.bash
 ```
 
 The script registers completion for `ortask.py`, `./ortask.py`, the common
-`ort` alias, `projmgr.py`, `./projmgr.py`, and the `pmgr`/`ptui` aliases. For
-example, `ortask.py ad<Tab>` and `ort ad<Tab>` complete to `add`, while
-`orgm -<Tab>` includes `-i` and `--interactive`. A Debian package can install
-the same file under
+`ort` alias, `projmgr.py`, `./projmgr.py`, the `pmgr`/`ptui` aliases, and the
+`cdproj` shell function from `misc/cdproj.func.sh`. For example,
+`ortask.py ad<Tab>` and `ort ad<Tab>` complete to `add`, while `pmgr -<Tab>`
+includes `-i` and `--interactive`. `cdproj <Tab>` and `pmgr rm <Tab>` complete
+registered project names; see `docs/projmgr.md` for how. A Debian package can
+install the same file under
 `/usr/share/bash-completion/completions/`.

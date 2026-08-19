@@ -65,30 +65,42 @@ such as =TODO.org= and =todo.org=. Use =--file= or the =ORTASK_FILE= env var to
 override. Ambiguous matches stop with an error instead of guessing. If =ort add=
 finds no task file, it creates =tasks.org= in the current directory.
 
-* Shell alias
+* Shell aliases and functions
 
-For daily use, alias =ortask.py= as =ort= and =projmgr.py= as =pmgr=:
+For daily use, alias =ortask.py= as =ort= and =projmgr.py= as =pmgr=
+(=misc/projmgr.aliases.sh= has the two =pmgr= lines):
 
 #+begin_src sh
 alias ort='/path/to/ortask.py'
 alias pmgr='/path/to/projmgr.py'
+alias ptui='pmgr -i'
 #+end_src
 
 Then: =ort list=, =ort add "Do the thing"=, =ort archive=, =ort done t0004=, =ort -i=,
-and =orgm -i=.
+and =pmgr -i=.
+
+=cdproj= must be a shell function rather than an alias, because only the shell
+can change its own directory stack:
+
+#+begin_src sh
+source /path/to/ortask/misc/cdproj.func.sh
+#+end_src
 
 * Bash completion
 
-For command and option completion, source the bundled completion script:
+For command, option, and project-name completion, source the bundled completion
+script — after =cdproj.func.sh=, though the order does not actually matter to
+bash:
 
 #+begin_src sh
 source /path/to/ortask/misc/ortask-completion.bash
 #+end_src
 
 It registers completion for =ortask.py=, =./ortask.py=, =ort=, =projmgr.py=,
-=./projmgr.py=, =pmgr=, and =ptui=. After sourcing it, typing =ortask.py ad<Tab>= or
-=ort ad<Tab>= completes to =add=, while =orgm -<Tab>= includes =-i= and
-=--interactive=.
+=./projmgr.py=, =pmgr=, =ptui=, and the =cdproj= shell function. After sourcing
+it, typing =ortask.py ad<Tab>= or =ort ad<Tab>= completes to =add=, while
+=pmgr -<Tab>= includes =-i= and =--interactive=. =cdproj <Tab>= and
+=pmgr rm <Tab>= complete registered project names.
 A Debian package can install the same file under
 =/usr/share/bash-completion/completions/=.
 

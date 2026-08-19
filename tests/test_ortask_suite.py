@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import textwrap
@@ -1031,8 +1032,8 @@ def test_bash_completion_for_ortask_and_alias() -> None:
         ("_ortask_complete", "COMP_WORDS=(ortask.py list --fo); COMP_CWORD=2", "--format"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py apply --te); COMP_CWORD=2", "--template"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py apply --template w); COMP_CWORD=3", "weekly"),
-        ("_projmgr_complete", "COMP_WORDS=(orgm --in); COMP_CWORD=1", "--interactive"),
-        ("_projmgr_complete", "COMP_WORDS=(orgm li); COMP_CWORD=1", "list"),
+        ("_projmgr_complete", "COMP_WORDS=(pmgr --in); COMP_CWORD=1", "--interactive"),
+        ("_projmgr_complete", "COMP_WORDS=(pmgr li); COMP_CWORD=1", "list"),
         ("_projmgr_complete", "COMP_WORDS=(projmgr.py list --fo); COMP_CWORD=2", "--format"),
     ]
 
@@ -1356,6 +1357,108 @@ def test_projmgr_list_shows_a_project_with_no_task_file(
     out = capsys.readouterr().out
     assert "fresh" in out
     assert "(no task file)" in out
+
+
+def test_projmgr_list_format_names_applies_the_marker_rule(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # The shell completions read the registry through this, so it must honour
+    # the outward-symlink marker: a registry's own README and notes directory
+    # are not projects, and a bare glob of the registry would offer them.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    registry.mkdir(parents=True)
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+
+    for name in ("elweek", "elusync"):
+        project = tmp_path / "src" / name
+        write(project / "todo.org", "* Tasks\n** TODO t0001 A task\n")
+        register(registry, name, project)
+
+    (registry / "README.md").write_text("# registry\n", encoding="utf-8")
+    notes = registry / "docs"
+    notes.mkdir()
+    (notes / "notes.md").write_text("notes\n", encoding="utf-8")
+
+    assert projmgr.cmd_list(
+        argparse.Namespace(registry=None, all=False, format="names")
+    ) == 0
+    captured = capsys.readouterr()
+    assert captured.out.split() == ["elusync", "elweek"]
+    assert captured.err == ""
+
+
+def test_bash_completion_offers_project_names(tmp_path: Path) -> None:
+    # cdproj, and the arguments of pmgr that name a project, complete from the
+    # registry. The names come from projmgr.py itself rather than from a glob.
+    script = ROOT / "misc" / "ortask-completion.bash"
+    registry = tmp_path / "projects"
+    registry.mkdir(parents=True)
+    for name in ("elweek", "elusync"):
+        project = tmp_path / "src" / name
+        write(project / "todo.org", "* Tasks\n** TODO t0001 A task\n")
+        register(registry, name, project)
+    (registry / "README.md").write_text("# registry\n", encoding="utf-8")
+
+    cases = [
+        # cdproj is a shell function: it supplies "cdproj --out FILE" itself, so
+        # the first word the user types is already the project name.
+        ("_cdproj_complete", f"(cdproj --registry {registry} '')", 3,
+         ["elusync", "elweek"]),
+        ("_cdproj_complete", f"(cdproj --registry {registry} elw)", 3, ["elweek"]),
+        ("_cdproj_complete", f"(cdproj --registry {registry} --)", 3,
+         ["--registry", "--help"]),
+        ("_projmgr_complete", f"(pmgr --registry {registry} cdproj '')", 4,
+         ["elusync", "elweek"]),
+        ("_projmgr_complete", f"(pmgr --registry {registry} rm '')", 4,
+         ["elusync", "elweek"]),
+    ]
+
+    for function, words, cword, expected in cases:
+        result = subprocess.run(
+            [
+                "bash",
+                "--noprofile",
+                "--norc",
+                "-c",
+                (
+                    f"source {script}; COMP_WORDS={words}; COMP_CWORD={cword}; "
+                    f"{function}; printf '%s\\n' \"${{COMPREPLY[@]}}\""
+                ),
+            ],
+            cwd=ROOT,
+            env={**os.environ, "ORTASK_PROJMGR": str(ROOT / "projmgr.py")},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.stderr == ""
+        assert result.stdout.split() == expected, (function, words)
+
+
+def test_bash_completion_survives_an_unreadable_registry(tmp_path: Path) -> None:
+    # A TAB must never spill an error into the prompt, however broken the setup.
+    script = ROOT / "misc" / "ortask-completion.bash"
+    result = subprocess.run(
+        [
+            "bash",
+            "--noprofile",
+            "--norc",
+            "-c",
+            (
+                f"source {script}; COMP_WORDS=(cdproj --registry {tmp_path}/nope ''); "
+                "COMP_CWORD=3; _cdproj_complete; "
+                "printf '%s\\n' \"${COMPREPLY[@]}\""
+            ),
+        ],
+        cwd=ROOT,
+        env={**os.environ, "ORTASK_PROJMGR": str(ROOT / "projmgr.py")},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.stderr == ""
+    assert result.stdout.strip() == ""
 
 
 def test_projmgr_rm_removes_only_the_registry_entry(

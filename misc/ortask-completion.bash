@@ -1,10 +1,14 @@
-# Bash completion for ortask.py/projmgr.py and common "ort"/"pmgr" aliases.
+# Bash completion for ortask.py/projmgr.py, the common "ort"/"pmgr" aliases, and
+# the "cdproj" shell function from misc/cdproj.func.sh.
 #
 # Source-tree usage:
 #   source /path/to/ortask/misc/ortask-completion.bash
 #
 # Debian packages can install this to:
 #   /usr/share/bash-completion/completions/ortask.py
+#
+# Set ORTASK_PROJMGR if projmgr.py is not on PATH, the same variable
+# misc/cdproj.func.sh uses.
 
 _ortask_complete()
 {
@@ -104,6 +108,27 @@ complete -o default -F _ortask_complete ortask.py
 complete -o default -F _ortask_complete ./ortask.py
 complete -o default -F _ortask_complete ort
 
+# Registered project names, for the arguments that take one.
+#
+# A registry holds more than projects -- its own README, a docs directory -- and
+# only the outward-symlink marker rule in ortasklib/manager.py can tell them
+# apart, so this asks projmgr.py rather than globbing the registry. "list
+# --format names" skips task-file parsing and costs about 150ms.
+_projmgr_projects()
+{
+    local registry=() i
+    for ((i = 1; i < ${#COMP_WORDS[@]}; i++)); do
+        if [[ "${COMP_WORDS[i]}" == "--registry" ]]; then
+            registry=(--registry "${COMP_WORDS[i+1]}")
+            break
+        fi
+    done
+    # --registry goes before the subcommand: every subparser that accepts it
+    # uses argparse.SUPPRESS so the global option is the one that always works.
+    "${ORTASK_PROJMGR:-projmgr.py}" "${registry[@]}" list --format names 2>/dev/null
+}
+
+
 _projmgr_complete()
 {
     local cur prev words cword command
@@ -130,10 +155,10 @@ _projmgr_complete()
 
     case "$prev" in
         --format)
-            COMPREPLY=( $(compgen -W "plain json" -- "$cur") )
+            COMPREPLY=( $(compgen -W "plain json names" -- "$cur") )
             return 0
             ;;
-        --registry|--file|--name)
+        --registry|--file|--name|--out)
             COMPREPLY=( $(compgen -f -- "$cur") )
             return 0
             ;;
@@ -191,7 +216,14 @@ _projmgr_complete()
                 ;;
         esac
     else
-        COMPREPLY=()
+        case "$command" in
+            cdproj|rm)
+                COMPREPLY=( $(compgen -W "$(_projmgr_projects)" -- "$cur") )
+                ;;
+            *)
+                COMPREPLY=()
+                ;;
+        esac
     fi
 }
 
@@ -199,3 +231,36 @@ complete -o default -F _projmgr_complete projmgr.py
 complete -o default -F _projmgr_complete ./projmgr.py
 complete -o default -F _projmgr_complete pmgr
 complete -o default -F _projmgr_complete ptui
+
+
+# "cdproj" is a shell function, not an alias: it supplies the subcommand and
+# --out itself, so what the user types is only what follows them. It cannot
+# reuse _projmgr_complete, which expects to find the subcommand in the words.
+_cdproj_complete()
+{
+    local cur prev
+    COMPREPLY=()
+
+    if type _get_comp_words_by_ref >/dev/null 2>&1; then
+        _get_comp_words_by_ref -n : cur prev
+    else
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+    fi
+
+    if [[ "$prev" == "--registry" ]]; then
+        COMPREPLY=( $(compgen -d -- "$cur") )
+        return 0
+    fi
+
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=( $(compgen -W "--registry --help" -- "$cur") )
+        return 0
+    fi
+
+    COMPREPLY=( $(compgen -W "$(_projmgr_projects)" -- "$cur") )
+}
+
+# No "-o default" here: cdproj takes a project name, so falling back to a list
+# of files on a typo would only be noise.
+complete -F _cdproj_complete cdproj
