@@ -12,10 +12,14 @@ from .core import TERMINAL_STATES
 
 try:
     from rich.console import Console
+    from rich.markup import escape as rich_escape
     from rich.table import Table
 except ImportError:  # pragma: no cover - optional interactive dependency
     Console = None
     Table = None
+
+    def rich_escape(text: str) -> str:
+        return text
 
 try:
     from prompt_toolkit import PromptSession
@@ -67,13 +71,14 @@ class MenuRow:
 class ProjectRow:
     """One row of a numbered project list.
 
-    ``location`` is where the project is, plus any note the reader needs (no
-    task file yet, a broken link). It is not necessarily a task file path.
+    ``detail`` is whatever the surface showing the list cares about — open task
+    counts for the navigator, directories for ``cdproj`` — plus any note the
+    reader needs (no task file yet, a broken link).
     """
 
     number: int
     name: str
-    location: str
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -317,12 +322,18 @@ def interactive_select_available() -> bool:
     )
 
 
+#: Row labels that mark a project rather than a task. The surfaces that list
+#: projects label their rows differently on purpose — see ``docs/interactive.md``
+#: — so the styling keys off the category, not off one spelling.
+PROJECT_ROW_LABELS = frozenset({"PROJECT", "PROJ", "CD"})
+
+
 def _status_class(status: str) -> str:
     if status == "TODO":
         return "class:status.todo"
     if status == "DONE":
         return "class:status.done"
-    if status == "PROJECT":
+    if status in PROJECT_ROW_LABELS:
         return "class:project.name"
     return "class:status.other"
 
@@ -339,7 +350,7 @@ def _selected_bar(status: str) -> str:
         return "selected.todo"
     if status == "DONE":
         return "selected.done"
-    if status == "PROJECT":
+    if status in PROJECT_ROW_LABELS:
         return "selected.project"
     return "selected.other"
 
@@ -1231,13 +1242,13 @@ def select_project_menu(
             selected = i == selected_index
             cursor = "▶ " if selected else "  "
             if selected:
-                line = f"{cursor}{row.number:>2}  {row.name:<12}  {row.location}\n"
+                line = f"{cursor}{row.number:>2}  {row.name:<12}  {row.detail}\n"
                 fragments.append(("[SetCursorPosition]", ""))
                 fragments.append(("class:selected.project", line))
             else:
                 fragments.append(("", f"{cursor}{row.number:>2}  "))
                 fragments.append(("class:project.name", f"{row.name:<12}"))
-                fragments.append(("", f"  {row.location}\n"))
+                fragments.append(("", f"  {row.detail}\n"))
         return FormattedText(fragments)
 
     return _run_selector(
@@ -1276,8 +1287,8 @@ def print_task_dashboard(title: str, source: Path, rows: list[MenuRow]) -> None:
             elif row.status == "DONE":
                 rendered_status = "[green]DONE[/]"
             else:
-                rendered_status = f"[dim]{row.status}[/]"
-            table.add_row(str(row.number), rendered_status, row.text)
+                rendered_status = f"[dim]{rich_escape(row.status)}[/]"
+            table.add_row(str(row.number), rendered_status, rich_escape(row.text))
         RICH_CONSOLE.print(table)
         if not rows:
             RICH_CONSOLE.print("[dim](no items)[/]")
@@ -1292,7 +1303,10 @@ def print_task_dashboard(title: str, source: Path, rows: list[MenuRow]) -> None:
 
 
 def print_project_dashboard(
-    title: str, source: str | Path, rows: list[ProjectRow]
+    title: str,
+    source: str | Path,
+    rows: list[ProjectRow],
+    detail_header: str = "Location",
 ) -> None:
     print()
     print(f"Projects in {source}")
@@ -1300,17 +1314,19 @@ def print_project_dashboard(
         table = Table(title=title)
         table.add_column("#", justify="right")
         table.add_column("Project")
-        table.add_column("Location")
+        table.add_column(detail_header)
         for row in rows:
-            table.add_row(str(row.number), row.name, row.location)
+            table.add_row(
+                str(row.number), rich_escape(row.name), rich_escape(row.detail)
+            )
         RICH_CONSOLE.print(table)
         if not rows:
             RICH_CONSOLE.print("[dim](no projects found)[/]")
         return
 
     print(title)
-    print("  #  Project  Location")
+    print(f"  #  Project  {detail_header}")
     for row in rows:
-        print(f"  {row.number:>2}  {row.name:<8}  {row.location}")
+        print(f"  {row.number:>2}  {row.name:<8}  {row.detail}")
     if not rows:
         print("  (no projects found)")

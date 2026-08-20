@@ -15,6 +15,8 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 # Make ``ortasklib`` importable regardless of the working directory.
@@ -28,9 +30,10 @@ from ortasklib import core, manager, menu, taskui
 # ---------------------------------------------------------------------------
 # The one project list
 #
-# Every project surface — ``-i``, ``cdproj``, and both numbered fallbacks — renders
-# rows the same way and anchors the highlight the same way. Only what Enter does
-# differs.
+# Every project surface — ``-i``, ``cdproj``, and both numbered fallbacks — builds
+# rows from the same projects and anchors the highlight the same way. What
+# differs is what Enter does and, because the two are easy to confuse otherwise,
+# how each names itself and what its third column says.
 # ---------------------------------------------------------------------------
 
 PROJECT_MENU_INSTRUCTION = "↑↓/jk · ↵ open · C-g help · Esc/b/q exit"
@@ -51,25 +54,93 @@ def _project_location(project: manager.Project) -> str:
     return f"{real}{_project_note(project)}"
 
 
-def _project_rows(projects: list[manager.Project]) -> list[menu.MenuRow]:
+def _project_tasks(project: manager.Project) -> str:
+    """How much open work a project has — the navigator's reason to exist.
+
+    Counts the same top-level tasks ``projmgr.py list`` shows, so the number
+    here and the rows there agree.
+    """
+    if project.warning:
+        return f"({project.warning})"
+    org_file = manager.canonical_org_file(project)
+    if org_file is None:
+        return "(no task file)"
+    try:
+        tasks = core.parse_org(org_file.read_text(encoding="utf-8"))
+    except OSError:
+        return "(unreadable)"
+    if not tasks:
+        return "(no tasks)"
+    root_level = min(task.level for task in tasks)
+    open_tasks = sum(
+        1 for task in tasks if task.level == root_level and task.state == "TODO"
+    )
+    return f"{open_tasks} open"
+
+
+def _project_stack(project: manager.Project) -> str:
+    """Where a project is, and which list will set its directory stack.
+
+    ``directory_sources`` returns private first, and the private list wins
+    outright, so the first label is the one that will decide — worth knowing
+    before Enter rather than after.
+    """
+    location = _project_location(project)
+    sources = manager.directory_sources(project)
+    if not sources:
+        return location
+    return f"{location}  [{sources[0].label}]"
+
+
+@dataclass(frozen=True)
+class _ProjectListing:
+    """How one surface presents the shared project list.
+
+    ``ptui`` and ``cdproj`` show the same projects for different reasons. They
+    differ here — in the title, the row label, and what the third column says —
+    and nowhere else, so neither can drift out of step with the other about
+    which projects exist or how to move around them.
+    """
+
+    title: str
+    label: str
+    detail_header: str
+    detail: Callable[[manager.Project], str]
+
+
+NAVIGATOR = _ProjectListing(
+    "Project navigator", "PROJ", "Open tasks", _project_tasks
+)
+CDPROJ = _ProjectListing(
+    "Change directory", "CD", "Directories", _project_stack
+)
+
+
+def _project_rows(
+    projects: list[manager.Project], listing: _ProjectListing
+) -> list[menu.MenuRow]:
     return [
         menu.MenuRow(
             index + 1,
-            "PROJECT",
-            f"{project.name:<12}  {_project_location(project)}",
+            listing.label,
+            f"{project.name:<12}  {listing.detail(project)}",
         )
         for index, project in enumerate(projects)
     ]
 
 
 def _print_project_dashboard(
-    projects: list[manager.Project], display_path: str
+    projects: list[manager.Project],
+    display_path: str,
+    listing: _ProjectListing,
 ) -> None:
     rows = [
-        menu.ProjectRow(index + 1, project.name, _project_location(project))
+        menu.ProjectRow(index + 1, project.name, listing.detail(project))
         for index, project in enumerate(projects)
     ]
-    menu.print_project_dashboard("Projects", display_path, rows)
+    menu.print_project_dashboard(
+        listing.title, display_path, rows, listing.detail_header
+    )
 
 
 def _anchor_index(
@@ -92,6 +163,7 @@ def _project_view(
     display_path: str,
     handle,
     *,
+    listing: _ProjectListing,
     instruction: str,
     select_help: str,
     back_help: str | None = None,
@@ -100,9 +172,9 @@ def _project_view(
     on_resume=None,
 ) -> menu.MenuView:
     return menu.MenuView(
-        rows=_project_rows(projects),
+        rows=_project_rows(projects, listing),
         on_result=handle,
-        title="Projects",
+        title=listing.title,
         summary=f"Registry: {display_path}",
         instruction=instruction,
         empty_text="(no projects)",
@@ -171,6 +243,7 @@ class _ProjectBrowser:
             projects,
             self.display_path,
             handle,
+            listing=NAVIGATOR,
             instruction=PROJECT_MENU_INSTRUCTION,
             select_help="Open the highlighted project",
             selected_index=_anchor_index(projects, selected_name, fallback_index),
@@ -186,7 +259,7 @@ def project_menu(workspace: Path, display_path: str, include_done: bool) -> int:
 
     while True:
         projects = manager.discover_projects(workspace)
-        _print_project_dashboard(projects, display_path)
+        _print_project_dashboard(projects, display_path, NAVIGATOR)
         try:
             choice = menu.prompt_text("number, Esc/q=quit").strip().lower()
         except menu.ContextCancelled:
@@ -592,6 +665,7 @@ class _CdprojSession:
             self.projects,
             self.display_path,
             handle,
+            listing=CDPROJ,
             instruction="↑↓/jk · ↵ select · e edit · Esc/q cancel",
             select_help="Load the highlighted project's directory stack",
             back_help="Cancel without changing the directory stack",
@@ -680,7 +754,7 @@ class _CdprojSession:
 
 def _cdproj_fallback(session: _CdprojSession) -> int:
     """Numbered-menu path for pipes and terminals without prompt_toolkit."""
-    _print_project_dashboard(session.projects, session.display_path)
+    _print_project_dashboard(session.projects, session.display_path, CDPROJ)
     try:
         choice = menu.prompt_text("number, Esc/q=cancel").strip().lower()
     except menu.ContextCancelled:

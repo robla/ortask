@@ -160,7 +160,11 @@ There is no `--edit`. Editing is a key in the picker, not a mode of the command.
 ## The picker
 
 The picker follows the bounded inline contract in `docs/interactive.md`:
-`full_screen=False`, content-sized within the usual ceiling.
+`full_screen=False`, content-sized within the usual ceiling. It titles itself
+`Change directory` and labels its rows `CD`, so it is not mistaken for the
+`ptui` navigator built from the same list; each row shows the project's
+directory and, when a `* Directories` section exists, the list that will set
+the stack.
 
 ```text
 ↑↓/jk · ↵ select · e edit · Esc/q cancel

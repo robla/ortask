@@ -64,13 +64,15 @@ registry. It uses the same registry resolution as `list`: `--registry`, then
 ```sh
 projmgr.py -i
 projmgr.py --registry ~/tmpsorta/proj2026 -i
-orgm -i
+pmgr -i
 ```
 
 `ptui` is the short alias. The browser shows the project list first using the
 same highlight-bar selector as task lists when a TTY is available;
-non-interactive runs keep the numbered fallback. It is the same project list
-`cdproj` shows, differing only in what `Enter` does. Selecting a project opens that
+non-interactive runs keep the numbered fallback. It is built from the same
+project list `cdproj` shows, but it identifies itself as `Project navigator`,
+labels its rows `PROJ`, and gives each project's open task count — see
+"Telling the two lists apart" below. Selecting a project opens that
 project's Org task file; a project with no task file says so and stays put. Task views
 show TODO and DONE rows by default; use `C-t` inside the task menu to cycle
 visibility through `all -> TODO -> DONE`, or start with:
@@ -277,6 +279,36 @@ nothing. Anything else in the entry is real data that exists nowhere else:
   this command does not delete trees.
 
 Removing the entry directory by hand is equally valid.
+
+## Telling the two lists apart
+
+`ptui` and `cdproj` are built from one project list, one row builder, and one
+highlight anchor, because a project is a project either way. That made them
+look alike enough to be confusing, so each surface names itself and says
+something different in its third column:
+
+|                | `ptui`              | `cdproj`           |
+|----------------|---------------------|--------------------|
+| Title          | `Project navigator` | `Change directory` |
+| Row label      | `PROJ`              | `CD`               |
+| Third column   | open task count     | directory, and which list sets the stack |
+
+```text
+Project navigator                    Change directory
+Registry: ~/tmpsorta/proj2026        Registry: ~/tmpsorta/proj2026
+
+▶  1  PROJ    elusync    3 open      ▶  1  CD  elusync   ~/src/elusync  [private]
+   2  PROJ    elweek     1 open         2  CD  elweek    ~/tmpsorta/electorama-weekly
+```
+
+The count is the number of open top-level tasks, the same rows `list` prints,
+so the two never disagree. The `[private]` / `[project]` marker names the list
+that will set the stack if you press Enter — the private list wins outright,
+so knowing which one is in play matters before the fact, not after.
+
+Both labels stay in `menu.PROJECT_ROW_LABELS`, which is what colors a row as a
+project rather than a task. Renaming one without adding it there would quietly
+turn its rows gray.
 
 ## Shell completion
 

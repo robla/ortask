@@ -69,6 +69,13 @@ The task selector has two modes, chosen automatically by
 The top-level `projmgr.py -i` project list is the root view of the same bounded
 application. Opening a project pushes its recovery or task view; leaving that
 task context refreshes the project list and restores the same project by name.
+
+`cdproj` renders its project list through the same code. Only the title, the
+row label, and the third column differ, so the two are told apart on sight
+rather than by their key bindings; `docs/projmgr.md` has the table. The row
+label doubles as the row's style key, so both belong to
+`menu.PROJECT_ROW_LABELS` — a label outside that set renders as a task-neutral
+row.
 In highlight-bar mode, `C-g` replaces the rows with a modal help view; `C-g`,
 `Esc`, `b`, `q`, or `Enter` closes help and restores the same selection. Custom
 actions use `menu.MenuAction` metadata so adding a binding also adds its key and

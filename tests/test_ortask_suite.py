@@ -1461,6 +1461,96 @@ def test_bash_completion_survives_an_unreadable_registry(tmp_path: Path) -> None
     assert result.stdout.strip() == ""
 
 
+def test_projmgr_listings_are_visually_distinct() -> None:
+    # ptui and cdproj show the same projects for different reasons. Whatever the
+    # wording, the two must not be mistakable for each other on screen.
+    from ortasklib import menu
+
+    navigator, cdproj = projmgr.NAVIGATOR, projmgr.CDPROJ
+    assert navigator.title != cdproj.title
+    assert navigator.label != cdproj.label
+    assert navigator.detail_header != cdproj.detail_header
+    # The row label also carries the row's color, so both must still read as
+    # project rows rather than falling through to the neutral style.
+    assert {navigator.label, cdproj.label} <= menu.PROJECT_ROW_LABELS
+    # Row labels are rendered in a six-column field.
+    assert all(len(label) <= 6 for label in (navigator.label, cdproj.label))
+
+
+def test_projmgr_navigator_counts_the_same_tasks_as_list(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """The navigator's count and ``pmgr list``'s rows must not disagree."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    registry.mkdir(parents=True)
+
+    project = tmp_path / "src" / "counted"
+    write(
+        project / "todo.org",
+        """
+        * Tasks
+        ** TODO t0001 One
+        *** TODO t0001.1 A subtask, not counted at the top level
+        ** DONE t0002 Two
+        ** TODO t0003 Three
+        """,
+    )
+    register(registry, "counted", project)
+    empty = tmp_path / "src" / "empty"
+    empty.mkdir(parents=True)
+    register(registry, "empty", empty)
+
+    projects = {p.name: p for p in manager.discover_projects(registry)}
+    assert projmgr._project_tasks(projects["counted"]) == "2 open"
+    assert projmgr._project_tasks(projects["empty"]) == "(no task file)"
+
+    summaries = {r["project"]: r for r in manager.summarize_projects(registry)}
+    assert len(summaries["counted"]["tasks"]) == 2
+
+
+def test_projmgr_cdproj_rows_name_the_winning_list(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """Which list will set the stack is worth knowing before Enter, not after."""
+    registry, project = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    entry = manager.discover_projects(registry)[0]
+    assert "[" not in projmgr._project_stack(entry)
+
+    (project / "TODO.org").write_text(
+        "* Tasks\n** TODO t0001 task\n* Directories\n** file:/shared/one\n",
+        encoding="utf-8",
+    )
+    entry = manager.discover_projects(registry)[0]
+    assert projmgr._project_stack(entry).endswith("[project]")
+
+    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
+    private.write_text("* Directories\n** file:/private/one\n", encoding="utf-8")
+    entry = manager.discover_projects(registry)[0]
+    assert projmgr._project_stack(entry).endswith("[private]")
+
+
+def test_menu_dashboards_escape_rich_markup(capsys) -> None:
+    # Cell text is data. Rich reads "[private]" and "[#A]" as console markup and
+    # drops what it cannot resolve, which silently ate both.
+    from ortasklib import menu
+
+    menu.print_project_dashboard(
+        "Change directory",
+        "~/projects",
+        [menu.ProjectRow(1, "myproj", "~/src/myproj  [private]")],
+        "Directories",
+    )
+    assert "[private]" in capsys.readouterr().out
+
+    menu.print_task_dashboard(
+        "Tasks", Path("x.org"), [menu.MenuRow(1, "TODO", "Fix [#A] handling")]
+    )
+    assert "[#A]" in capsys.readouterr().out
+
+
 def test_projmgr_rm_removes_only_the_registry_entry(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -3794,7 +3884,7 @@ def test_project_task_save_returns_to_same_project(tmp_path: Path) -> None:
 
     assert controller.session is not None
     assert len(controller.session.views) == 1
-    assert controller.session.current_view.title == "Projects"
+    assert controller.session.current_view.title == projmgr.NAVIGATOR.title
     assert controller.session.current_view.selected_index == 1
     assert controller.session.final_message == "Saved changes to tasks.org"
     assert controller.session.message == "Saved changes to tasks.org"
