@@ -111,6 +111,13 @@ class MenuView:
     on_result: Callable[["InlineMenuSession", MenuResult], None]
     title: str = ""
     summary: str = ""
+    #: Context pinned to the top right, opposite the title — a registry path, a
+    #: source file: something the reader wants available but not in the way. It
+    #: rides the title line rather than the summary line because a title is
+    #: short and fixed, so it neither crowds nor flickers as a selection moves.
+    #: It is also the part dropped when the terminal is too narrow, so nothing
+    #: load-bearing belongs here.
+    title_right: str = ""
     preamble: str = ""
     instruction: str = ""
     empty_text: str = "(no tasks)"
@@ -920,13 +927,30 @@ class InlineMenuSession:
         status_callback = getattr(view, "status_text", None)
         status = status_callback() if status_callback is not None else ""
         summary = " · ".join(part for part in (status, view.summary) if part)
-        return FormattedText(
-            [
-                ("class:title", view.title + "\n"),
-                ("class:summary", summary + "\n"),
-                ("", "\n"),
-            ]
-        )
+        right = getattr(view, "title_right", "")
+        fragments: list[tuple[str, str]] = []
+        gap = self._right_gap(view.title, right)
+        if gap is None:
+            fragments.append(("class:title", view.title + "\n"))
+        else:
+            fragments.append(("class:title", view.title))
+            fragments.append(("class:summary", " " * gap + right + "\n"))
+        fragments.append(("class:summary", summary + "\n"))
+        fragments.append(("", "\n"))
+        return FormattedText(fragments)
+
+    def _right_gap(self, left: str, right: str) -> int | None:
+        """Spaces before a right-aligned tail, or ``None`` to leave it off.
+
+        ``None`` means there is no tail, or the terminal cannot hold both. The
+        tail is the expendable half: it must never push what is on the left off
+        the line.
+        """
+        if not right:
+            return None
+        columns = self.application.output.get_size().columns
+        gap = columns - len(left) - len(right)
+        return gap if gap >= 2 else None
 
     def _render_body(self) -> FormattedText:
         view = self.current_view

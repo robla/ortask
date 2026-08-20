@@ -54,6 +54,30 @@ def _project_location(project: manager.Project) -> str:
     return f"{real}{_project_note(project)}"
 
 
+def _project_summary(project: manager.Project) -> str:
+    """Where the highlighted project actually lives.
+
+    A project menu must never make the reader guess at a location, so this
+    names the directory and the task file for whichever row is highlighted.
+    The task file is given by name when it sits directly in the project
+    directory, and by path when it does not.
+    """
+    directory = manager.real_project_path(project)
+    parts = [manager.friendly_path(directory)]
+    org_file = manager.canonical_org_file(project)
+    if org_file is not None:
+        parts.append(
+            org_file.name
+            if org_file.parent == directory
+            else manager.friendly_path(org_file)
+        )
+    elif project.warning:
+        parts.append(project.warning)
+    else:
+        parts.append("(no task file)")
+    return "  ·  ".join(parts)
+
+
 def _project_tasks(project: manager.Project) -> str:
     """How much open work a project has — the navigator's reason to exist.
 
@@ -92,6 +116,11 @@ def _project_stack(project: manager.Project) -> str:
     return f"{location}  [{sources[0].label}]"
 
 
+def _project_location_and_tasks(project: manager.Project) -> str:
+    """Location first, open work in parentheses — the navigator's table row."""
+    return f"{_project_location(project)}  ({_project_tasks(project)})"
+
+
 @dataclass(frozen=True)
 class _ProjectListing:
     """How one surface presents the shared project list.
@@ -106,10 +135,22 @@ class _ProjectListing:
     label: str
     detail_header: str
     detail: Callable[[manager.Project], str]
+    #: The numbered dashboard's column, when it cannot be the picker's. A table
+    #: has no highlight to describe, so anything the picker delegates to the
+    #: summary line has to appear in the row instead. ``detail_header`` names
+    #: this column, not the picker's.
+    dashboard_detail: Callable[[manager.Project], str] | None = None
+
+    def dashboard(self) -> Callable[[manager.Project], str]:
+        return self.dashboard_detail or self.detail
 
 
 NAVIGATOR = _ProjectListing(
-    "Project navigator", "PROJ", "Open tasks", _project_tasks
+    "Project navigator",
+    "PROJ",
+    "Location",
+    _project_tasks,
+    dashboard_detail=_project_location_and_tasks,
 )
 CDPROJ = _ProjectListing(
     "Change directory", "CD", "Directories", _project_stack
@@ -134,8 +175,9 @@ def _print_project_dashboard(
     display_path: str,
     listing: _ProjectListing,
 ) -> None:
+    detail = listing.dashboard()
     rows = [
-        menu.ProjectRow(index + 1, project.name, listing.detail(project))
+        menu.ProjectRow(index + 1, project.name, detail(project))
         for index, project in enumerate(projects)
     ]
     menu.print_project_dashboard(
@@ -171,11 +213,11 @@ def _project_view(
     selected_index: int = 0,
     on_resume=None,
 ) -> menu.MenuView:
-    return menu.MenuView(
+    view = menu.MenuView(
         rows=_project_rows(projects, listing),
         on_result=handle,
         title=listing.title,
-        summary=f"Registry: {display_path}",
+        title_right=f"Registry: {display_path}",
         instruction=instruction,
         empty_text="(no projects)",
         select_help=select_help,
@@ -184,6 +226,15 @@ def _project_view(
         on_resume=on_resume,
         actions=actions or {},
     )
+
+    def selected_summary() -> str:
+        index = view.selected_index
+        if not 0 <= index < len(projects):
+            return ""
+        return _project_summary(projects[index])
+
+    view.status_text = selected_summary
+    return view
 
 
 class _ProjectBrowser:

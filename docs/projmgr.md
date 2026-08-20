@@ -294,11 +294,19 @@ something different in its third column:
 | Third column   | open task count     | directory, and which list sets the stack |
 
 ```text
-Project navigator                    Change directory
-Registry: ~/tmpsorta/proj2026        Registry: ~/tmpsorta/proj2026
+Project navigator                                  Registry: ~/tmpsorta/proj2026
+~/src/elusync  ·  todo.org
 
-▶  1  PROJ    elusync    3 open      ▶  1  CD  elusync   ~/src/elusync  [private]
-   2  PROJ    elweek     1 open         2  CD  elweek    ~/tmpsorta/electorama-weekly
+▶  1  PROJ    elusync       3 open
+   2  PROJ    elweek        1 open
+```
+
+```text
+Change directory                                   Registry: ~/tmpsorta/proj2026
+~/src/elusync  ·  todo.org
+
+▶  1  CD      elusync       ~/src/elusync  [private]
+   2  CD      elweek        ~/tmpsorta/electorama-weekly
 ```
 
 The count is the number of open top-level tasks, the same rows `list` prints,
@@ -309,6 +317,21 @@ so knowing which one is in play matters before the fact, not after.
 Both labels stay in `menu.PROJECT_ROW_LABELS`, which is what colors a row as a
 project rather than a task. Renaming one without adding it there would quietly
 turn its rows gray.
+
+The second line is shared: whichever project is highlighted, both menus name
+its directory and its task file there, and the registry sits right-aligned on
+the title line. See "Do not obscure the location of stuff" in
+`docs/interactive.md`. `cdproj` shows the directory in its rows as well, which
+is a little redundant — but the task file is not redundant there, since it is
+one of the two files that can define a `* Directories` section.
+
+In the numbered dashboards there is no highlight to describe, so the navigator
+puts the location back in its rows, with the count in parentheses:
+
+```text
+┃ # ┃ Project     ┃ Location                               ┃
+│ 1 │ elusync     │ ~/src/elusync  (3 open)                │
+```
 
 ## Shell completion
 

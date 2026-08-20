@@ -76,6 +76,32 @@ rather than by their key bindings; `docs/projmgr.md` has the table. The row
 label doubles as the row's style key, so both belong to
 `menu.PROJECT_ROW_LABELS` — a label outside that set renders as a task-neutral
 row.
+
+### Do not obscure the location of stuff
+
+A project menu must never make the reader guess where something is. Both
+project menus therefore spend their summary line on the highlighted project's
+directory and task file, updating as the selection moves:
+
+```text
+Project navigator                                  Registry: ~/tmpsorta/proj2026
+~/src/elusync  ·  todo.org
+```
+
+Two consequences worth stating, because both are easy to get backwards:
+
+- **The registry rides the title line, not the summary line.** It is fixed for
+  the whole session, so pairing it with the fixed title keeps it still. Sharing
+  a line with the location would make it appear and disappear as the cursor
+  passed projects with longer paths.
+- **Right-aligned context is the expendable half.** `MenuView.title_right` is
+  dropped whole when the terminal cannot hold it beside the title, because
+  truncating the left to fit context would obscure exactly what must stay
+  legible. Nothing load-bearing goes there.
+
+The numbered dashboards have no highlight to describe, so a location that the
+picker delegates to the summary line has to appear in the row instead — which
+is why `_ProjectListing` carries a separate `dashboard_detail`.
 In highlight-bar mode, `C-g` replaces the rows with a modal help view; `C-g`,
 `Esc`, `b`, `q`, or `Enter` closes help and restores the same selection. Custom
 actions use `menu.MenuAction` metadata so adding a binding also adds its key and

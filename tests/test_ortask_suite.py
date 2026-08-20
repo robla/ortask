@@ -1532,6 +1532,99 @@ def test_projmgr_cdproj_rows_name_the_winning_list(
     assert projmgr._project_stack(entry).endswith("[private]")
 
 
+def test_projmgr_project_menu_summary_follows_the_highlight(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """A project menu names where the highlighted project lives, as you move."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    registry.mkdir(parents=True)
+
+    here = tmp_path / "src" / "here"
+    write(here / "todo.org", "* Tasks\n** TODO t0001 One\n")
+    register(registry, "here", here)
+    nested = tmp_path / "src" / "nested"
+    write(nested / "docs" / "plan.task.org", "* Tasks\n** TODO t0001 One\n")
+    register(registry, "nested", nested)
+    bare = tmp_path / "src" / "bare"
+    bare.mkdir(parents=True)
+    register(registry, "bare", bare)
+
+    projects = manager.discover_projects(registry)
+    view = projmgr._project_view(
+        projects,
+        "~/projects",
+        lambda session, result: None,
+        listing=projmgr.NAVIGATOR,
+        instruction=projmgr.PROJECT_MENU_INSTRUCTION,
+        select_help="Open the highlighted project",
+    )
+    assert view.title_right == "Registry: ~/projects"
+
+    summaries = []
+    for index in range(len(projects)):
+        view.selected_index = index
+        summaries.append(view.status_text())
+
+    # Directory first, always. A task file sitting in the project directory is
+    # named; one that does not is given its path.
+    assert summaries[0].startswith(str(bare))
+    assert summaries[0].endswith("(no task file)")
+    assert summaries[1] == f"{here}  ·  todo.org"
+    assert summaries[2] == f"{nested}  ·  {nested / 'docs' / 'plan.task.org'}"
+
+    # Out-of-range never raises; an empty registry has nothing to describe.
+    view.selected_index = 99
+    assert view.status_text() == ""
+
+
+def test_projmgr_navigator_dashboard_keeps_the_location(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """The numbered table has no highlight, so its rows carry the location."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    registry.mkdir(parents=True)
+    project = tmp_path / "src" / "shown"
+    write(project / "todo.org", "* Tasks\n** TODO t0001 One\n")
+    register(registry, "shown", project)
+
+    entry = manager.discover_projects(registry)[0]
+    # The picker delegates the location to its summary line; the table cannot.
+    assert projmgr.NAVIGATOR.detail(entry) == "1 open"
+    row = projmgr.NAVIGATOR.dashboard()(entry)
+    assert str(project) in row
+    assert "(1 open)" in row
+
+
+def test_menu_right_aligned_context_yields_to_the_left(tmp_path: Path) -> None:
+    """The registry is the expendable half; a location must never be pushed off."""
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+    from ortasklib import menu
+
+    view = menu.MenuView(
+        rows=[menu.MenuRow(1, "PROJ", "a")],
+        on_result=lambda session, result: None,
+        title="Project navigator",
+        title_right="Registry: ~/projects",
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):  # 80 columns
+            session = menu.InlineMenuSession(view)
+            assert session._right_gap("Project navigator", view.title_right) == 43
+            # No tail at all, and a tail that cannot fit, both render alone.
+            assert session._right_gap("Project navigator", "") is None
+            assert session._right_gap("x" * 70, view.title_right) is None
+
+            header = "".join(text for _, text in session._render_header())
+            title_line = header.split("\n")[0]
+            assert len(title_line) == 80
+            assert title_line.startswith("Project navigator")
+            assert title_line.endswith("Registry: ~/projects")
+
+
 def test_menu_dashboards_escape_rich_markup(capsys) -> None:
     # Cell text is data. Rich reads "[private]" and "[#A]" as console markup and
     # drops what it cannot resolve, which silently ate both.
