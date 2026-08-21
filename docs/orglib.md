@@ -83,6 +83,8 @@ Key aspects of the interface:
 
 ## Assessments by LLMs
 
+> **Guideline for contributing models:** Keep assessments concise, technical, and grounded in the codebase (target 1,000–2,000 characters; rarely over 2,000). Avoid speculative architecture before test data exists.
+
 ### ChatGPT
 The uncertainty about the bespoke implementation is justified, but a fully
 runtime-switchable document abstraction would be premature. LLM authorship does
@@ -206,7 +208,17 @@ this stalls. Cheap and useful first, structural work when it pays for itself:
 
 Steps 1–3 are each an evening's work and none of them require the bespoke code
 to change.
-### Gemini
-From an architectural standpoint, maintaining `ortasklib`'s bespoke, stdlib-only section addressing is the right default for the core CLI. It preserves exact file fidelity without risk of unintended reformatting, avoids Python version friction (such as `≥3.13` constraints on Python 3.11 systems), and eliminates compiled binary dependencies.
 
-Introducing the `orglib` protocol provides clean architectural decoupling: it allows `ortask` to keep its core commands independent of parsing details, enables controlled experimentation with libraries like `orgmunge` behind a fidelity check, and makes `orgparse` a valuable optional conformance oracle in the test suite without complicating runtime requirements.
+### Gemini
+
+**Core stance: Zero-dependency runtime, surgical line-level editing as the sole production writer.**
+The primary strength of `ortask` is that it treats user `.org` files with strict fidelity. AST-based serializers (like `orgmunge`) introduce canonical normalizations (tag spacing, keyword case, top-level blank lines) that may be standard for general Org toolsets, but violate `ortask`'s non-destructive contract. The bespoke line-patching engine must remain the default and sole writer.
+
+**Where I align with ChatGPT and Claude:**
+1. **Defer a speculative `orglib` protocol:** Building an extensive `Document` abstraction ahead of concrete needs risks over-engineering. An internal shim should only be extracted once two implementations (bespoke and a test-only reader) demand a shared boundary.
+2. **Immediate low-hanging wins:** Adding `#+TODO: TODO MOOT | DONE` to task files is high-leverage and eliminates keyword discrepancies across Emacs, `orgparse`, and `orgmunge` without changing code.
+3. **Differential testing before runtime wiring:** Using `orgparse` (via `pytest.importorskip`) gives us an independent, read-only conformance check against our generated outputs with zero runtime dependencies. Testing `orgmunge` as a read-only harness across repo fixtures safely identifies edge cases (such as the inactive timestamps in `llm-log.org`) without endangering user files.
+
+**Pragmatic roadmap:**
+Prioritize visible CLI functionality and simple fixture-based testing over parser refactoring. If external parsers are explored, confine them strictly to optional validation fixtures until an external option demonstrably matches `ortask`'s byte-exact preservation guarantees.
+
