@@ -19,12 +19,12 @@ directory stack, and `docs/format.md` for the Org conventions themselves.
 | Which projects exist | symlinks in registry subdirectories | `projmgr.py` | the registry's own repo, if it has one |
 | Which task file a project uses | the entry's `.org` symlink, else discovery | both tools | same |
 | A project's shared directory stack | `* Directories` in its task file | `projmgr.py cdproj` | the project's own repo |
-| A project's private directory stack | `<entry>/directories-private.org` | `projmgr.py cdproj` | never the project's repo |
+| A project's private directory stack | the registry index file (see below) | `projmgr.py cdproj` | never the project's repo |
 | Which file `ort` acts on | `--file`, `$ORTASK_FILE`, or an upward walk | `ortask.py` | n/a |
 
 Read the table top to bottom and the scope narrows: one global file, then one
-directory of pointers, then per-project files that sit next to the thing they
-describe. Nothing in the lower rows can be set from the upper ones.
+directory of pointers, then per-project settings. Nothing in the lower rows can
+be set from the upper ones.
 
 ## `ortask.ini`
 
@@ -33,7 +33,7 @@ The only global configuration file. It honors `$XDG_CONFIG_HOME`, defaulting to
 
 ```ini
 [projects]
-registry = ~/tmpsorta/proj2026
+registry = ~/Projects
 ```
 
 Resolution order for the registry is `--registry` on the command line, then
@@ -41,13 +41,18 @@ Resolution order for the registry is `--registry` on the command line, then
 typed is stored as typed rather than expanded, so the file stays portable
 between machines and readable by a human.
 
-`projmgr.py init` writes it (`--dry-run` to preview, `--force` to overwrite an
-existing value). Writing goes through the same atomic replace as Org edits, so
-an interrupted write cannot leave a half-file. Hand-editing is equally
-supported — it is an ini file, and nothing caches it.
+`~/Projects` is the intended standard location, including for this project's
+author, whose registry currently lives at `~/tmpsorta/proj2026` for historical
+reasons. Documentation should use `~/Projects` in examples so that the default
+and the convention are the same thing.
+
+`projmgr.py init` writes the file (`--dry-run` to preview, `--force` to
+overwrite an existing value). Writing goes through the same atomic replace as
+Org edits, so an interrupted write cannot leave a half-file. Hand-editing is
+equally supported — it is an ini file, and nothing caches it.
 
 There is no other section and no other option. If a future setting has a
-sensible per-project answer, it belongs in the project's Org file instead;
+sensible per-project answer, it belongs in Org where the user can see it;
 `ortask.ini` is for what must be known *before* any project can be found.
 
 ## Environment variables
@@ -61,8 +66,7 @@ sensible per-project answer, it belongs in the project's Org file instead;
 
 Note the asymmetry: there is an `ORTASK_FILE` but no `ORTASK_REGISTRY`. The
 registry is settable only by `--registry` or `ortask.ini`. Nothing depends on
-that gap; it simply has not been needed, and the per-invocation override already
-exists.
+that gap; it simply has not been needed.
 
 ## Task-file resolution
 
@@ -90,29 +94,19 @@ look like a project root?"
 
 ## Per-project configuration
 
-This is the literate layer, and the one still under active design.
+A project's configuration lives in Org, next to the thing it describes. There
+are two sources, and the split is by *audience*, not by content:
 
-A project's configuration is not centralized anywhere. It lives in two files
-that sit next to the project itself, both plain Org, both meaningful to a reader
-who has never run the tools:
+- **Shared** — a `* Directories` section in the project's own task file. It is
+  committed with the project and applies to everyone who clones it.
+- **Private** — machine-local paths that would be noise or leakage in a shared
+  repo. These live in the registry, because the registry is the only place that
+  is neither the project's repo nor a global config file.
 
-```text
-~/tmpsorta/proj2026/elusync/
-  elusync                 -> /home/robla/src/elusync      # the pointer
-  directories-private.org                                 # machine-local config
-```
-
-```org
-* Directories
-** ~/tmpsorta/proj2026/elusync
-** ~/src/elusync
-```
-
-The same `* Directories` section may appear in the project's own task file,
-where it is shared with everyone who clones the project. When both exist the
-private list wins outright and sets the order, and any entry present only in the
-shared list is reported as a warning rather than merged in — the full rule, with
-its rationale, is in `docs/cdproj.md`.
+When both exist the private list wins outright and sets the order, and any entry
+present only in the shared list is reported as a warning rather than merged in.
+The full rule is in `docs/cdproj.md`. **That rule is unaffected by anything
+below** — what follows changes only where the private side is stored.
 
 An Org heading was chosen over an ini section for a reason worth restating: the
 file a user already opens to read their tasks is the file that should carry the
@@ -124,80 +118,210 @@ second thing to keep valid.
 It means *not in the project's own repository*. It does not mean secret, and it
 does not mean untracked.
 
-`directories-private.org` holds absolute, machine-local paths — scratch
-directories, checkout locations, a sibling repo's path. Those are noise in a
-shared project repo and would conflict on every machine. Putting them in the
-registry entry is the only place they can live that is neither the project's
-repo nor a global config file.
+Whether private config is then version-controlled is the registry owner's
+business. A registry that is itself a git repo may legitimately track it, as the
+current one does — that is private-to-the-project-but-shared-across-my-machines
+data, which is a coherent thing to want. The tools never run git and never
+require the registry to be a repository.
 
-Whether they are then version-controlled is the registry owner's business. A
-registry that is itself a git repo may legitimately track them, as the current
-one does — that is one person's private-to-the-project-but-shared-across-their-machines
-data, which is a coherent thing to want. `docs/projects.md` reserves the
-`*-private.org` suffix so that a registry that does *not* want them tracked can
-exclude the whole class with one gitignore line.
+## The registry index file
 
-The tools never run git and never require the registry to be a repository.
+**Status: decided, not yet implemented.** The sections above describe today's
+behavior; this one describes the direction and supersedes the per-entry
+`directories-private.org` scheme.
+
+Private per-project config moves out of one file per registry entry
+(`<entry>/directories-private.org`) and into **one Org file at the registry
+root**. The symlinks do not change: they remain the pointers, because that is
+what they are, and the outward-symlink marker rule still decides what is a
+project. Only the private config is centralized.
+
+This is worth being explicit about, because an earlier draft of this document
+argued against centralizing. That argument was against moving the *pointers*
+into a document — which would have forced `projmgr.py` to become an Org editor
+just to run `rm`, and would have put a file and a set of symlinks in a position
+to disagree about what exists. Centralizing only the private config raises
+neither problem: `pmgr rm` is still `rm -r entry`, and the index never decides
+what a project is, only what settings a project has.
+
+What centralizing buys is the thing per-entry files could not: one document you
+can read top to bottom, that has room for prose about *why* a project is
+registered and what state it is in. That is the literate part, and it only works
+if there is one file.
+
+### What it is called
+
+**`projects.org`**, at the registry root — so, `~/Projects/projects.org`.
+
+It is the name a person would guess, it says what it is without a convention to
+learn, and it cannot be confused with a project's own task file because it is
+not one of the names in the resolution ladder.
+
+On the possible clash: there is one, it is small, and it is arguably a feature.
+`discover_projects` only ever looks at subdirectories, so a file at the registry
+root is invisible to project discovery — no clash there. But standing *in* the
+registry and running `ort` does pick it up, via the "exactly one generic `*.org`
+in the current directory" fallback. Verified:
+
+```console
+$ cd ~/Projects && ort
+# operates on ~/Projects/projects.org
+```
+
+That is a reasonable thing to happen. It means the index can carry its own
+`* Tasks` section for cross-project and registry-level work, and `ort` finds it
+by standing in the right place. The caveat: that fallback requires *exactly one*
+`.org` file there, so adding a second one at the registry root turns it into an
+ambiguity error. Anything that wants to be a sibling should be a subdirectory.
+
+### Shape
+
+One top-level heading per project, whose text is the registry entry name:
+
+```org
+#+TITLE: Projects
+
+* elusync
+  Sync tooling for Electorama. Registered while working out the
+  electowiki export path.
+** Directories
+   - ~/Projects/elusync
+   - ~/src/elusync
+
+* ortask
+** Directories
+   - ~/src/ortask
+   - ~/src/ortask/docs
+```
+
+Notes on the shape:
+
+- **Directory entries may be list items, subheadings, bare paths, or `file:`
+  links.** `core._strip_directory_entry` already accepts all four, so the
+  central file needs no new entry syntax. List items read better when nested
+  under a project heading, and are used in the examples above.
+- **Prose under a project heading is free text** and is never parsed. That is
+  the point of the file.
+- **The project name is the join key.** Matching should be case-insensitive, to
+  agree with the case-insensitive ordering `discover_projects` already uses.
+
+### What changes in the code
+
+Less than it looks. `core.parse_directories` currently finds a *top-level*
+`* Directories` heading; it needs a project-scoped form that first locates the
+top-level heading matching a project name, then finds `Directories` inside that
+subtree. Bounding a subtree at the next same-or-higher heading is exactly what
+`core.find_tasks_range` already does for `* Tasks`, so this is a generalization
+of existing machinery rather than new parsing.
+
+Three consequences worth deciding deliberately:
+
+1. **A project in the registry but not in the index** has no private stack. It
+   falls back to the project's own `* Directories`, then to the project root.
+   Silent and normal — the same as having no private file today.
+2. **A project in the index but not in the registry** is a stale section. Today
+   this state cannot exist, because deleting an entry deletes its private file
+   with it; centralizing makes config outlive the entry. `pmgr doctor` should
+   report it. That is the real cost of this change, and `doctor` is the
+   mitigation.
+3. **Duplicate headings for one project** should be a reported error, not a
+   silent first-wins.
+
+For a transition, read the index first and fall back to a per-entry
+`directories-private.org` with a deprecation warning; drop the fallback once the
+registry is converted.
+
+### Migration
+
+One-time and mechanical. This sketch reads every entry's private file and emits
+the index; it was tested against the current registry, including entries using
+`file:` links and a file with a trailing unrelated section. It drops `#`
+comments, which `parse_directories` ignores anyway:
+
+```sh
+registry=~/Projects
+for entry in "$registry"/*/directories-private.org; do
+    printf '* %s\n** Directories\n' "$(basename "$(dirname "$entry")")"
+    sed -n '/^\* Directories$/,$ {
+        /^\* Directories$/d
+        /^\* /q
+        s/^[*-]\+[[:space:]]*/   - /p
+    }' "$entry"
+    echo
+done > "$registry/projects.org"
+```
+
+Review the result, then remove the per-entry files. No verb should be added for
+this; it happens once.
 
 ### Reserved names
 
-- `*-private.org` — registry-entry-local data, never part of the project repo.
-- `directories-private.org` — the specific instance the suite reads today.
+- `projects.org` at the registry root — the index.
+- `*-private.org` — the superseded per-entry scheme (`docs/projects.md`).
+  Retained as a reserved suffix so a converted registry can still exclude any
+  such leftovers with one gitignore line.
 
-## Open question: one config file, or many?
+## Do we need an Org library?
 
-Recorded 2026-08-20 by robla:
+The question behind this: if `ortasklib` keeps growing Org-parsing code, is that
+reinventing a wheel that already exists?
 
-> I want the projmgr.py (cdproj/ptui) project-level configuration to be
-> literate. I like using symlinks as pointers to directories (because that is
-> what they are), but also I think the current project configuration is going
-> down the right path. It seems like having maybe one (but maybe many) .org file
-> in the directory pointed to in `~/.config/ortask/ortask.ini` is the right way
-> to go. Not sure which way to go, though.
+**Short answer: no library for the runtime, and no full parser either.** But the
+reasoning matters more than the verdict, because it draws a line that future
+features can be tested against.
 
-The two shapes on the table:
+### Why round-tripping through a library is the wrong shape
 
-**One file at the registry root** — a single `projects.org` listing every
-project, each as a heading with its directories beneath it. Maximally literate:
-the whole system is one document you can read top to bottom and write prose in.
+The suite's central promise is file fidelity: only touch the `* Tasks` subtree,
+only rewrite matched lines, never reformat the file. Every parse-and-serialize
+library breaks that by construction — it rebuilds the document from an AST, and
+normalizes blank lines, bullet style, and indentation on the way out. For a tool
+whose whole pitch is "your Org file stays yours," a library that reformats is
+not neutral, it is opposed to the point.
 
-**Many files, one per entry** — the status quo. Each registry subdirectory
-carries its own config next to its own symlink.
+The exception is a parser that preserves byte ranges, which permits surgical
+edits. That is what `ortask.py` already does with line patching, at a fraction
+of the dependency cost.
 
-The recommendation is to **keep many, and get the literacy a different way.**
-Three reasons, in descending order of how hard they are to reverse:
+### The libraries, as of August 2026
 
-1. **A central file would force `projmgr.py` to become an Org editor.** Its
-   layer boundary is that it edits config and registry symlinks but never Org
-   content — `ortask.py` owns that (`docs/architecture.md`). With one shared
-   file, `pmgr rm` can no longer be `rm -r entry`; it has to parse a document,
-   excise one subtree, and rewrite the rest without disturbing the user's prose.
-   That is the single largest piece of complexity on the table, and it buys
-   nothing that the many-file layout does not already have.
+| Library | Latest | Dependencies | Python | License | Notes |
+|---|---|---|---|---|---|
+| [orgparse](https://pypi.org/project/orgparse/) | 0.4.20251020 (Oct 2025) | **none** | ≥3.9 | BSD-2 | Read-only tree. The de facto standard; stable rather than abandoned. |
+| [orgmunge](https://pypi.org/project/orgmunge/) | 0.3.1 (Jul 2025) | `ply` | ≥3.10 | MIT | A real grammar; exists specifically to modify and write back. Re-serializes. |
+| [org-parser](https://github.com/Idorobots/org-parser) | 0.28.0 (May 2026) | `tree-sitter`, `tree-sitter-org` | **≥3.12** | MIT | Most complete; claims whitespace-preserving mutable trees. Compiled deps, ~2 GitHub stars. |
+| [orgformat](https://pypi.org/project/orgformat/) | 2026.6.6.1 (Jun 2026) | none | **≥3.13** | **GPL-3** | Timestamp/link formatting helpers, not a parser. |
+| [PyOrgMode](https://github.com/bjonnh/PyOrgMode) | 0.1 (2014) | none | — | unclear | Unmaintained for over a decade. |
 
-2. **It would create a second source of truth.** Today an entry is a project
-   because it points outward, and that positive marker is the whole test —
-   which is exactly what replaced an earlier blocklist of directory names. A
-   central list reintroduces the question "what if the file and the symlinks
-   disagree?", and every answer to it is a reconciliation rule that did not need
-   to exist.
+Two hard filters cut this list fast. This machine runs Python 3.11, so
+`org-parser` and `orgformat` cannot be installed at all. And `orgformat` is
+GPL-3, which is a licensing decision rather than a technical one for a project
+that has no `LICENSE` file yet.
 
-3. **Small files do not conflict.** In a registry under version control, per-entry
-   files let two projects change independently; one document makes every edit a
-   whole-file rewrite.
+The genuinely complete Org parser is `org-element` inside Emacs, reachable in
+batch mode. It is the only implementation that is authoritative by definition.
+It is also unavailable to the audience this tool is aimed at — org users who are
+not (yet) Emacs power users — so it cannot be required for normal operation,
+though it would be legitimate for an occasional deep-validation mode.
 
-What the one-file shape is genuinely better at is *prose* — saying why a project
-is registered, what state it is in, what to do next. That want is real and it is
-separable from configuration. The registry already has the right home for it: a
-`README.md` (or `README.org`) at the registry root that no tool reads. Keeping
-it tool-invisible is the feature, because it can then be freeform.
+### Recommendation
 
-So: pointers stay symlinks, config stays per-entry, prose goes in a root
-document that is never parsed. If a genuinely registry-wide *setting* ever
-appears — as opposed to prose — `ortask.ini` is where it goes, not a new Org
-file, because by definition it is needed before any project is found.
-
-This remains robla's call; nothing above has been implemented as a change.
+1. **No runtime dependency.** The stdlib-only constraint is worth more than any
+   of the above provides.
+2. **Do not grow a full Org parser either.** That is where the real wheel
+   reinvention would happen. What the suite needs is not a parser but a *section
+   addresser*: find a heading, bound its subtree, read or patch lines inside it.
+   That is what `find_tasks_range` is, and the registry index needs one more
+   instance of it.
+3. **Write the line down:** `ortasklib` understands headings, and treats body
+   lines as opaque text. It does not interpret tables, babel blocks, footnotes,
+   inline markup, or timestamps. If a proposed feature requires more than that,
+   the feature is probably wrong for this tool — that is the test.
+4. **Use `orgparse` in the test suite, not at runtime.** It has zero
+   dependencies and a compatible license, and pointing it at files `ortask.py`
+   has written is a cheap independent check that the output is really Org and
+   not just something this codebase's own regexes happen to accept. That is the
+   wheel worth reusing, and it costs the runtime nothing.
 
 ## Known gaps
 
@@ -205,12 +329,10 @@ This remains robla's call; nothing above has been implemented as a change.
   that private files are never candidates for task-file resolution, but
   `manager.choose_org_file` excludes only the exact name
   `directories-private.org`. A file named `notes-private.org` in a registry
-  entry is currently selected as that project's task file. Verified 2026-08-20;
-  the fix is to match the suffix rather than the literal name.
+  entry is currently selected as that project's task file. Verified 2026-08-20.
+  The registry index makes this less pressing, since per-entry files go away.
 - **`CLAUDE.md` and `GEMINI.md` describe the resolution ladder wrongly.** Both
   treat `tasks.org` as a legacy fallback tried last; it is in fact the *first*
-  name probed. The ladder in this document is the verified one. Left uncorrected
-  here because those are the shared agent-instruction files, and the sibling
-  `AGENTS.md` should be brought into line in the same pass.
-- **`ortask.ini` has no per-project section**, and should not grow one: a
-  setting that varies per project has a home next to the project.
+  name probed. The ladder in this document is the verified one.
+- **The project has no `LICENSE` file**, which needs settling before any
+  dependency's license can be assessed against it.
