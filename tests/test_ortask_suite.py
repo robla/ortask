@@ -17,8 +17,41 @@ if str(ROOT) not in sys.path:
 
 import ortask
 import projmgr
-import orglib
+import orglib  # noqa: E402 — after the sys.path insert above
 from ortasklib import core, manager, taskui, tasks
+
+
+def test_orglib_imports_without_ortasklib():
+    """orglib must stand alone: ortasklib depends on it, not the reverse.
+
+    Run in a subprocess with ortasklib blocked at import time, so an accidental
+    ``from ortasklib import ...`` added to orglib later fails here rather than
+    quietly reintroducing the cycle.
+    """
+    program = textwrap.dedent(
+        """
+        import sys
+
+        class Block:
+            def find_module(self, name, path=None):
+                if name == "ortasklib" or name.startswith("ortasklib."):
+                    raise ImportError("ortasklib is blocked")
+
+        sys.meta_path.insert(0, Block())
+        import orglib
+
+        text = "* Tasks" + chr(10) + "** TODO t0001 x" + chr(10)
+        assert [t.id for t in orglib.parse(text).tasks()] == ["t0001"]
+        assert not any(m.startswith("ortasklib") for m in sys.modules)
+        print("ok")
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True, text=True, cwd=str(ROOT),
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"
 
 
 def test_orglib_parse_agrees_with_core():

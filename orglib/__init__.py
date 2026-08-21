@@ -17,12 +17,16 @@ This is intentionally small. It covers the read path only, because that is what
 the callers routed through it so far actually need. Mutation, backend selection,
 and a fidelity declaration are described in ``docs/orglib.md`` and should be
 added when a caller needs them, not in advance.
+
+``orglib`` imports nothing outside the standard library. ``ortasklib`` depends
+on it, not the other way round; ``ortasklib.core`` re-exports the names in
+:mod:`orglib.syntax` so that callers predating the split keep working.
 """
 
 from __future__ import annotations
 
-from ortasklib import core
-from ortasklib.core import TodoItem
+from . import syntax
+from .syntax import TodoItem
 
 __all__ = ["Document", "TodoItem", "parse"]
 
@@ -42,7 +46,7 @@ class Document:
 
     def tasks(self) -> list[TodoItem]:
         """Task headings, scoped to ``* Tasks`` when the document has one."""
-        return core.parse_org(self._text)
+        return syntax.parse_org(self._text)
 
     def render(self) -> str:
         """The document as text.

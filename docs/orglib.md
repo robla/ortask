@@ -60,23 +60,21 @@ call sites are not, by design. Mutation, backend selection, and the fidelity
 declaration below are still design, not code.
 
 `orglib` is a **peer of `ortasklib`, not a member of it** — a top-level package
-imported as `import orglib`. Keeping the two side by side is what allows the
-seam between them to be an interface rather than an internal detail, and moving
-it while the package was 60 lines with three importers cost one directory
-rename plus four import lines.
+imported as `import orglib`. Side by side, the boundary between them is a public
+interface rather than an internal detail. Moving it while the package was 60
+lines with three importers cost one directory rename plus four import lines.
 
-One honest caveat about that move: the dependency still points the wrong way.
-`orglib` imports `ortasklib.core` for `parse_org()` and `TodoItem`, so today it
-is a peer by location and a dependent by code. The intended end state is the
-reverse — the Org primitives live in `orglib`, and `ortasklib` consumes them.
-Getting there means relocating the parsing half of `core.py` (the heading
-regexes, `find_tasks_range`, `_parse_task_headings`, `TodoItem`), which is a
-real change with 18 call sites behind it, not a rename.
+As of 2026-08-21 the dependency runs one way only: `ortasklib` imports `orglib`,
+and `orglib` imports nothing outside the standard library. The Org syntax —
+heading regexes, `TodoItem`, `find_tasks_range()`, `parse_org()`,
+`parse_directories()` — moved from `ortasklib/core.py` to `orglib/syntax.py`.
+`core.py` re-exports every one of those names, so all 18 pre-existing
+`parse_org()` call sites were left untouched; the move cost no caller churn.
 
-What makes that change cheap later is available now: `orglib` re-exports
-`TodoItem`, so callers can name `orglib.TodoItem` instead of `core.TodoItem`.
-Migrating the *names* callers use is independent of moving the *code*, and doing
-the names first means the eventual move is invisible outside `orglib`.
+A subprocess test (`test_orglib_imports_without_ortasklib`) imports `orglib`
+with `ortasklib` blocked at the meta-path and asserts `ortasklib` never enters
+`sys.modules`. Without it, an `from ortasklib import ...` added to `orglib`
+later would restore the old direction silently.
 
 Two tests hold the contract. One asserts the bespoke backend and `core` report
 the same tasks; the other asserts `parse(text).render() == text` byte for byte,

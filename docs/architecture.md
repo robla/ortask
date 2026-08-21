@@ -21,6 +21,9 @@ project browser folded into `projmgr.py`.
 ## Package Layout
 
 ```text
+orglib/
+  __init__.py
+  syntax.py
 ortasklib/
   __init__.py
   core.py
@@ -77,11 +80,7 @@ modules never call `sys.exit()` or parse CLI arguments.
 Pure, shared building blocks that operate on in-memory strings and individual
 files:
 
-- the `TodoItem` model
-- Org heading regexes, the `TASK_ID_PATTERN`, and task-file discovery constants
-- `find_tasks_range()` — `* Tasks` subtree detection
-- `parse_org()` — parses the `* Tasks` subtree when present, otherwise valid
-  task headings across the whole file
+- task-file discovery constants
 - low-level query helpers `filter_items()` / `find_by_id()`
 - `normalize_id()` / `canonical_id()`
 - `build_org_heading()` — render a `TodoItem` back to one heading line
@@ -91,6 +90,23 @@ files:
 
 `core.py` has no command names or argument parsing. Ambiguous task-file
 discovery raises `OrgFileDiscoveryError`; CLI front-ends decide how to report it.
+
+The `TodoItem` model, the heading regexes, `find_tasks_range()`, `parse_org()`,
+and `parse_directories()` moved to `orglib.syntax` on 2026-08-21. `core.py`
+re-exports all of them, so `core.parse_org` and `core.TodoItem` still resolve
+and no caller had to change.
+
+## `orglib/`
+
+A peer package, not part of `ortasklib`. It holds Org syntax and nothing else:
+`syntax.py` has the regexes, the `TodoItem` model, and the text parsers;
+`__init__.py` adds the `parse(text) -> Document` boundary that callers use.
+
+It imports nothing outside the standard library — no `ortasklib`, no third-party
+package. The dependency runs `ortasklib` → `orglib` only, which is what allows a
+different Org backend to be substituted later without `ortasklib` knowing.
+`tests/test_ortask_suite.py::test_orglib_imports_without_ortasklib` enforces the
+direction by importing `orglib` in a subprocess with `ortasklib` blocked.
 
 ## `tasks.py`
 

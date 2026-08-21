@@ -1,63 +1,53 @@
-"""Core Org parsing, models, ID helpers, discovery, and atomic writes.
+"""Task-file discovery, ID helpers, and atomic writes.
 
 This module is shared by both the local task tool (``ortask.py`` via
 ``ortasklib.tasks``) and the project-layer tools (``projmgr.py``/``taskui``
 via ``ortasklib.manager``). It contains no CLI parsing, no ``sys.exit`` calls,
 and no command names — just reusable building blocks that operate on in-memory
 strings and individual files.
+
+Org syntax itself lives in the standalone ``orglib`` package; the names below
+that come from :mod:`orglib.syntax` are re-exported here for callers that
+predate the split.
 """
 
 from __future__ import annotations
 
 import os
-import re
 import shlex
 import tempfile
-from dataclasses import dataclass, field
 from pathlib import Path
+
+# Org syntax lives in the standalone ``orglib`` package. These names are
+# re-exported so that ``core.parse_org``, ``core.TodoItem``, and the heading
+# regexes keep resolving for the callers that already use them.
+from orglib.syntax import (  # noqa: F401 — re-exported for existing callers
+    BARE_HEADING_RE,
+    BARE_WEEK_ID_RE,
+    DIRECTORIES_HEADING_RE,
+    HEADING_RE,
+    LIST_BULLET_RE,
+    NUMERIC_ID_RE,
+    ORG_HEADING_RE,
+    TASK_ID_PATTERN,
+    TASK_STATE_PATTERN,
+    TASK_STATES,
+    TASKS_HEADING_RE,
+    TEMPLATE_HEADING_RE,
+    TERMINAL_STATES,
+    TodoItem,
+    TOPLEVEL_HEADING_RE,
+    WEEK_ID_PARTS_RE,
+    WEEK_ID_RE,
+    count_template_sections,
+    find_tasks_range,
+    find_template_range,
+    parse_directories,
+    parse_org,
+)
 
 PRIMARY_PROBE_NAMES = ["tasks.org", "task.org"]
 COMPAT_PROBE_NAMES = ["todo.org"]
-NUMERIC_ID_RE = re.compile(r"^t\d{4}(?:\.\d+)*$")
-WEEK_ID_RE = re.compile(r"^tw(?:\d{2}|\d{4})[Ww]\d{2}(?:\.\d+)*$")
-BARE_WEEK_ID_RE = re.compile(r"^(?:\d{2}|\d{4})[Ww]\d{2}(?:\.\d+)*$")
-WEEK_ID_PARTS_RE = re.compile(
-    r"^tw(?P<year>\d{2}|\d{4})[Ww](?P<week>\d{2})(?P<suffix>(?:\.\d+)*)$"
-)
-TASK_ID_PATTERN = r"t(?:\d{4}|w(?:\d{2}|\d{4})[Ww]\d{2})(?:\.\d+)*"
-TASK_STATES = ("TODO", "DONE", "MOOT", "SUPERSEDED")
-TERMINAL_STATES = frozenset({"DONE", "MOOT", "SUPERSEDED"})
-TASK_STATE_PATTERN = "|".join(TASK_STATES)
-
-HEADING_RE = re.compile(
-    r"^(?P<stars>\*+)\s+"
-    rf"(?P<state>{TASK_STATE_PATTERN})\s+"
-    r"(?:\[#(?P<priority>[A-C])\]\s+)?"
-    rf"(?P<id>{TASK_ID_PATTERN})\s+"
-    r"(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$"
-)
-
-# Matches any org heading under * Tasks (with or without a TODO keyword / ID)
-BARE_HEADING_RE = re.compile(r"^(?P<stars>\*{2,})\s+(?P<rest>.+)$")
-ORG_HEADING_RE = re.compile(r"^\*+\s+")
-
-TASKS_HEADING_RE = re.compile(r"^\*\s+Tasks\s*$")
-TEMPLATE_HEADING_RE = re.compile(r"^\*\s+Template\s*$")
-DIRECTORIES_HEADING_RE = re.compile(r"^\*\s+Directories\s*$")
-TOPLEVEL_HEADING_RE = re.compile(r"^\*\s")
-LIST_BULLET_RE = re.compile(r"^[-+]\s+")
-
-
-@dataclass
-class TodoItem:
-    level: int
-    state: str
-    id: str
-    text: str
-    priority: str | None = None
-    tags: str | None = None
-    line_num: int = 0
-    body_lines: list[str] = field(default_factory=list)
 
 
 class OrgFileDiscoveryError(Exception):
@@ -174,137 +164,6 @@ def discover_org_file(directory: Path) -> Path | None:
     if len(org_files) > 1:
         _ambiguous(directory, "*.org", org_files)
     return None
-
-
-# ---------------------------------------------------------------------------
-# Parser
-# ---------------------------------------------------------------------------
-
-def find_tasks_range(lines: list[str]) -> tuple[int, int]:
-    """Return (start, end) line indices for the * Tasks subtree.
-
-    start is the index of the ``* Tasks`` heading itself.
-    end is the index of the next top-level heading, or len(lines).
-    """
-    start = None
-    for i, line in enumerate(lines):
-        if TASKS_HEADING_RE.match(line):
-            start = i
-            break
-    if start is None:
-        return -1, -1
-    for i in range(start + 1, len(lines)):
-        if re.match(r"^\*\s+", lines[i]) and not TASKS_HEADING_RE.match(lines[i]):
-            return start, i
-    return start, len(lines)
-
-
-def find_template_range(lines: list[str]) -> tuple[int, int]:
-    """Return (start, end) line indices for the first ``* Template`` subtree.
-
-    ``start`` is the index of the ``* Template`` heading itself; ``end`` is the
-    index of the next top-level heading, or ``len(lines)``. Returns ``(-1, -1)``
-    when there is no ``* Template`` heading. Mirrors :func:`find_tasks_range`
-    so template application can copy raw template lines without parsing them
-    into ``TodoItem`` records.
-    """
-    start = None
-    for i, line in enumerate(lines):
-        if TEMPLATE_HEADING_RE.match(line):
-            start = i
-            break
-    if start is None:
-        return -1, -1
-    for i in range(start + 1, len(lines)):
-        if re.match(r"^\*\s+", lines[i]) and not TEMPLATE_HEADING_RE.match(lines[i]):
-            return start, i
-    return start, len(lines)
-
-
-def count_template_sections(lines: list[str]) -> int:
-    """Count top-level ``* Template`` headings (used to reject 0 or >1)."""
-    return sum(1 for line in lines if TEMPLATE_HEADING_RE.match(line))
-
-
-def _strip_directory_entry(line: str) -> str:
-    """Strip the optional Org decoration around one ``* Directories`` entry.
-
-    Entries are usually written as subheadings with ``file:`` links
-    (``** file:~/src/ortask``), but a bare path, a list bullet, and Org link
-    brackets are all accepted so the section stays comfortable to hand-edit.
-    """
-    entry = line.strip().lstrip("*").strip()
-    entry = LIST_BULLET_RE.sub("", entry)
-    if entry.startswith("[[") and "]]" in entry:
-        entry = entry[2:entry.index("]]")].split("][")[0].strip()
-    if entry.startswith("file:"):
-        entry = entry[len("file:"):].strip()
-    return entry
-
-
-def parse_directories(text: str) -> list[str] | None:
-    """Return the raw entries under a top-level ``* Directories`` heading.
-
-    Returns ``None`` when the text has no such section, which is different from
-    an empty list for a section that exists but lists nothing. The section runs
-    until the next top-level heading. Blank lines and ``#`` comments are
-    skipped; everything else is stripped of Org decoration but left otherwise
-    unexpanded, since resolving a path needs a project root this module has no
-    opinion about.
-    """
-    entries: list[str] | None = None
-    for line in text.splitlines():
-        if DIRECTORIES_HEADING_RE.match(line):
-            entries = []
-            continue
-        if entries is None:
-            continue
-        if TOPLEVEL_HEADING_RE.match(line):
-            break
-        entry = _strip_directory_entry(line)
-        if not entry or entry.startswith("#"):
-            continue
-        entries.append(entry)
-    return entries
-
-
-def _parse_task_headings(lines: list[str], start: int, end: int) -> list[TodoItem]:
-    items: list[TodoItem] = []
-    active_item: TodoItem | None = None
-    for i in range(start, end):
-        m = HEADING_RE.match(lines[i])
-        if m:
-            active_item = TodoItem(
-                level=len(m.group("stars")),
-                state=m.group("state"),
-                id=m.group("id"),
-                text=m.group("text"),
-                priority=m.group("priority"),
-                tags=m.group("tags"),
-                line_num=i,
-            )
-            items.append(active_item)
-        elif ORG_HEADING_RE.match(lines[i]):
-            active_item = None
-        elif active_item is not None:
-            # Non-heading lines belong to the most recent task's body
-            active_item.body_lines.append(lines[i])
-
-    return items
-
-
-def parse_org(text: str) -> list[TodoItem]:
-    """Parse ortask-compatible task headings.
-
-    If a top-level ``* Tasks`` section exists, parsing is scoped to that subtree.
-    Otherwise, parse valid task headings from the whole file. This
-    lets ordinary Org files participate without requiring a dedicated section.
-    """
-    lines = text.splitlines()
-    start, end = find_tasks_range(lines)
-    if start >= 0:
-        return _parse_task_headings(lines, start + 1, end)
-    return _parse_task_headings(lines, 0, len(lines))
 
 
 # ---------------------------------------------------------------------------
