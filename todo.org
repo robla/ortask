@@ -168,3 +168,11 @@ file keywords and inherited context in a synthetic standalone document, and
 map backend output back to the original span. Exercise orgmunge as a test-only
 adapter first. Report normalization inside the region and prove the rest of the
 file remains exact; do not expose a production writer or runtime selector yet.
+** TODO t0031 Save shell directory stack to private dirstack (cdproj -s / pmgr set-dirs)
+Implement =projmgr.py set-dirs [PROJECT]= and =cdproj -s [PROJECT]= to persist
+the live shell directory stack (=dirs -l -p=) into the project's private
+=directories-private.org=. Support current-project auto-detection from =$PWD=,
+path serialization using =~= under =$HOME=, deduplication, and interactive
+prompts when subtracting directories from an existing private stack.
+See =docs/cdproj.md= for full specification details.
+
