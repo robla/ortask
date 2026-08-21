@@ -261,66 +261,11 @@ this; it happens once.
   Retained as a reserved suffix so a converted registry can still exclude any
   such leftovers with one gitignore line.
 
-## Do we need an Org library?
+## Org library assessment
 
-The question behind this: if `ortasklib` keeps growing Org-parsing code, is that
-reinventing a wheel that already exists?
+The evaluation of external Python Org-mode libraries versus `ortasklib`'s bespoke surgical editing model is detailed in `docs/orglib.md`.
 
-**Short answer: no library for the runtime, and no full parser either.** But the
-reasoning matters more than the verdict, because it draws a line that future
-features can be tested against.
-
-### Why round-tripping through a library is the wrong shape
-
-The suite's central promise is file fidelity: only touch the `* Tasks` subtree,
-only rewrite matched lines, never reformat the file. Every parse-and-serialize
-library breaks that by construction — it rebuilds the document from an AST, and
-normalizes blank lines, bullet style, and indentation on the way out. For a tool
-whose whole pitch is "your Org file stays yours," a library that reformats is
-not neutral, it is opposed to the point.
-
-The exception is a parser that preserves byte ranges, which permits surgical
-edits. That is what `ortask.py` already does with line patching, at a fraction
-of the dependency cost.
-
-### The libraries, as of August 2026
-
-| Library | Latest | Dependencies | Python | License | Notes |
-|---|---|---|---|---|---|
-| [orgmunge](https://pypi.org/project/orgmunge/) | 0.3.1 (Jul 2025) | `ply` | ≥3.10 | MIT | A real grammar; exists specifically to modify and write back. Re-serializes. |
-| [orgparse](https://pypi.org/project/orgparse/) | 0.4.20251020 (Oct 2025) | **none** | ≥3.9 | BSD-2 | Read-only tree. The de facto standard; stable rather than abandoned. |
-| [panflute](https://pypi.org/project/panflute/) | 2.3.1 (Aug 2026) | `pandoc` (system binary) | ≥3.6 | BSD-3 | A pythonic wrapper for Pandoc filters; parses/modifies the Pandoc AST. |
-| [orgformat](https://pypi.org/project/orgformat/) | 2026.6.6.1 (Jun 2026) | none | **≥3.13** | **GPL-3** | Timestamp/link formatting helpers, not a parser. Created by Karl Voit. |
-| [org-rw](https://pypi.org/project/org-rw/) | 0.0.2 (Jul 2024) | none | — | Apache-2 | Conceptually closest to `ortask` needs (retains source locations, round-trip checks), but immature (drops Org block delimiters). Under investigation. |
-| [org-parser](https://github.com/Idorobots/org-parser) | 0.28.0 (May 2026) | `tree-sitter`, `tree-sitter-org` | **≥3.12** | MIT | Rejected: requires Python ≥3.12 (incompatible with target 3.11 environment) and has very low adoption (~2 stars). |
-| [PyOrgMode](https://github.com/bjonnh/PyOrgMode) | 0.1 (2014) | none | — | unclear | Rejected: completely unmaintained since 2014. |
-
-A key constraint cuts this list fast: this machine runs Python 3.11.2, so the latest version of `orgformat` (requiring `≥3.13`) and `org-parser` (requiring `≥3.12`) cannot be installed at all (running `pip install orgformat` fetches a very old version from 2019). Additionally, `orgformat` is licensed under GPL-3, which is a licensing decision rather than a technical one for a project that has no `LICENSE` file yet.
-
-The genuinely complete Org parser is `org-element` inside Emacs, reachable in
-batch mode. It is the only implementation that is authoritative by definition.
-It is also unavailable to the audience this tool is aimed at — org users who are
-not (yet) Emacs power users — so it cannot be required for normal operation,
-though it would be legitimate for an occasional deep-validation mode.
-
-### Recommendation
-
-1. **No runtime dependency.** The stdlib-only constraint is worth more than any
-   of the above provides.
-2. **Do not grow a full Org parser either.** That is where the real wheel
-   reinvention would happen. What the suite needs is not a parser but a *section
-   addresser*: find a heading, bound its subtree, read or patch lines inside it.
-   That is what `find_tasks_range` is, and the registry index needs one more
-   instance of it.
-3. **Write the line down:** `ortasklib` understands headings, and treats body
-   lines as opaque text. It does not interpret tables, babel blocks, footnotes,
-   inline markup, or timestamps. If a proposed feature requires more than that,
-   the feature is probably wrong for this tool — that is the test.
-4. **Use `orgparse` in the test suite, not at runtime.** It has zero
-   dependencies and a compatible license, and pointing it at files `ortask.py`
-   has written is a cheap independent check that the output is really Org and
-   not just something this codebase's own regexes happen to accept. That is the
-   wheel worth reusing, and it costs the runtime nothing.
+In short: `ortask` avoids full AST round-tripping to preserve byte-exact file fidelity, maintains zero runtime dependencies (stdlib-only), and considers lightweight testing integration (such as optional verification with `orgparse`).
 
 ## Known gaps
 

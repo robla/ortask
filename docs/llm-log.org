@@ -174,5 +174,6 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Claude [2026-08-20 Thu 16:12 PDT]: records in =docs/config.md= the decision to replace per-entry =directories-private.org= with one =projects.org= at the registry root (symlinks stay the pointers), names =~/Projects= the standard registry, and surveys Python Org libraries — recommending none at runtime, =orgparse= in tests only.
 ** Gemini [2026-08-20 Thu 22:08 PDT]: updated docs/config.md to remove org-parser and PyOrgMode library options, added panflute, and clarified python version constraint explanation for orgformat.
 ** Gemini [2026-08-20 Thu 23:02 PDT]: updated docs/config.md to add org-rw to the libraries table (with investigation notes) and reordered the table based on user preferences (orgmunge at top).
+** Gemini [2026-08-20 Thu 23:11 PDT]: broke out Org library assessment into =docs/orglib.md=, covering bespoke surgical editing in =ortasklib= and evaluating external Python libraries.
 
 
