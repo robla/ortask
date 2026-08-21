@@ -83,64 +83,42 @@ Key aspects of the interface:
 
 ## Assessments by LLMs
 
-> **Guideline for contributing models:** Keep assessments concise, technical, and grounded in the codebase (target 1,000–2,000 characters; rarely over 2,000). Avoid speculative architecture before test data exists.
+> **Guideline for contributing models:** Keep assessments concise and technical
+> (target 1,000–2,000 characters). Describe the preferred long-term architecture
+> and a practical path toward it. Long-term speculation is welcome; label its
+> assumptions, ground it in the current code and measured library behavior, and
+> identify the evidence needed before committing to it.
 
 ### ChatGPT
-The uncertainty about the bespoke implementation is justified, but a fully
-runtime-switchable document abstraction would be premature. LLM authorship does
-not by itself make the existing code "slop"; duplicated parsing rules, unclear
-invariants, and tests that only confirm the parser's own assumptions would. An
-external library does not automatically remove those risks, because its adapter
-and the mapping from general Org nodes to ortask's IDs, states, archive rules,
-and source-preservation contract can become equally complex.
+Long-term, `orglib` should be the stable boundary between ortask's task model and
+Org implementation details. CLI and TUI code should use ortask-owned values and
+operations; backends should locate Org structures and produce text edits. File
+discovery, atomic writes, and transactions should remain outside the backend.
+This permits three outcomes: a bespoke engine, an external parser with the
+surgical writer, or an external read/write engine that proves equally safe.
 
-`orglib` is worthwhile if it begins as a small internal boundary, not a promise
-that all Org libraries are interchangeable. The proposed `Document` protocol is
-already incomplete for ortask's real operations: title and body editing,
-priority, subtree movement, templates, archive metadata, source locations, and
-buffered transactions are absent. Expanding that protocol in advance risks
-recreating the application API inside a speculative abstraction. Instead,
-separate three responsibilities and introduce their interfaces only as callers
-need them:
+The interface should be capability-based rather than assuming every library is
+a complete `Document` replacement. A reader can expose tasks and source ranges;
+an editor can additionally implement mutations, which must fail explicitly when
+unsupported. This shape could accommodate `orgparse` as an oracle, Tree-sitter
+as a source locator, and `orgmunge` as a full backend without leaking library
+node types into the application.
 
-1. Parse ortask's supported structures into backend-neutral values and source
-   ranges.
-2. Describe an intended mutation and apply the smallest possible text patch.
-3. Keep file resolution, atomic I/O, and transaction handling outside the
-   parser backend.
+`orgmunge` is the most interesting long-term replacement, but version 0.3.1 is
+not yet a safe production writer: local tests found normalization across the
+repository corpus and a parse failure on inactive timestamps in
+`docs/llm-log.org`. These are reasons to measure and engage upstream, not to
+close the option. Adoption should require semantic agreement for every
+supported operation and byte preservation outside declared edit ranges; an
+untouched round trip alone is not enough.
 
-The first deliverable should therefore be a corpus and conformance suite, not a
-public backend selector or a large migration of every caller. Optional
-`orgparse` tests should compare headings, levels, states, IDs, priorities, tags,
-and hierarchy after representative ortask writes. The suite should also keep
-exact before/after fixtures for every mutation and assert that bytes outside the
-declared edit ranges are unchanged. A few optional Emacs `org-element` checks
-would provide a more authoritative second opinion where useful.
-
-`orgmunge` remains a credible experiment, but is not currently a safe writer for
-ortask. Local tests with 0.3.1 normalized every repository Org document it
-serialized and failed to parse the inactive timestamps in `docs/llm-log.org`.
-Its PLY parser also reported grammar conflicts and attempted to write parser
-cache files beside the installed package. A successful untouched round trip is
-a useful preflight check, but it is not sufficient: each supported mutation must
-also prove semantic agreement and preservation outside the intended edit.
-
-The practical sequence is:
-
-1. Characterize the bespoke behavior with independent and preservation tests.
-2. Move repeated parsing and patch planning behind a narrow internal `orglib`
-   boundary as ordinary refactoring makes that useful.
-3. Add orgmunge as a test-only differential backend before exposing it at
-   runtime; direct Tree-sitter is also worth testing because byte ranges fit the
-   surgical-writer model better than full serialization.
-4. Support runtime selection only after a backend covers the actual read and
-   mutation matrix, fails closed on unsupported syntax, and passes the real-file
-   corpus without unexplained differences.
-
-For now, the bespoke implementation should remain the sole production writer.
-The exit strategy should be real but inexpensive: orgmunge may replace some or
-all parsing later, but ortask should not normalize users' files or broaden its
-Org conventions merely to make one serializer pass.
+The route forward is to establish a real-file conformance corpus, add optional
+`orgparse` and orgmunge differential tests, and extract the current parsing and
+patch planning behind `orglib` as feature work reaches it. Orgmunge and direct
+Tree-sitter adapters can then run under the same tests. Runtime selection should
+come only after a backend covers the mutation matrix and fails closed on
+unsupported syntax. Until then, the bespoke writer remains the default while
+the architecture makes replacing it a measured decision rather than a rewrite.
 
 ### Claude
 
@@ -221,4 +199,3 @@ The primary strength of `ortask` is that it treats user `.org` files with strict
 
 **Pragmatic roadmap:**
 Prioritize visible CLI functionality and simple fixture-based testing over parser refactoring. If external parsers are explored, confine them strictly to optional validation fixtures until an external option demonstrably matches `ortask`'s byte-exact preservation guarantees.
-
