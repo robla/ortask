@@ -10,8 +10,10 @@ Splits reusable behavior out of the top-level scripts:
                 ``ortask.py`` and ``projmgr.py``.
 - ``menu``    — dashboard row models, Rich/plain rendering helpers, and shared
                 prompt cancellation for interactive tools.
-- ``orglib``  — the boundary between callers and whatever parses the Org text.
-                Read-only so far, backed by ``core``; see ``docs/orglib.md``.
+
+``orglib`` is a peer package, not a member of this one: it is the boundary
+between callers and whatever parses the Org text. It currently imports
+``core``; the intended end state reverses that. See ``docs/orglib.md``.
 
 See ``docs/architecture.md`` for the design.
 """

@@ -24,7 +24,8 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from ortasklib import core, manager, menu, orglib, taskui
+import orglib
+from ortasklib import core, manager, menu, taskui
 
 
 # ---------------------------------------------------------------------------

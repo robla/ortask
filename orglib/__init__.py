@@ -21,10 +21,10 @@ added when a caller needs them, not in advance.
 
 from __future__ import annotations
 
-from .. import core
-from ..core import TodoItem
+from ortasklib import core
+from ortasklib.core import TodoItem
 
-__all__ = ["Document", "parse"]
+__all__ = ["Document", "TodoItem", "parse"]
 
 
 class Document:

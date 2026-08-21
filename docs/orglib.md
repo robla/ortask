@@ -52,12 +52,31 @@ The default engine remains bespoke and stdlib-only to preserve zero-dependency d
 
 ### The `orglib` Interface
 
-**Implemented so far (2026-08-21):** `ortasklib/orglib/` exists with a single
+**Implemented so far (2026-08-21):** `orglib/` exists with a single
 bespoke backend and a read-only surface — `parse(text) -> Document`,
 `Document.tasks()`, and `Document.render()`. `manager.summarize_projects()` and
 `projmgr._project_tasks()` are routed through it; the other 16 `parse_org()`
 call sites are not, by design. Mutation, backend selection, and the fidelity
 declaration below are still design, not code.
+
+`orglib` is a **peer of `ortasklib`, not a member of it** — a top-level package
+imported as `import orglib`. Keeping the two side by side is what allows the
+seam between them to be an interface rather than an internal detail, and moving
+it while the package was 60 lines with three importers cost one directory
+rename plus four import lines.
+
+One honest caveat about that move: the dependency still points the wrong way.
+`orglib` imports `ortasklib.core` for `parse_org()` and `TodoItem`, so today it
+is a peer by location and a dependent by code. The intended end state is the
+reverse — the Org primitives live in `orglib`, and `ortasklib` consumes them.
+Getting there means relocating the parsing half of `core.py` (the heading
+regexes, `find_tasks_range`, `_parse_task_headings`, `TodoItem`), which is a
+real change with 18 call sites behind it, not a rename.
+
+What makes that change cheap later is available now: `orglib` re-exports
+`TodoItem`, so callers can name `orglib.TodoItem` instead of `core.TodoItem`.
+Migrating the *names* callers use is independent of moving the *code*, and doing
+the names first means the eventual move is invisible outside `orglib`.
 
 Two tests hold the contract. One asserts the bespoke backend and `core` report
 the same tasks; the other asserts `parse(text).render() == text` byte for byte,
@@ -68,7 +87,7 @@ orgmunge applies — and fails as intended.
 The fuller shape below is the target, not the current state:
 
 ```python
-# ortasklib/orglib/__init__.py
+# orglib/__init__.py
 from typing import Protocol
 from ortasklib.core import TodoItem
 

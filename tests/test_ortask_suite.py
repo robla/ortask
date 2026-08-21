@@ -17,7 +17,8 @@ if str(ROOT) not in sys.path:
 
 import ortask
 import projmgr
-from ortasklib import core, manager, orglib, taskui, tasks
+import orglib
+from ortasklib import core, manager, taskui, tasks
 
 
 def test_orglib_parse_agrees_with_core():

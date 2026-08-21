@@ -15,7 +15,9 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import core, orglib
+import orglib
+
+from . import core
 
 DEFAULT_REGISTRY = "~/Projects"
 
