@@ -76,33 +76,81 @@ with `ortasklib` blocked at the meta-path and asserts `ortasklib` never enters
 `sys.modules`. Without it, an `from ortasklib import ...` added to `orglib`
 later would restore the old direction silently.
 
-Two tests hold the contract. One asserts the bespoke backend and `core` report
-the same tasks; the other asserts `parse(text).render() == text` byte for byte,
-which is the property a second backend would have to match. That second test was
-checked against a deliberate keyword-lowercasing change — the same normalization
-orgmunge applies — and fails as intended.
+Two tests hold the current contract. One asserts the bespoke backend and `core`
+report the same tasks; the other asserts `parse(text).render() == text` byte for
+byte. That equality remains the baseline for an untouched document, but it is
+not enough to qualify an editing backend. Region edits also need assertions
+about their intended change and every byte outside it.
 
 The fuller shape below is the target, not the current state:
 
 ```python
 # orglib/__init__.py
 from typing import Protocol
-from ortasklib.core import TodoItem
 
 def parse(text: str) -> "Document": ...
 
 class Document(Protocol):
     def tasks(self) -> list[TodoItem]: ...
-    def directories(self, project: str | None = None) -> list[str] | None: ...
-    def set_state(self, task_id: str, state: str) -> None: ...
-    def add_task(self, parent: str | None, state: str, text: str) -> str: ...
+    def region(self, selector: RegionSelector) -> "Region": ...
+    def apply(self, edit: "RegionEdit") -> "Document": ...
     def render(self) -> str: ...
+
+class Region(Protocol):
+    span: TextRange
+    text: str
+    base_level: int
+    context: OrgContext
+    source_revision: str
 ```
 
 Key aspects of the interface:
-- **Decoupled Data Structures:** Returns native `TodoItem` objects rather than library-specific node classes.
-- **In-Memory Text Transformation:** Accepts text and returns rendered text, allowing caller modules to manage atomic file I/O uniformly.
-- **Backend Selection:** Supports runtime selection (e.g. `ORTASK_ORGLIB=orgmunge`), defaulting to the bespoke implementation when unspecified.
+- **Decoupled Data Structures:** Returns `orglib` values rather than
+  library-specific node classes.
+- **In-Memory Text Transformation:** Accepts text and returns text; file
+  discovery, symlink resolution, atomic I/O, and transactions remain outside.
+- **Capability-Based Backends:** A backend may read whole documents, parse
+  regions, produce exact patches, or replace bounded regions. Unsupported
+  operations fail explicitly rather than falling back silently.
+
+### Regions and Partial-Document Editing
+
+A top-level subtree such as `* Tasks` is often valid input to a full Org parser,
+but it is not necessarily a self-contained document. Its interpretation can
+depend on file-level `#+TODO`, `#+FILETAGS`, `#+PROPERTY`, `#+LINK`, and
+`#+SETUPFILE` declarations, as well as tags and properties inherited from
+ancestor headings. Nested subtrees also carry an original heading depth. The
+[Org manual](https://orgmode.org/manual/In_002dbuffer-Settings.html) documents
+the file-wide settings, and its
+[tag inheritance](https://orgmode.org/manual/Tag-Inheritance.html) rules show
+why extracted text alone is insufficient.
+
+`orglib` should therefore broker **regions**, not hand a backend an unqualified
+substring. A `Region` identifies an exact span in the original source and
+carries a context envelope: relevant file keywords, ancestor context, base
+heading level, and a revision or preimage check. For a backend that expects a
+standalone document, `orglib` may synthesize a prologue and rebase headings,
+then map the backend's result back to the original span. Synthetic context is
+never written into the source accidentally.
+
+Backends may return one of two edit forms:
+
+- **Patch:** one or more replacements relative to the region. Text outside the
+  patches, including untouched text inside the region, remains exact.
+- **Bounded replacement:** a serialized replacement for the entire region.
+  Text outside the region remains exact, while normalization inside it is an
+  explicit, reviewable consequence.
+
+The broker validates the source revision, rejects edits outside the selected
+span, and applies the result to the original text. This makes a normalizing
+library such as orgmunge potentially useful without granting it permission to
+rewrite the entire file. It does not make normalization harmless: replacing
+`* Tasks` could still reformat every task, so exact patches should remain the
+default and bounded replacement should require an explicit fidelity policy.
+
+In Org terminology, external libraries do not all use “section” consistently.
+`Region` is the umbrella term here; selectors can identify a top-level named
+subtree, one heading subtree, a task body, or eventually a whole document.
 
 ### Testing & Validation with `orgparse`
 

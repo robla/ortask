@@ -118,6 +118,8 @@ costs a listing, a wrong write costs a file. Measured 2026-08-21: orgmunge
 normalizes keyword case, tag padding, and blank lines before top-level headings,
 and cannot parse either =llm-log.org= (inactive timestamp in the heading).
 Record expected incompatibilities explicitly rather than silently omitting them.
+After =t0028=, compare whole-document parsing with context-enveloped =* Tasks=
+regions so the broker's extraction and context rules are tested too.
 ** TODO t0023 Declare task keywords in-file with #+TODO:
 Add =#+TODO: TODO | DONE MOOT SUPERSEDED= to task files. Keywords to the right
 of the bar are terminal states, matching =orglib.TERMINAL_STATES=. Without a
@@ -147,15 +149,22 @@ Move its contract tests into a focused module that imports only =orglib= and
 can run without importing =ortasklib=. Define how another repository such as
 castabout installs and versions it before promising =orglib= as a standalone
 dependency; add packaging metadata only when that consumer path is chosen.
-** TODO t0028 Separate generic Org structure from ortask policy
+** TODO t0028 Define source-backed regions and separate task policy
 =orglib/syntax.py= currently combines heading parsing with ortask's state names,
-ID grammar, and =Tasks=/=Template=/=Directories= section conventions. Decide
-whether =orglib= is a generic Org library or explicitly the ortask dialect. For
-generic reuse, keep source-preserving heading structure in the base layer and
-make task conventions a configurable dialect or adapter.
-** TODO t0029 Define the mutation conformance matrix before adding writers
+ID grammar, and =Tasks=/=Template=/=Directories= conventions. Define a generic
+=Region= with an original source span, text, heading depth, context envelope,
+and source revision. Decide which task conventions belong in a configurable
+dialect or adapter while keeping region detection and source mapping generic.
+** TODO t0029 Define region-edit conformance before adding writers
 Create before/after fixtures for state, priority, title, body, add, template,
-and archive operations. Assert both the intended semantic result and exact
-preservation outside declared edit ranges. Use the same matrix to compare the
-bespoke writer with orgmunge and source-range approaches using direct
-Tree-sitter or org-rw; an unchanged =render()= test alone is not sufficient.
+and archive operations. Test exact relative patches separately from explicitly
+normalizing whole-region replacements. Assert the semantic result, reject stale
+or out-of-bounds edits, and preserve everything outside the declared ranges.
+Use the same matrix for the bespoke writer, orgmunge, direct Tree-sitter, and
+org-rw approaches; an unchanged =render()= test alone is not sufficient.
+** TODO t0030 Prototype brokered partial-document editing
+After =t0028= and =t0029=, extract =* Tasks= as a source-backed region, supply
+file keywords and inherited context in a synthetic standalone document, and
+map backend output back to the original span. Exercise orgmunge as a test-only
+adapter first. Report normalization inside the region and prove the rest of the
+file remains exact; do not expose a production writer or runtime selector yet.
