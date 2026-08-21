@@ -290,6 +290,7 @@ of the dependency cost.
 | [orgparse](https://pypi.org/project/orgparse/) | 0.4.20251020 (Oct 2025) | **none** | ≥3.9 | BSD-2 | Read-only tree. The de facto standard; stable rather than abandoned. |
 | [orgmunge](https://pypi.org/project/orgmunge/) | 0.3.1 (Jul 2025) | `ply` | ≥3.10 | MIT | A real grammar; exists specifically to modify and write back. Re-serializes. |
 | [orgformat](https://pypi.org/project/orgformat/) | 2026.6.6.1 (Jun 2026) | none | **≥3.13** | **GPL-3** | Timestamp/link formatting helpers, not a parser. Created by Karl Voit. |
+| [panflute](https://pypi.org/project/panflute/) | 2.3.1 (Aug 2026) | `pandoc` (system binary) | ≥3.6 | BSD-3 | A pythonic wrapper for Pandoc filters; parses/modifies the Pandoc AST. |
 
 A key constraint cuts this list fast: this machine runs Python 3.11.2, so the latest version of `orgformat` (requiring `≥3.13`) cannot be installed at all (running `pip install orgformat` fetches a very old version from 2019). Additionally, `orgformat` is licensed under GPL-3, which is a licensing decision rather than a technical one for a project that has no `LICENSE` file yet.
 
