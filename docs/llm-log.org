@@ -175,5 +175,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Gemini [2026-08-20 Thu 22:08 PDT]: updated docs/config.md to remove org-parser and PyOrgMode library options, added panflute, and clarified python version constraint explanation for orgformat.
 ** Gemini [2026-08-20 Thu 23:02 PDT]: updated docs/config.md to add org-rw to the libraries table (with investigation notes) and reordered the table based on user preferences (orgmunge at top).
 ** Gemini [2026-08-20 Thu 23:11 PDT]: broke out Org library assessment into =docs/orglib.md=, covering bespoke surgical editing in =ortasklib= and evaluating external Python libraries.
-
-
+** Claude [2026-08-20 Thu 23:35 PDT]: adds =orglib= shim design, a phased orgmunge migration gated on a measured per-file round-trip check, and an optional =orgparse= conformance test to =docs/orglib.md=; records that orgmunge alters three things (keyword case, tag padding, blank lines before headings) and that =heading.todo == X= is a silent no-op.
