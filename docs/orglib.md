@@ -141,8 +141,71 @@ all parsing later, but ortask should not normalize users' files or broaden its
 Org conventions merely to make one serializer pass.
 
 ### Claude
-*(Reserved for Claude's assessment and design notes.)*
 
+Measured with orgmunge 0.3.1 and orgparse 0.4.20251020 against this repository
+and the live registry.
+
+**Where the corpus stands.** Six distinct files are ones ortask reads or writes
+(task files plus the registry's private directory files). Two round-trip through
+orgmunge byte-identically — both `directories-private.org` — three are
+normalized, and one could not be read at all because `elweek/TODO-ElWeek.org` is
+still a dangling link, which is a pre-existing registry problem rather than a
+library one. Of the normalized three, `todo.org` differs by a single blank line,
+`jobhunt2026/todo.org` by three hunks, and `mwsync/tasks.org` by 77. Nothing
+under `docs/` round-trips unchanged, and both copies of `llm-log.org` fail to
+parse: our log headings (`** Claude [2026-04-08 Wed 21:36]: …`) place an
+inactive timestamp where orgmunge's grammar does not expect one. That file is
+documentation ortask never edits, so it does not block anything, but it is a
+small reproducible case that would make a reasonable upstream report if we want
+to open a conversation with those maintainers.
+
+The normalizations are consistent and enumerable: `#+KEYWORD:` lines are
+lowercased, tag padding is recomputed, and blank lines before top-level headings
+are dropped. This is canonical-form serialization working as designed, not
+breakage.
+
+**A correction to my own earlier draft.** I proposed a per-file preflight —
+parse, re-render, compare to the original — as the mechanism that would make
+orgmunge writes safe, and presented it as a way to phase writes in. As a safety
+guard it holds up. As a progress metric it does not: on today's corpus it passes
+two machine-generated files and no task file. It gates writes off; it does not
+phase them in.
+
+**Where I would move faster than ChatGPT, and where I would not.** I agree that
+bespoke stays the sole production writer, and that the conformance corpus is the
+first deliverable rather than a backend selector. The asymmetry I would lean on
+is that reading is reversible and writing is not. A wrong read costs one bad
+listing; a wrong write costs a file. So I would adopt orgmunge now as a
+test-only differential *reader* — assert it and `core.parse_org` report the same
+tasks across the real corpus — without waiting for `orglib` to exist or for the
+mutation matrix to be covered. That is a contained experiment that starts
+producing evidence immediately, and it is reversible by deleting a test file.
+
+I would also note that the two files that already round-trip exactly are small,
+tool-owned, and contain no user prose. If orgmunge is ever to write anything,
+the registry index (`docs/config.md`) is a better first candidate than a task
+file, for the same reasons.
+
+**The constraint neither other assessment weighs: maintainer interest.** The
+sequencing risk here is that the largest and least visible task — routing every
+caller through a new boundary — lands first and delivers nothing the user can
+see. For a tool maintained for its own usefulness, that ordering is the main way
+this stalls. Cheap and useful first, structural work when it pays for itself:
+
+1. **Add `#+TODO: TODO MOOT | DONE` to task files.** One line. Verified to make
+   orgmunge, orgparse, and Emacs all read `MOOT` as a terminal state instead of
+   as heading text. This is a real fix for anyone opening the file in Emacs, and
+   it happens to unblock every library question at once.
+2. **The orgparse differential test.** No refactor, no runtime change.
+3. **orgmunge as a test-only reader**, as above.
+4. **Let `orglib` emerge** from steps 2–3 rather than being specified ahead of
+   them. ChatGPT is right that the sketched `Document` protocol is already
+   short of ortask's real operations; the way to find the true surface is to
+   have two implementations and see what they need in common.
+5. **Runtime selection last**, if the evidence supports it.
+
+Steps 1–3 are each an evening's work and none of them require the bespoke code
+to change.
 ### Gemini
 From an architectural standpoint, maintaining `ortasklib`'s bespoke, stdlib-only section addressing is the right default for the core CLI. It preserves exact file fidelity without risk of unintended reformatting, avoids Python version friction (such as `≥3.13` constraints on Python 3.11 systems), and eliminates compiled binary dependencies.
 
