@@ -109,7 +109,7 @@ Key aspects of the interface:
 `orgparse` is an ideal optional dependency for test suite validation:
 - **Independent Conformance:** Validates that files generated or modified by `ortask` parse cleanly in standard Org tooling.
 - **Clean Skip Handling:** Uses `pytest.importorskip("orgparse")` so that the base test suite continues to run with zero dependencies installed.
-- **Keyword Configuration:** Configures custom keywords (`MOOT`, `TODO`, `DONE`) via `env.add_todo_keys(...)` to ensure matching state interpretation.
+- **Keyword Configuration:** Treats `TODO` as active and `DONE`, `MOOT`, and `SUPERSEDED` as terminal, either from `#+TODO: TODO | DONE MOOT SUPERSEDED` or via `env.add_todo_keys(...)`.
 
 ## Assessments by LLMs
 
@@ -202,7 +202,7 @@ caller through a new boundary — lands first and delivers nothing the user can
 see. For a tool maintained for its own usefulness, that ordering is the main way
 this stalls. Cheap and useful first, structural work when it pays for itself:
 
-1. **Add `#+TODO: TODO MOOT | DONE` to task files.** One line. Verified to make
+1. **Add `#+TODO: TODO | DONE MOOT SUPERSEDED` to task files.** One line. Verified to make
    orgmunge, orgparse, and Emacs all read `MOOT` as a terminal state instead of
    as heading text. This is a real fix for anyone opening the file in Emacs, and
    it happens to unblock every library question at once.
@@ -224,7 +224,7 @@ The primary strength of `ortask` is that it treats user `.org` files with strict
 
 **Where I align with ChatGPT and Claude:**
 1. **Defer a speculative `orglib` protocol:** Building an extensive `Document` abstraction ahead of concrete needs risks over-engineering. An internal shim should only be extracted once two implementations (bespoke and a test-only reader) demand a shared boundary.
-2. **Immediate low-hanging wins:** Adding `#+TODO: TODO MOOT | DONE` to task files is high-leverage and eliminates keyword discrepancies across Emacs, `orgparse`, and `orgmunge` without changing code.
+2. **Immediate low-hanging wins:** Adding `#+TODO: TODO | DONE MOOT SUPERSEDED` to task files is high-leverage and eliminates keyword discrepancies across Emacs, `orgparse`, and `orgmunge` without changing code.
 3. **Differential testing before runtime wiring:** Using `orgparse` (via `pytest.importorskip`) gives us an independent, read-only conformance check against our generated outputs with zero runtime dependencies. Testing `orgmunge` as a read-only harness across repo fixtures safely identifies edge cases (such as the inactive timestamps in `llm-log.org`) without endangering user files.
 
 **Pragmatic roadmap:**

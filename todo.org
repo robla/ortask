@@ -108,22 +108,28 @@ Independent validation that files ortask writes are really Org, per
 =docs/orglib.md=. Use =pytest.importorskip= so the suite still runs with
 nothing installed, plus an =ORTASK_REQUIRE_ORGPARSE=1= switch that turns the
 skip into a failure for one CI job — otherwise the test rots unrun. Sequence
-after =t0023=, or configure keywords with =env.add_todo_keys=.
+after =t0023=, or configure =TODO= as active and
+=DONE=/=MOOT=/=SUPERSEDED= as terminal with =env.add_todo_keys=.
 ** TODO t0022 Try orgmunge as a test-only differential reader
-Assert orgmunge and =orglib= report the same tasks across the repo and
-registry. Reads only: a wrong read costs a listing, a wrong write costs a
-file. Measured 2026-08-21: orgmunge normalizes keyword case, tag padding, and
-blank lines before top-level headings, and cannot parse either =llm-log.org=
-(inactive timestamp in the heading). Not a writer until that changes.
+Use =pytest.importorskip= and assert orgmunge and =orglib= report the same tasks
+across a checked-in, hermetic corpus. A separate opt-in probe may inspect the
+live registry; normal tests must not depend on it. Reads only: a wrong read
+costs a listing, a wrong write costs a file. Measured 2026-08-21: orgmunge
+normalizes keyword case, tag padding, and blank lines before top-level headings,
+and cannot parse either =llm-log.org= (inactive timestamp in the heading).
+Record expected incompatibilities explicitly rather than silently omitting them.
 ** TODO t0023 Declare task keywords in-file with #+TODO:
-Add =#+TODO: TODO MOOT | DONE= to task files. Without it orgparse,
-orgmunge, and Emacs all read =** MOOT t0007 x= as an ordinary heading whose
-text starts with "MOOT". One line fixes all three. Decide whether =ort= writes
-it on new files and whether =repair= offers to add it.
+Add =#+TODO: TODO | DONE MOOT SUPERSEDED= to task files. Keywords to the right
+of the bar are terminal states, matching =orglib.TERMINAL_STATES=. Without a
+declaration, orgparse, orgmunge, and Emacs read =** MOOT t0007 x= as an ordinary
+heading whose text starts with "MOOT". Decide whether =ort= writes the line on
+new files and whether =repair= offers to add or reconcile it.
 ** TODO t0024 Choose a license for the suite
 There is no =LICENSE= file, which blocks judging any dependency's license
 against ours — =orgformat= is GPL-3, while =orgparse= (BSD-2) and =orgmunge=
-(MIT) are permissive. Needed before any of them is adopted, even for tests.
+(MIT) are permissive. Resolve this before publishing the suite or adding a hard
+runtime dependency; it does not block optional, test-only evaluation of
+permissively licensed libraries.
 ** TODO t0025 Enforce the *-private.org reservation in task-file discovery
 =docs/projects.md= says private files are never candidates for task-file
 resolution, but =manager.choose_org_file= excludes only the literal name
@@ -134,7 +140,8 @@ One =projects.org= at the registry root replacing the per-entry
 =directories-private.org= files, per =docs/config.md=. Needs a project-scoped
 =parse_directories= (find the heading matching a project name, then
 =Directories= within that subtree), =doctor= reporting index sections with no
-registry entry, and a deprecation path for the old files.
+registry entry, and an explicit one-time migration from the old files. After
+cutover, keep one storage model rather than maintaining dual read/write paths.
 ** TODO t0027 Make orglib independently testable and consumable
 Move its contract tests into a focused module that imports only =orglib= and
 can run without importing =ortasklib=. Define how another repository such as
