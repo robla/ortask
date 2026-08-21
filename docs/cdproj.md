@@ -292,13 +292,64 @@ function unchanged.
   the one-shot `select_project_menu`/`_run_selector` path that `t0011` exists to
   delete, with a numbered fallback for pipes.
 
+## Saving the directory stack (`cdproj -s` / `pmgr set-dirs`)
+
+Once a user arranges their live shell directory stack using `cd`, `pushd`, and
+`popd`, they can persist that stack directly into the project's private directory
+file (`directories-private.org` in the registry) using:
+
+```bash
+cdproj -s [PROJECT]     # or cdproj --save [PROJECT]
+```
+
+This shell command is syntactic sugar that captures the shell's live directory
+stack (`dirs -l -p`) and forwards it to:
+
+```sh
+projmgr.py set-dirs [PROJECT] [--stdin] [DIRECTORIES...]
+```
+
+### Current Project Resolution
+
+When `PROJECT` is omitted from `cdproj -s` or `pmgr set-dirs`, the tool
+determines the current project automatically:
+1. It detects the root of the current working directory by walking upward for a
+   VCS marker (`.git`, `.hg`) or Org task file (matching `project_root_for()`).
+2. It matches that root against the registered projects in the active registry
+   (`discover_projects()`).
+3. If exactly one registered project matches, that project is selected as the default.
+4. If no registered project matches (or if invoked outside any known project),
+   the command fails with an explanatory error and lists registered project names.
+
+### Formatting & Path Storage
+
+When writing entries to `<registry>/<project>/directories-private.org`:
+- Paths inside the user's home directory are serialized using `~` (e.g.
+  `** ~/src/ortask`) instead of raw `$HOME` paths, keeping entries portable and
+  human-readable.
+- Entries are deduplicated, keeping the first occurrence.
+- The file is updated surgically: if `directories-private.org` exists, the
+  `* Directories` section is updated (or appended if missing); if not, the file
+  is created with a clean `* Directories` skeleton.
+
+### Sync Semantics & Subtraction Prompts
+
+When syncing the live shell stack into an existing private directory list:
+- **Additions:** Any new directories present in the shell stack that were not
+  previously in the private stack are added automatically without prompting.
+- **Subtractions (Removals):** If the live shell stack does not contain one or
+  more directories that are currently saved in the private stack, the tool prompts
+  the user for confirmation:
+  - `[r]emove`: Drop the missing directories from the private stack (make private
+    stack match live shell stack exactly).
+  - `[k]eep`: Add new directories without removing missing ones (union/merge).
+  - `[c]ancel`: Abort the operation and leave the private stack untouched.
+
 ## Open questions
 
-- Should `cdproj` offer a way to add the current directory to the highlighted
-  project's stack? Deferred; it may be `ortask.py`'s business rather than the
-  project layer's, since it writes Org content. Writing the *private* list is
-  the project layer's, since that file lives in the registry.
 - Should `-a` (append) come back as a picker key? Because the output file means
   "the stack you want afterward" rather than "this project's directories", that
   is a Python-side change plus one input argument carrying the current stack,
   with the shell function unchanged.
+- Should the interactive navigator (`ptui`) or `cdproj` picker support saving
+  the live shell stack directly with a single keybinding (e.g. `s` or `w`)?
