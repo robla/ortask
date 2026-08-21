@@ -24,7 +24,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from ortasklib import core, manager, menu, taskui
+from ortasklib import core, manager, menu, orglib, taskui
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ def _project_tasks(project: manager.Project) -> str:
     if org_file is None:
         return "(no task file)"
     try:
-        tasks = core.parse_org(org_file.read_text(encoding="utf-8"))
+        tasks = orglib.parse(org_file.read_text(encoding="utf-8")).tasks()
     except OSError:
         return "(unreadable)"
     if not tasks:

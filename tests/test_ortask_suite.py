@@ -17,7 +17,52 @@ if str(ROOT) not in sys.path:
 
 import ortask
 import projmgr
-from ortasklib import core, manager, taskui, tasks
+from ortasklib import core, manager, orglib, taskui, tasks
+
+
+def test_orglib_parse_agrees_with_core():
+    """The bespoke backend is a pass-through, so both must see the same tasks."""
+    text = textwrap.dedent(
+        """
+        * Tasks
+        ** TODO t0001 First
+        ** DONE [#A] t0002 Second          :tag:
+        *** TODO t0002.1 Nested
+        """
+    ).lstrip()
+    assert orglib.parse(text).tasks() == core.parse_org(text)
+
+
+def test_orglib_render_returns_the_source_unchanged():
+    """The fidelity property a future backend has to match, asserted now.
+
+    A read-only document must reproduce its input byte for byte. Writing this
+    down while there is only one backend is the point: it is the assertion that
+    tells us whether a second one is a drop-in replacement.
+    """
+    text = (
+        "#+TITLE: Kept As Written\n"
+        "\n"
+        "* Tasks\n"
+        "** TODO t0001 Spacing   and   padding preserved      :tag:\n"
+        "\n"
+        "* Notes\n"
+        "  | a | b |\n"
+    )
+    assert orglib.parse(text).render() == text
+
+
+def test_orglib_tasks_is_scoped_like_core():
+    """Scoping to ``* Tasks`` is backend behavior, not caller behavior."""
+    text = textwrap.dedent(
+        """
+        * Tasks
+        ** TODO t0001 Counted
+        * Other
+        ** TODO t0002 Not counted
+        """
+    ).lstrip()
+    assert [t.id for t in orglib.parse(text).tasks()] == ["t0001"]
 
 
 def write(path: Path, content: str) -> Path:

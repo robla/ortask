@@ -52,7 +52,20 @@ The default engine remains bespoke and stdlib-only to preserve zero-dependency d
 
 ### The `orglib` Interface
 
-The `orglib` abstraction provides a common protocol between `ortask` commands and underlying Org implementations:
+**Implemented so far (2026-08-21):** `ortasklib/orglib/` exists with a single
+bespoke backend and a read-only surface — `parse(text) -> Document`,
+`Document.tasks()`, and `Document.render()`. `manager.summarize_projects()` and
+`projmgr._project_tasks()` are routed through it; the other 16 `parse_org()`
+call sites are not, by design. Mutation, backend selection, and the fidelity
+declaration below are still design, not code.
+
+Two tests hold the contract. One asserts the bespoke backend and `core` report
+the same tasks; the other asserts `parse(text).render() == text` byte for byte,
+which is the property a second backend would have to match. That second test was
+checked against a deliberate keyword-lowercasing change — the same normalization
+orgmunge applies — and fails as intended.
+
+The fuller shape below is the target, not the current state:
 
 ```python
 # ortasklib/orglib/__init__.py

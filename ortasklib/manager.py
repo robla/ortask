@@ -15,7 +15,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import core
+from . import core, orglib
 
 DEFAULT_REGISTRY = "~/Projects"
 
@@ -394,7 +394,7 @@ def summarize_projects(workspace: Path, include_all: bool = False) -> list[dict]
             records.append(record)
             continue
 
-        tasks = core.parse_org(text)
+        tasks = orglib.parse(text).tasks()
         if not tasks:
             record["warning"] = "no parseable tasks found"
             record["tasks"] = []
