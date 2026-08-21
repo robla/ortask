@@ -84,7 +84,61 @@ Key aspects of the interface:
 ## Assessments by LLMs
 
 ### ChatGPT
-*(Reserved for ChatGPT's assessment and design notes.)*
+The uncertainty about the bespoke implementation is justified, but a fully
+runtime-switchable document abstraction would be premature. LLM authorship does
+not by itself make the existing code "slop"; duplicated parsing rules, unclear
+invariants, and tests that only confirm the parser's own assumptions would. An
+external library does not automatically remove those risks, because its adapter
+and the mapping from general Org nodes to ortask's IDs, states, archive rules,
+and source-preservation contract can become equally complex.
+
+`orglib` is worthwhile if it begins as a small internal boundary, not a promise
+that all Org libraries are interchangeable. The proposed `Document` protocol is
+already incomplete for ortask's real operations: title and body editing,
+priority, subtree movement, templates, archive metadata, source locations, and
+buffered transactions are absent. Expanding that protocol in advance risks
+recreating the application API inside a speculative abstraction. Instead,
+separate three responsibilities and introduce their interfaces only as callers
+need them:
+
+1. Parse ortask's supported structures into backend-neutral values and source
+   ranges.
+2. Describe an intended mutation and apply the smallest possible text patch.
+3. Keep file resolution, atomic I/O, and transaction handling outside the
+   parser backend.
+
+The first deliverable should therefore be a corpus and conformance suite, not a
+public backend selector or a large migration of every caller. Optional
+`orgparse` tests should compare headings, levels, states, IDs, priorities, tags,
+and hierarchy after representative ortask writes. The suite should also keep
+exact before/after fixtures for every mutation and assert that bytes outside the
+declared edit ranges are unchanged. A few optional Emacs `org-element` checks
+would provide a more authoritative second opinion where useful.
+
+`orgmunge` remains a credible experiment, but is not currently a safe writer for
+ortask. Local tests with 0.3.1 normalized every repository Org document it
+serialized and failed to parse the inactive timestamps in `docs/llm-log.org`.
+Its PLY parser also reported grammar conflicts and attempted to write parser
+cache files beside the installed package. A successful untouched round trip is
+a useful preflight check, but it is not sufficient: each supported mutation must
+also prove semantic agreement and preservation outside the intended edit.
+
+The practical sequence is:
+
+1. Characterize the bespoke behavior with independent and preservation tests.
+2. Move repeated parsing and patch planning behind a narrow internal `orglib`
+   boundary as ordinary refactoring makes that useful.
+3. Add orgmunge as a test-only differential backend before exposing it at
+   runtime; direct Tree-sitter is also worth testing because byte ranges fit the
+   surgical-writer model better than full serialization.
+4. Support runtime selection only after a backend covers the actual read and
+   mutation matrix, fails closed on unsupported syntax, and passes the real-file
+   corpus without unexplained differences.
+
+For now, the bespoke implementation should remain the sole production writer.
+The exit strategy should be real but inexpensive: orgmunge may replace some or
+all parsing later, but ortask should not normalize users' files or broaden its
+Org conventions merely to make one serializer pass.
 
 ### Claude
 *(Reserved for Claude's assessment and design notes.)*
