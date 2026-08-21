@@ -135,3 +135,20 @@ One =projects.org= at the registry root replacing the per-entry
 =parse_directories= (find the heading matching a project name, then
 =Directories= within that subtree), =doctor= reporting index sections with no
 registry entry, and a deprecation path for the old files.
+** TODO t0027 Make orglib independently testable and consumable
+Move its contract tests into a focused module that imports only =orglib= and
+can run without importing =ortasklib=. Define how another repository such as
+castabout installs and versions it before promising =orglib= as a standalone
+dependency; add packaging metadata only when that consumer path is chosen.
+** TODO t0028 Separate generic Org structure from ortask policy
+=orglib/syntax.py= currently combines heading parsing with ortask's state names,
+ID grammar, and =Tasks=/=Template=/=Directories= section conventions. Decide
+whether =orglib= is a generic Org library or explicitly the ortask dialect. For
+generic reuse, keep source-preserving heading structure in the base layer and
+make task conventions a configurable dialect or adapter.
+** TODO t0029 Define the mutation conformance matrix before adding writers
+Create before/after fixtures for state, priority, title, body, add, template,
+and archive operations. Assert both the intended semantic result and exact
+preservation outside declared edit ranges. Use the same matrix to compare the
+bespoke writer with orgmunge and source-range approaches using direct
+Tree-sitter or org-rw; an unchanged =render()= test alone is not sufficient.
