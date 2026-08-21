@@ -140,10 +140,14 @@ registry entry is selected as that project's task file. Match the suffix.
 ** TODO t0026 Implement the registry index file
 One =projects.org= at the registry root replacing the per-entry
 =directories-private.org= files, per =docs/config.md=. Needs a project-scoped
-=parse_directories= (find the heading matching a project name, then
-=Directories= within that subtree), =doctor= reporting index sections with no
-registry entry, and an explicit one-time migration from the old files. After
-cutover, keep one storage model rather than maintaining dual read/write paths.
+=parse_directories= in =orglib= (find the top-level heading matching a project
+name, then =Directories= within that subtree), reached through
+=orglib.parse(text)= rather than =core=; index-first candidates in
+=manager.directory_candidates= with the per-entry file as a deprecated
+fallback; =doctor= reporting stale, duplicate, and left-behind entries; and the
+one-time migration in =docs/config.md=. Blocks =t0031=, which writes to this
+file. After cutover, keep one storage model rather than maintaining dual
+read/write paths.
 ** TODO t0027 Make orglib independently testable and consumable
 Move its contract tests into a focused module that imports only =orglib= and
 can run without importing =ortasklib=. Define how another repository such as
@@ -169,10 +173,22 @@ map backend output back to the original span. Exercise orgmunge as a test-only
 adapter first. Report normalization inside the region and prove the rest of the
 file remains exact; do not expose a production writer or runtime selector yet.
 ** TODO t0031 Save shell directory stack to private dirstack (cdproj -s / pmgr set-dirs)
-Implement =projmgr.py set-dirs [PROJECT]= and =cdproj -s [PROJECT]= to persist
-the live shell directory stack (=dirs -l -p=) into the project's private
-=directories-private.org=. Support current-project auto-detection from =$PWD=,
-path serialization using =~= under =$HOME=, deduplication, and interactive
-prompts when subtracting directories from an existing private stack.
-See =docs/cdproj.md= for full specification details.
+Implement =projmgr.py set-dirs [PROJECT]= and =cdproj -s [PROJECT]= to write the
+live shell directory stack (=dirs -l -p=) into the project's private directory
+list. After =t0026= that list is the project's section in
+=<registry>/projects.org=, so this is the first verb to edit a shared Org file
+in place rather than create one. Specification: "Saving the directory stack" in
+=docs/cdproj.md=.
+*** TODO t0031.1 Implement pmgr set-dirs
+Current-project detection from =$PWD= (an error rather than a guess when no
+project or two projects match), positional directories plus =--stdin=, =~= for
+paths under =$HOME=, dedupe by resolved path, additions written without asking,
+subtractions prompted =[r]emove=/=[k]eep=/=[c]ancel= with =--missing= as the
+non-interactive answer, and =--dry-run=. Test that every byte outside the
+rewritten =Directories= subtree is unchanged.
+*** TODO t0031.2 Add the cdproj -s shell half
+Teach =misc/cdproj.func.sh= to recognize =-s=/=--save= and pass =dirs -l -p= as
+arguments rather than on stdin, so the subtraction prompt still has a terminal,
+and complete project names after =-s= in =misc/ortask-completion.bash=. The
+=--out= protocol is untouched: this path writes no stack file and does not =cd=.
 

@@ -133,6 +133,13 @@ task IDs.
 Exit status is 0 when no problems are found and 2 when any are, matching
 `ortask.py repair --dry-run`. Notes alone do not make it 2.
 
+With the registry index in place (`t0026`), `doctor` also reads
+`<registry>/projects.org`: a section naming no registry entry is a problem, so
+is a duplicate section for one entry or an index that cannot be read, and a
+`directories-private.org` left in an entry already covered by the index is a
+note. Centralized config can outlive the entry it configures, which per-entry
+files could not do; `doctor` is what makes that visible.
+
 ## `init`
 
 `projmgr.py init` records the registry path in `ortask.ini`. It writes nothing
@@ -247,15 +254,15 @@ Behavior:
 - `e` edits a directory list in `$VISUAL`/`$EDITOR` and returns to the picker.
 - `Esc`/`q` exits nonzero, leaving FILE untouched.
 
-A project's stack comes from a `* Directories` section in either the project's
-Org task file or a private `directories-private.org` in the project's registry
-subdirectory. When both define one, the private list wins outright and sets the
-order; any directory the project's list has and the private list lacks is
-reported on stderr as a warning, without changing the stack or the exit status.
-With neither, the stack is the project root alone. See `docs/cdproj.md` for the
-full rule.
+A project's stack comes from a `Directories` section in either the project's
+own Org task file or the private list in the registry. When both define one, the
+private list wins outright and sets the order; any directory the project's list
+has and the private list lacks is reported on stderr as a warning, without
+changing the stack or the exit status. With neither, the stack is the project
+root alone. See `docs/cdproj.md` for the full rule, and for where the private
+list lives while it moves from one file per entry to the registry index.
 
-`cdproj` reads Org content and never writes it. The one file it creates is the
+`cdproj` reads Org content and never writes it. The one file it touches is the
 private list in the registry, which `projmgr.py` owns, and only when asked to
 edit it.
 
@@ -279,6 +286,31 @@ nothing. Anything else in the entry is real data that exists nowhere else:
   this command does not delete trees.
 
 Removing the entry directory by hand is equally valid.
+
+## `set-dirs`
+
+**Status: specified, not implemented (`t0031`).**
+
+`projmgr.py set-dirs [PROJECT] [DIRECTORY...]` writes a directory stack into the
+project's private list — the other direction from `cdproj`, which reads one.
+
+```sh
+projmgr.py set-dirs ortask ~/src/ortask ~/src/ortask/docs
+projmgr.py set-dirs --dry-run           # current project, show the section
+dirs -l -p | projmgr.py set-dirs --stdin --missing remove
+```
+
+Omitting `PROJECT` selects the project containing `$PWD`, by walking up for a
+project root and matching it against the registry; no match, or more than one,
+is an error rather than a guess. Directories arrive as arguments, or on stdin
+with `--stdin`. Paths under `$HOME` are stored with `~`.
+
+Directories the live list adds are written without asking. Directories it drops
+are not assumed to be unwanted, so `set-dirs` prompts to remove them, keep them,
+or cancel; `--missing keep|remove` answers that without a prompt, which is what
+`--stdin` needs, since it has taken stdin. Only the project's own `Directories`
+subtree is rewritten. `docs/cdproj.md` has the full specification, including the
+`cdproj -s` shell wrapper that supplies the live stack.
 
 ## Telling the two lists apart
 

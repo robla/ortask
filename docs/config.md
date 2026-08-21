@@ -204,6 +204,14 @@ Notes on the shape:
   the point of the file.
 - **The project name is the join key.** Matching should be case-insensitive, to
   agree with the case-insensitive ordering `discover_projects` already uses.
+  Compare the heading text with any trailing `:tags:` stripped.
+- **`* Tasks` is reserved**, and so is `* Template`. They are the index's own
+  task section, the thing that makes standing in the registry and running `ort`
+  useful. A registry entry named `Tasks` would collide; `doctor` should say so
+  rather than the reader silently taking one for the other.
+- **A tool that writes the file writes list items** — `   - ~/src/ortask` — and
+  writes `~` for paths under `$HOME`. Reading accepts all four entry forms;
+  writing picks one. See "Saving the directory stack" in `docs/cdproj.md`.
 
 ### What changes in the code
 
@@ -226,6 +234,17 @@ Three consequences worth deciding deliberately:
    mitigation.
 3. **Duplicate headings for one project** should be a reported error, not a
    silent first-wins.
+
+`pmgr doctor` grows the checks that go with those: a section matching no
+registry entry, duplicate sections for one entry, an index that cannot be read
+or parsed, and — during the transition — a `directories-private.org` left
+behind in an entry whose section is already in the index.
+
+The index is also the first Org file `projmgr.py` edits in place rather than
+creates. Writing one project's `Directories` subtree while leaving every other
+byte alone is the same bounded-region problem `t0028` and `t0029` describe for
+task editing, at a smaller scale, and it is worth doing through `orglib` rather
+than beside it.
 
 For a transition, read the index first and fall back to a per-entry
 `directories-private.org` with a deprecation warning; drop the fallback once the

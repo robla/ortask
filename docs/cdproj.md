@@ -67,15 +67,37 @@ section in the project's Org task file:
 
 A project can have two directory lists:
 
-| Label     | Location                                        | Shared? |
-|-----------|-------------------------------------------------|---------|
-| `private` | `<registry>/<project>/directories-private.org`   | No      |
-| `project` | the project's Org task file                      | Usually |
+| Label     | Where it lives                          | Shared? |
+|-----------|-----------------------------------------|---------|
+| `private` | the registry, outside the project's repo | No      |
+| `project` | the project's own Org task file          | Usually |
 
 The private list lives in the registry rather than in the project, so it is
 never part of the project's own repository and needs no per-project
-`.gitignore` entry. Both files use the same `* Directories` format and the same
+`.gitignore` entry. Both locations use the same entry format and the same
 parser.
+
+**Status (2026-08-21): the private list is moving.** Today it is one file per
+registry entry, `<registry>/<project>/directories-private.org`, holding a
+top-level `* Directories` section. It is moving to one index file at the
+registry root, `<registry>/projects.org`, holding a `Directories` section under
+a top-level heading named for the registry entry — the model decided in
+`docs/config.md`, tracked as `t0026`:
+
+```org
+# ~/Projects/projects.org
+* ortask
+  Registered while working out the electowiki export path.
+** Directories
+   - ~/src/ortask
+   - ~/src/ortask/docs
+```
+
+Only the location changes. Every rule below holds in both forms, and the label
+stays `private`. During the transition the index wins: a project with a section
+in `projects.org` reads it, and a project without one falls back to its
+`directories-private.org`, which `pmgr doctor` reports as a leftover to
+migrate. The fallback goes away once a registry is converted.
 
 ### Which list wins
 
@@ -90,11 +112,11 @@ merged in — it is only checked against.
 | defines a stack  | —                | the private list, its order | no |
 | defines a stack  | defines a stack  | the private list, its order | one per project entry the private list lacks |
 
-The warning names every directory the project list has and the private list does
-not:
+The warning names every directory the project list has and the private list
+does not, and it names the private file it checked:
 
 ```text
-elweek: in castabout.task.org but not directories-private.org: ~/src/elusync
+elweek: in castabout.task.org but not projects.org: ~/src/elusync
 ```
 
 It is a warning, not an error. The stack is still written and the exit status is
@@ -113,10 +135,13 @@ Comparison rules:
   relative-to-project-root expansion, then `Path.resolve()` — so `docs`,
   `./docs`, and `~/src/ortask/docs` are one entry rather than three.
 - The winning list is deduplicated, first occurrence kept.
-- An empty `* Directories` section counts as a list that exists. An empty
-  private section therefore wins, the stack falls back to the project root, and
-  every project entry is reported. Emptying the list is a choice; silently
-  reverting to the shared list would undo it.
+- An empty `Directories` section counts as a list that exists. An empty private
+  section therefore wins, the stack falls back to the project root, and every
+  project entry is reported. Emptying the list is a choice; silently reverting
+  to the shared list would undo it. Under the index this needs one more
+  distinction: a project with *no section at all* in `projects.org` has no
+  private list, while a project whose section has an empty `Directories`
+  heading has an empty one.
 - The private list may name directories the project list does not. Those are
   never reported — that is what the private list is for.
 
@@ -127,16 +152,25 @@ directories.
 All three routes into a stack — the picker, `cdproj PROJECT`, and the numbered
 fallback — resolve identically and warn identically.
 
-`directories-private.org` is excluded from task-file discovery, so a project
-whose registry entry has no task-file symlink will not mistake it for one.
+Neither private location is a candidate for task-file discovery.
+`directories-private.org` is excluded by name, so a project whose registry entry
+has no task-file symlink will not mistake it for one, and `projects.org` sits at
+the registry root rather than inside an entry, where `discover_projects` never
+looks. What standing *in* the registry and running `ort` picks up is covered in
+`docs/config.md`.
 
-Private files follow the `*-private.org` naming convention from
-`docs/projects.md`, so a registry kept under version control needs exactly one
-`.gitignore` line to cover this file and any later ones:
+Per-entry private files follow the `*-private.org` naming convention from
+`docs/projects.md`, so a registry kept under version control needs one
+`.gitignore` line to cover them:
 
 ```gitignore
 *-private.org
 ```
+
+`projects.org` is deliberately not covered by that line. Whether to track the
+index is the registry owner's call: it holds machine-local paths, but it also
+holds the prose about why each project is registered, which is a reasonable
+thing for a registry repo to carry.
 
 ## `projmgr.py cdproj`
 
@@ -272,13 +306,23 @@ function unchanged.
 
 ## Layers
 
-- `orglib.syntax.parse_directories()` — the Org syntax. Returns the raw entries under a
-  top-level `* Directories` heading, or `None` when there is no such section, so
-  a candidate location can be told apart from a real source. Bare paths, list
-  bullets, `file:` prefixes, and `[[...]]` brackets all parse.
+- `orglib.syntax.parse_directories()` — the Org syntax. Returns the raw entries
+  under a `Directories` heading, or `None` when there is no such section, so a
+  candidate location can be told apart from a real source. Bare paths, list
+  bullets, `file:` prefixes, and `[[...]]` brackets all parse. For the registry
+  index it takes a project name and looks for `Directories` inside that
+  project's subtree instead of at the top level; without one it keeps today's
+  top-level behavior, which is what a task file and a per-entry private file
+  both use.
+- `orglib.Document.directories()` — the same thing through the `orglib`
+  boundary, which is how `manager` should reach it (`t0020`).
 - `core.editor_argv()` — the editor argv, shared with `taskui._open_editor()`.
-- `manager.directory_candidates()` / `directory_sources()` — the two locations,
-  private first, and the subset of them that defines a stack.
+  It takes an optional line number, which is how `e` opens the index at the
+  right project.
+- `manager.directory_candidates()` / `directory_sources()` — the candidate
+  locations, private first, and the subset of them that defines a stack. The
+  index is the first private candidate; the per-entry file follows it until the
+  fallback is dropped.
 - `manager.resolve_directories()` — `~`, `$VAR`, and relative-to-project-root
   expansion. Separate from parsing, because resolving needs a project root that
   `core` has no opinion about.
@@ -294,56 +338,103 @@ function unchanged.
 
 ## Saving the directory stack (`cdproj -s` / `pmgr set-dirs`)
 
-Once a user arranges their live shell directory stack using `cd`, `pushd`, and
-`popd`, they can persist that stack directly into the project's private directory
-file (`directories-private.org` in the registry) using:
+**Status: specified, not implemented (`t0031`). It writes to the registry
+index, so it lands after `t0026`.**
+
+`cdproj` loads a stack; this is the other direction. Once a stack has been
+arranged in the shell with `cd`, `pushd`, and `popd`, it can be written back to
+the project's private list:
 
 ```bash
 cdproj -s [PROJECT]     # or cdproj --save [PROJECT]
 ```
 
-This shell command is syntactic sugar that captures the shell's live directory
-stack (`dirs -l -p`) and forwards it to:
+The shell half captures its own live stack with `dirs -l -p` and passes it to:
 
 ```sh
-projmgr.py set-dirs [PROJECT] [--stdin] [DIRECTORIES...]
+projmgr.py set-dirs [PROJECT] [DIRECTORY...] [--stdin] [--missing keep|remove]
+                    [--dry-run]
 ```
 
-### Current Project Resolution
+`-s` is the one thing the shell function has to know about, and it is worth
+saying why, given that `-a` and `-e` were removed for adding shell-side
+parsing. Those two asked the shell to carry a *mode* into Python. `-s` carries
+*data* Python cannot otherwise obtain: the live directory stack belongs to the
+shell, and no key inside the picker can read it. The `--out` protocol is
+untouched — `set-dirs` writes nothing to `--out` and the shell function does
+not `cd`.
 
-When `PROJECT` is omitted from `cdproj -s` or `pmgr set-dirs`, the tool
-determines the current project automatically:
-1. It detects the root of the current working directory by walking upward for a
-   VCS marker (`.git`, `.hg`) or Org task file (matching `project_root_for()`).
-2. It matches that root against the registered projects in the active registry
-   (`discover_projects()`).
-3. If exactly one registered project matches, that project is selected as the default.
-4. If no registered project matches (or if invoked outside any known project),
-   the command fails with an explanatory error and lists registered project names.
+### Which project
 
-### Formatting & Path Storage
+With `PROJECT` given, that registry entry, matched exactly as `cdproj PROJECT`
+matches. Without it:
 
-When writing entries to `<registry>/<project>/directories-private.org`:
-- Paths inside the user's home directory are serialized using `~` (e.g.
-  `** ~/src/ortask`) instead of raw `$HOME` paths, keeping entries portable and
-  human-readable.
-- Entries are deduplicated, keeping the first occurrence.
-- The file is updated surgically: if `directories-private.org` exists, the
-  `* Directories` section is updated (or appended if missing); if not, the file
-  is created with a clean `* Directories` skeleton.
+1. walk up from `$PWD` for a VCS marker or a task file (`project_root_for()`);
+2. compare that root against the registered projects (`discover_projects()`),
+   by resolved path;
+3. exactly one match selects the project.
 
-### Sync Semantics & Subtraction Prompts
+No match is an error naming the resolved root, with the registered project
+names listed. Two matches — the same directory registered twice under different
+names — is also an error, since guessing between them would write to the wrong
+section.
 
-When syncing the live shell stack into an existing private directory list:
-- **Additions:** Any new directories present in the shell stack that were not
-  previously in the private stack are added automatically without prompting.
-- **Subtractions (Removals):** If the live shell stack does not contain one or
-  more directories that are currently saved in the private stack, the tool prompts
-  the user for confirmation:
-  - `[r]emove`: Drop the missing directories from the private stack (make private
-    stack match live shell stack exactly).
-  - `[k]eep`: Add new directories without removing missing ones (union/merge).
-  - `[c]ancel`: Abort the operation and leave the private stack untouched.
+### Where the stack comes from
+
+Directories arrive as positional arguments, one per argument. `--stdin` reads
+them from standard input instead, one per line, for scripting.
+
+`cdproj -s` passes the stack as arguments rather than on stdin, deliberately:
+stdin has to stay free for the subtraction prompt below. `--stdin` therefore
+implies non-interactive, and in that mode `--missing` supplies the answer the
+prompt would have asked for, defaulting to `keep`.
+
+### What gets written
+
+Into the project's section of `<registry>/projects.org`:
+
+- **Paths under `$HOME` are written with `~`.** `dirs -l -p` prints them
+  expanded; storing them expanded would tie the index to one machine's home.
+- **Entries are written as list items** (`   - ~/src/ortask`) under a
+  `** Directories` heading. Reading still accepts subheadings, bare paths, and
+  `file:` links, per `* Directories` above; writing picks one form.
+- **Order is the shell's stack order,** top entry first — the same order
+  `cdproj` will replay.
+- **Duplicates are dropped,** first occurrence kept, comparing resolved paths.
+- **A missing project section is created** at the end of the file, as a
+  top-level heading named for the registry entry with a `** Directories`
+  subheading under it. A missing `Directories` heading inside an existing
+  section is added at the end of that section, so prose written under the
+  project heading stays where the user put it.
+- **Nothing outside that `Directories` subtree changes.** Other projects'
+  sections, the prose in this one, and the file's own `* Tasks` section are
+  untouched, byte for byte. Same atomic replace as every other write.
+
+### Additions and subtractions
+
+Comparison is by resolved path, the same rule `cdproj` uses to decide what to
+warn about, so `~/src/ortask` and `/home/robla/src/ortask` are one entry.
+
+- **Additions** — directories in the live stack that the private list lacks —
+  are written without asking. That is the point of the verb.
+- **Subtractions** — directories the private list has that the live stack lacks
+  — are not assumed. `popd` and "I am working elsewhere today" look identical
+  from here, and only one of them means "forget this directory."
+
+So subtractions prompt, listing them:
+
+- `[r]emove` — the private list becomes the live stack exactly.
+- `[k]eep` — additions are written and the missing entries stay, appended after
+  the live stack in their existing relative order.
+- `[c]ancel` — nothing is written; exit nonzero.
+
+With no subtractions there is no prompt. With `--stdin`, or with no terminal to
+prompt on, `--missing` decides and the choice is reported on stderr; it
+defaults to `keep`, because keeping a directory the user still lists is the
+recoverable mistake.
+
+`--dry-run` prints the section that would be written and exits without touching
+the file, matching `init --dry-run` and `rm --dry-run`.
 
 ## Open questions
 
@@ -353,3 +444,6 @@ When syncing the live shell stack into an existing private directory list:
   with the shell function unchanged.
 - Should the interactive navigator (`ptui`) or `cdproj` picker support saving
   the live shell stack directly with a single keybinding (e.g. `s` or `w`)?
+  Same shape as the `-a` answer above: the picker cannot see the shell's stack,
+  so the shell function would have to pass it in as an input argument, and the
+  key would then write it through the same `set-dirs` path.

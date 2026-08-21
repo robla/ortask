@@ -118,9 +118,9 @@ can see and edit it directly.
 
 `directories-private.org` (see `docs/cdproj.md`) is the current example. It
 holds absolute machine-local paths that would be noise, or leakage, in a shared
-repo. It is the exception that defines the rule: it lives in the registry
-because it has nowhere else to live, not because the registry is a convenient
-place to put things.
+repo. It is the exception that defines the rule: private data lives in the
+registry because it has nowhere else to live, not because the registry is a
+convenient place to put things.
 
 Private files use a `*-private.org` suffix, so one line covers all of them,
 present and future, in a registry that is under version control:
@@ -130,6 +130,13 @@ present and future, in a registry that is under version control:
 ```
 
 Private files are never candidates for task-file resolution.
+
+That per-entry scheme is being replaced by one index file at the registry root,
+`projects.org`, holding a section per entry (`docs/config.md`, `t0026`). The
+entry keeps holding the pointers — the symlinks are what makes it a project —
+and stops holding the settings. The `*-private.org` suffix stays reserved, both
+for files left behind by the migration and for anything later that needs to be
+per-entry.
 
 Tools must never require the registry to be a git repository, and must never
 run git themselves. One real registry is a git repository with its own README
