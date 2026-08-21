@@ -291,6 +291,7 @@ of the dependency cost.
 | [orgparse](https://pypi.org/project/orgparse/) | 0.4.20251020 (Oct 2025) | **none** | ≥3.9 | BSD-2 | Read-only tree. The de facto standard; stable rather than abandoned. |
 | [panflute](https://pypi.org/project/panflute/) | 2.3.1 (Aug 2026) | `pandoc` (system binary) | ≥3.6 | BSD-3 | A pythonic wrapper for Pandoc filters; parses/modifies the Pandoc AST. |
 | [orgformat](https://pypi.org/project/orgformat/) | 2026.6.6.1 (Jun 2026) | none | **≥3.13** | **GPL-3** | Timestamp/link formatting helpers, not a parser. Created by Karl Voit. |
+| [org-rw](https://pypi.org/project/org-rw/) | 0.0.2 (Jul 2024) | none | — | Apache-2 | Conceptually closest to `ortask` needs (retains source locations, round-trip checks), but immature (drops Org block delimiters). Under investigation. |
 | [org-parser](https://github.com/Idorobots/org-parser) | 0.28.0 (May 2026) | `tree-sitter`, `tree-sitter-org` | **≥3.12** | MIT | Rejected: requires Python ≥3.12 (incompatible with target 3.11 environment) and has very low adoption (~2 stars). |
 | [PyOrgMode](https://github.com/bjonnh/PyOrgMode) | 0.1 (2014) | none | — | unclear | Rejected: completely unmaintained since 2014. |
 
