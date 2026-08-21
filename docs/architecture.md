@@ -42,7 +42,10 @@ later moved under `bin/` or renamed, the package can be renamed to `ortask/`.
 ## Dependency Graph
 
 ```text
-core    (stdlib only)
+orglib  (stdlib only, depends on nothing)
+  ^
+  |
+core
   ^ ^ ^
   | | |
 tasks manager menu
@@ -54,9 +57,15 @@ tasks manager menu
  ortask.py  projmgr.py
 ```
 
-No script imports another script. `core` has no intra-package dependencies;
-`tasks` and `manager` depend only on `core`; `taskui` composes `core`, `tasks`,
-`menu`, and the `Project` record from `manager`.
+No script imports another script. `orglib` sits at the bottom and imports
+nothing at all — not `ortasklib`, not any third-party package. `core` depends
+only on `orglib`; `tasks` and `manager` depend on `core`; `taskui` composes
+`core`, `tasks`, `menu`, and the `Project` record from `manager`.
+
+`manager` and `projmgr.py` also import `orglib` directly, for the read paths
+already routed through the `Document` boundary. That is the direction new
+callers should follow: reach for `orglib` rather than `core` when the need is
+parsing rather than files.
 
 ## Script Responsibilities
 
@@ -210,6 +219,11 @@ historical private aliases `_find_tasks_range`, `_build_org_heading`,
 `ortasklib` directly; the re-exports exist for compatibility.
 
 ## How the refactor was sequenced
+
+0. (2026-08-21, after the fact) Extracted the Org syntax from
+   `ortasklib/core.py` into the standalone `orglib/` package — see the
+   `orglib/` section above. `core.py` re-exports the moved names, so the steps
+   below still describe what the code does, just not where all of it lives.
 
 1. Created `ortasklib/core.py` with the parser, model, ID, discovery, and
    atomic-write helpers.

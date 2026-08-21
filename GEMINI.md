@@ -9,7 +9,7 @@ This file provides instructional context for Gemini when working in the `ortask`
 - **Origins:** The project evolved from `status.py`, a simple Org-mode checkbox viewer, into a robust task manager that treats Org-mode as its primary database.
 - **Naming:** The name combines **OR**g-mode and **TASK**. It was chosen for its unique namespace and clarity of purpose.
 - **Primary Language:** Python 3.10+ (Standard library only; no external dependencies).
-- **Core Architecture:** Two CLI scripts — `ortask.py` (one task file) and `projmgr.py` (the project registry) — over the shared `ortasklib/` package.
+- **Core Architecture:** Two CLI scripts — `ortask.py` (one task file) and `projmgr.py` (the project registry) — over the shared `ortasklib/` package and the standalone `orglib/` package (Org syntax; stdlib-only, depends on nothing).
 - **Current State:** The parser supports a formal org-mode `TODO`/`DONE` keyword parser with support for priorities, stable IDs (both numeric `t0001` and week-based `tw26W24`), and tags.
 
 ## The "Ortask Way" (Core Design Principles)
@@ -45,7 +45,7 @@ Since this project uses only the Python standard library, there is no build or i
 - **Limit Output:** `./ortask.py --items 5`.
 - **Custom File:** `./ortask.py --file path/to/file.org`.
 - **Run TUI:** `./projmgr.py -i` or `./projmgr.py --registry ~/Projects -i` to launch the project navigator.
-- **Syntax Check:** `python3 -m py_compile ortask.py projmgr.py ortasklib/*.py`.
+- **Syntax Check:** `python3 -m py_compile ortask.py projmgr.py ortasklib/*.py orglib/*.py`.
 - **Testing:** `python3 -m pytest` (Expected command once a test suite is implemented).
 
 ### Subcommands (`ortask.py`)

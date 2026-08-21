@@ -10,7 +10,7 @@ at a temporary directory.
 
 ## 1. Parse Standard Task Tree
 
-Verify that `core.parse_org()` reads the `* Tasks` subtree when present and
+Verify that `orglib.syntax.parse_org()` (re-exported as `core.parse_org`) reads the `* Tasks` subtree when present and
 otherwise reads valid TODO/DONE task headings across the file. It should return
 `TodoItem` records with IDs, priority cookies, tags, line numbers, and body
 lines. Include prose before and after `* Tasks` to prove unrelated sections are
@@ -90,7 +90,7 @@ contracts.
 Before and after each architecture step, run:
 
 ```sh
-python3 -m py_compile ortask.py projmgr.py ortasklib/*.py
+python3 -m py_compile ortask.py projmgr.py ortasklib/*.py orglib/*.py
 python3 -m pytest -q
 ```
 

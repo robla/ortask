@@ -79,10 +79,22 @@ Ambiguous same-tier matches are errors. Do not silently choose alphabetically.
   (`core`, `tasks`, `manager`, `menu`, `taskui`); the two scripts are thin
   front-ends that do not import each other. See `docs/architecture.md`.
   Everything except the TUI stays stdlib-only.
+- **`orglib/` (started 2026-08-21):** a *peer* package, not part of
+  `ortasklib`. It holds the Org syntax (`syntax.py`: heading regexes,
+  `TodoItem`, `parse_org`, `parse_directories`) plus a small
+  `parse(text) -> Document` boundary. It imports nothing outside the standard
+  library, and the dependency runs `ortasklib` → `orglib` only. `core.py`
+  re-exports the moved names, so `core.parse_org` still works and no existing
+  caller changed. The intent is that a different Org backend could be
+  substituted later; see `docs/orglib.md`.
 
 ## Key files
 
-- `ortasklib/` — shared package: `core.py` (parse/IDs/discovery/atomic writes),
+- `orglib/` — standalone Org syntax package: `syntax.py` (heading regexes,
+  `TodoItem`, `parse_org`, `parse_directories`), `__init__.py` (the
+  `parse()`/`Document` boundary). Imports nothing outside the stdlib.
+- `ortasklib/` — shared package: `core.py` (IDs/discovery/atomic writes, and
+  re-exports of `orglib.syntax`),
   `tasks.py` (local formatting/show/edit/validation), `manager.py` (project
   discovery/config/summaries), `menu.py` (bounded inline application),
   `taskui.py` (task list and issue workspace, shared by `ort -i` and `ptui`)
@@ -98,10 +110,13 @@ Ambiguous same-tier matches are errors. Do not silently choose alphabetically.
 
 ## Architecture
 
-Three layers, now housed in `ortasklib/` (see `docs/architecture.md`):
+Three layers, split across `orglib/` and `ortasklib/` (see
+`docs/architecture.md`):
 
-1. **Parser**: `core.parse_org(text) -> list[TodoItem]` — regex-based, tracks
-   source line numbers for each task and captures its body lines.
+1. **Parser**: `orglib.syntax.parse_org(text) -> list[TodoItem]` — regex-based,
+   tracks source line numbers for each task and captures its body lines. Still
+   reachable as `core.parse_org`. New read paths should go through the boundary
+   instead: `orglib.parse(text).tasks()`.
 2. **Query/mutate**: `core` filtering/ID helpers plus `tasks` edit helpers
    (`add_task`, `change_state`, …) that take text and return new line lists.
 3. **Writer**: minimal text patching — change only matched heading lines (and

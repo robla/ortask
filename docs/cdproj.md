@@ -272,7 +272,7 @@ function unchanged.
 
 ## Layers
 
-- `core.parse_directories()` — the Org syntax. Returns the raw entries under a
+- `orglib.syntax.parse_directories()` — the Org syntax. Returns the raw entries under a
   top-level `* Directories` heading, or `None` when there is no such section, so
   a candidate location can be told apart from a real source. Bare paths, list
   bullets, `file:` prefixes, and `[[...]]` brackets all parse.

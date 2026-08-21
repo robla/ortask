@@ -13,6 +13,14 @@ surgical edits.
 - task-file discovery (`tasks.org`, `task.org`, `*.task.org`, compatibility fallbacks)
 - `* Tasks` subtree parsing when present, with whole-file task-heading parsing
   as the compatibility path
+
+Since 2026-08-21 the parsing half of that lives in `orglib`, a separate
+top-level package that imports nothing outside the standard library (see
+`docs/orglib.md`). For a tool like castabout that wants to read ortask task
+headings but has its own opinions about files and workflow, `orglib` alone may
+be the better dependency: it carries no discovery rules, no atomic-write
+policy, and nothing else to inherit. Depend on `ortasklib` when the discovery
+and write behavior is wanted too.
 - stable task IDs and lookup normalization
 - task filtering and summary views
 - byte-preserving line edits for state changes, inserted notes, and new tasks
@@ -90,8 +98,9 @@ Near-term castabout integration should happen in layers:
 
 1. Replace castabout task-file discovery with `ortasklib.core` behavior or a
    thin wrapper that prefers `castabout.task.org`.
-2. Parse active-week and venue tasks using `ortasklib` task records where the
-   current heading shape allows it.
+2. Parse active-week and venue tasks using `orglib` task records where the
+   current heading shape allows it — this step needs the parser only, so it can
+   land without castabout taking on `ortasklib`.
 3. Move reusable URL extraction and task-body insertion helpers into
    `ortasklib`.
 4. Keep ElectoramaWeekly episode lookup, draft templates, and posting guidance

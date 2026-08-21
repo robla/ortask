@@ -197,7 +197,7 @@ One top-level heading per project, whose text is the registry entry name:
 Notes on the shape:
 
 - **Directory entries may be list items, subheadings, bare paths, or `file:`
-  links.** `core._strip_directory_entry` already accepts all four, so the
+  links.** `orglib.syntax._strip_directory_entry` already accepts all four, so the
   central file needs no new entry syntax. List items read better when nested
   under a project heading, and are used in the examples above.
 - **Prose under a project heading is free text** and is never parsed. That is
@@ -207,11 +207,11 @@ Notes on the shape:
 
 ### What changes in the code
 
-Less than it looks. `core.parse_directories` currently finds a *top-level*
+Less than it looks. `orglib.syntax.parse_directories` currently finds a *top-level*
 `* Directories` heading; it needs a project-scoped form that first locates the
 top-level heading matching a project name, then finds `Directories` inside that
 subtree. Bounding a subtree at the next same-or-higher heading is exactly what
-`core.find_tasks_range` already does for `* Tasks`, so this is a generalization
+`orglib.syntax.find_tasks_range` already does for `* Tasks`, so this is a generalization
 of existing machinery rather than new parsing.
 
 Three consequences worth deciding deliberately:

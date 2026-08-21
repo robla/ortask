@@ -195,20 +195,20 @@ an unreadable/missing file). `apply` does not use exit code `2`.
 
 ## Implementation Notes
 
-- `core.find_tasks_range` is scoped to the `* Tasks` subtree and stops at the
-  next top-level heading. `core.parse_org` uses that scope when `* Tasks`
+- `orglib.syntax.find_tasks_range` is scoped to the `* Tasks` subtree and stops at the
+  next top-level heading. `orglib.syntax.parse_org` uses that scope when `* Tasks`
   exists, otherwise it scans task headings across the file. Locate the template
   with a parallel line scan — from the `* Template` heading to the next
   top-level `*` heading — and copy those lines as raw source text rather than
   parsing them into `TodoItem`s. This is also why the placeholder IDs
   (`twYYWNN`) need no special handling: they are never parsed from the template,
   so they never have to satisfy the strict week-ID regex.
-- Reuse `core.find_tasks_range` to find the insertion point — its `end` index is
+- Reuse `orglib.syntax.find_tasks_range` to find the insertion point — its `end` index is
   the next top-level heading (here, `* Template`) — and `core.write_lines` for
   the atomic, line-preserving write. This keeps `apply` consistent with how
   `tasks.add_task` already inserts.
 - Reuse `core.canonical_id` for the duplicate-ID check and the existing week-ID
-  parsing for interpreting `--week`. (As implemented: `core.find_template_range`
+  parsing for interpreting `--week`. (As implemented: `orglib.syntax.find_template_range`
   / `core.count_template_sections` locate and validate the template;
   `tasks.resolve_week_target` and `tasks.apply_template` do the date math and
   instantiation; `apply` is documented in `docs/ortask.md`.)
