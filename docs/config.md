@@ -289,14 +289,9 @@ of the dependency cost.
 |---|---|---|---|---|---|
 | [orgparse](https://pypi.org/project/orgparse/) | 0.4.20251020 (Oct 2025) | **none** | ≥3.9 | BSD-2 | Read-only tree. The de facto standard; stable rather than abandoned. |
 | [orgmunge](https://pypi.org/project/orgmunge/) | 0.3.1 (Jul 2025) | `ply` | ≥3.10 | MIT | A real grammar; exists specifically to modify and write back. Re-serializes. |
-| [org-parser](https://github.com/Idorobots/org-parser) | 0.28.0 (May 2026) | `tree-sitter`, `tree-sitter-org` | **≥3.12** | MIT | Most complete; claims whitespace-preserving mutable trees. Compiled deps, ~2 GitHub stars. |
-| [orgformat](https://pypi.org/project/orgformat/) | 2026.6.6.1 (Jun 2026) | none | **≥3.13** | **GPL-3** | Timestamp/link formatting helpers, not a parser. |
-| [PyOrgMode](https://github.com/bjonnh/PyOrgMode) | 0.1 (2014) | none | — | unclear | Unmaintained for over a decade. |
+| [orgformat](https://pypi.org/project/orgformat/) | 2026.6.6.1 (Jun 2026) | none | **≥3.13** | **GPL-3** | Timestamp/link formatting helpers, not a parser. Created by Karl Voit. |
 
-Two hard filters cut this list fast. This machine runs Python 3.11, so
-`org-parser` and `orgformat` cannot be installed at all. And `orgformat` is
-GPL-3, which is a licensing decision rather than a technical one for a project
-that has no `LICENSE` file yet.
+A key constraint cuts this list fast: this machine runs Python 3.11.2, so the latest version of `orgformat` (requiring `≥3.13`) cannot be installed at all (running `pip install orgformat` fetches a very old version from 2019). Additionally, `orgformat` is licensed under GPL-3, which is a licensing decision rather than a technical one for a project that has no `LICENSE` file yet.
 
 The genuinely complete Org parser is `org-element` inside Emacs, reachable in
 batch mode. It is the only implementation that is authoritative by definition.
