@@ -2302,7 +2302,7 @@ def test_projmgr_project_menu_summary_follows_the_highlight(
 
 
 def test_project_priority_and_alphabetical_sort_modes(tmp_path: Path) -> None:
-    # Priority mode orders A/B/C/custom/unset; alphabetical mode ignores metadata.
+    # Priority and alphabetical orders stay stable as the three-mode ring grows.
     projects = [
         manager.Project("zulu", tmp_path),
         manager.Project("alpha", tmp_path),
@@ -2339,10 +2339,71 @@ def test_project_priority_and_alphabetical_sort_modes(tmp_path: Path) -> None:
         manager.PROJECT_SORT_ALPHABETICAL
     )
     assert manager.next_project_sort_mode(manager.PROJECT_SORT_ALPHABETICAL) == (
+        manager.PROJECT_SORT_MODIFIED
+    )
+    assert manager.next_project_sort_mode(manager.PROJECT_SORT_MODIFIED) == (
         manager.PROJECT_SORT_PRIORITY
     )
     with pytest.raises(ValueError, match="unknown project sort mode"):
         manager.sort_projects(projects, metadata, "recent")
+
+
+def test_project_modified_sort_uses_task_file_mtime_with_unavailable_last(
+    tmp_path: Path,
+) -> None:
+    # Modified mode is newest-first, name-stable, and puts unusable files last.
+    older = write(tmp_path / "older.org", "* Tasks\n")
+    newer = write(tmp_path / "newer.org", "* Tasks\n")
+    os.utime(older, ns=(1_000_000_000, 1_000_000_000))
+    os.utime(newer, ns=(2_000_000_000, 2_000_000_000))
+    projects = [
+        manager.Project("missing", tmp_path, tmp_path / "missing.org"),
+        manager.Project("older", tmp_path, older),
+        manager.Project("absent", tmp_path),
+        manager.Project("directory", tmp_path, tmp_path),
+        manager.Project("newer", tmp_path, newer),
+    ]
+
+    ordered = manager.sort_projects(
+        projects, {}, manager.PROJECT_SORT_MODIFIED
+    )
+
+    assert [project.name for project in ordered] == [
+        "newer",
+        "older",
+        "absent",
+        "directory",
+        "missing",
+    ]
+
+
+def test_task_file_mirror_diagnostic_is_semantic_and_non_authoritative(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Equivalent path spellings agree; a stale mirror is shown but never resolved.
+    project_dir = tmp_path / "sample"
+    task_file = write(project_dir / "tasks.org", "* Tasks\n")
+    project = manager.Project("sample", project_dir, task_file)
+    monkeypatch.setenv("SAMPLE_ROOT", str(project_dir))
+
+    assert manager.task_file_mirror_mismatch(project, None) is None
+    assert manager.task_file_mirror_mismatch(project, "tasks.org") is None
+    assert (
+        manager.task_file_mirror_mismatch(
+            project, "$SAMPLE_ROOT/tasks.org"
+        )
+        is None
+    )
+    mismatch = manager.task_file_mirror_mismatch(project, "stale.org")
+    assert mismatch == (
+        f"TASK_FILE differs: recorded stale.org; resolved {task_file.resolve()}"
+    )
+    assert "TASK_FILE differs" in projmgr._navigator_row(
+        project, manager.ProjectMetadata(task_file="stale.org")
+    )
+    assert projmgr._project_summary(
+        project, manager.ProjectMetadata(task_file="stale.org")
+    ).endswith(mismatch)
 
 
 def test_project_browser_shows_metadata_and_anchors_sort_selection(
@@ -2350,13 +2411,14 @@ def test_project_browser_shows_metadata_and_anchors_sort_selection(
 ) -> None:
     # Navigator rows expose steering data and keep the same project selected.
     registry = tmp_path / "registry"
-    for name, tasks in (
-        ("alpha", "** TODO t0001 One\n"),
-        ("bravo", "** TODO t0001 One\n** TODO t0002 Two\n"),
-        ("zulu", "** DONE t0001 Finished\n"),
+    for name, tasks, modified_ns in (
+        ("alpha", "** TODO t0001 One\n", 1_000_000_000),
+        ("bravo", "** TODO t0001 One\n** TODO t0002 Two\n", 2_000_000_000),
+        ("zulu", "** DONE t0001 Finished\n", 3_000_000_000),
     ):
         project = tmp_path / "src" / name
-        write(project / "tasks.org", f"* Tasks\n{tasks}")
+        task_file = write(project / "tasks.org", f"* Tasks\n{tasks}")
+        os.utime(task_file, ns=(modified_ns, modified_ns))
         register(registry, name, project)
     (registry / manager.PROJECTS_INDEX_NAME).write_text(
         manager.PROJECTS_INDEX_HEADER
@@ -2410,6 +2472,16 @@ def test_project_browser_shows_metadata_and_anchors_sort_selection(
     ]
     assert session.current_view.selected_index == 1
     assert session.current_view.rows[1].text.startswith("[B] bravo")
+
+    session.current_view.on_result(session, menu.MenuResult("sort", 1))
+    assert browser.sort_mode == manager.PROJECT_SORT_MODIFIED
+    assert session.message == "Sort: Modified"
+    assert session.current_view.selected_index == 1
+
+    session.current_view.on_result(session, menu.MenuResult("sort", 1))
+    assert browser.sort_mode == manager.PROJECT_SORT_PRIORITY
+    assert session.message == "Sort: Priority"
+    assert session.current_view.selected_index == 1
 
 
 def test_project_browser_buffers_priority_undo_redo_and_save(tmp_path: Path) -> None:
@@ -2501,7 +2573,8 @@ def test_project_metadata_workspace_applies_one_buffered_transaction(
     original = (
         manager.PROJECTS_INDEX_HEADER
         + "* [#B] alpha :work:\n"
-        + ":PROPERTIES:\n:DESCRIPTION: Old summary\n:CUSTOM: exact\n:END:\n"
+        + ":PROPERTIES:\n:DESCRIPTION: Old summary\n"
+        + ":TASK_FILE: stale.org\n:CUSTOM: exact\n:END:\n"
         + "Keep this prose.\n** Directories\n   - docs\n"
         + "* other\nOther source.\n"
     )
@@ -2533,7 +2606,8 @@ def test_project_metadata_workspace_applies_one_buffered_transaction(
     session.current_view.on_result(session, menu.MenuResult("metadata", 0))
     workspace = session.current_view
     assert isinstance(workspace, menu.WorkspaceView)
-    assert workspace.summary == "Effective directories: 1 (custom)"
+    assert workspace.summary.startswith("Effective directories: 1 (custom)")
+    assert "TASK_FILE differs" in workspace.summary
     assert workspace.focused_index == 1
     assert workspace.dirty_label == "PROJECT EDITED"
 
@@ -2546,6 +2620,8 @@ def test_project_metadata_workspace_applies_one_buffered_transaction(
         Document(directories, cursor_position=len(directories))
     )
     workspace.on_activate(session, 3)
+    assert session.message == "TASK_FILE correction staged; C-s saves it"
+    assert "TASK_FILE differs" not in workspace.summary
     assert workspace.is_dirty is not None and workspace.is_dirty()
 
     monkeypatch.setattr(
@@ -2568,6 +2644,7 @@ def test_project_metadata_workspace_applies_one_buffered_transaction(
     assert ":END:\nKeep this prose." in revised
     assert revised.endswith("* other\nOther source.\n")
     assert workspace.is_dirty() is False
+    assert "TASK_FILE differs" not in workspace.summary
 
 
 def test_project_browser_same_section_conflict_preserves_both_versions(

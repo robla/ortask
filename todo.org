@@ -299,7 +299,7 @@ rather than assuming daily pages, and never touch a line that lacks the
 extension's own tag. Ship =--dry-run= first and prefer the attended
 =zim --plugin quicknote= path before writing page files directly. Needs
 =t0033.4=.
-** TODO [#A] t0035 Make ptui a priority-driven project dashboard
+** DONE [#A] t0035 Make ptui a priority-driven project dashboard
 Implement =docs/ptui.md= so the project browser helps select higher-priority
 work while preserving registry symlinks as the authority for membership and
 task-file resolution.
@@ -348,10 +348,16 @@ description, the task-file mirror, and custom directories. =C-s= composes its
 fields into one buffered transaction and saves through the existing reconcile
 path; dirty exit offers Save/Discard/Continue. The workspace and =cdproj='s
 private editor both save-check and reload an =OrgBuffer= around =$VISUAL=.
-*** TODO [#B] t0035.5 Add modified sorting and task-file mirror diagnostics
+*** DONE [#B] t0035.5 Add modified sorting and task-file mirror diagnostics
 Add newest-task-file-first sorting with unreadable or absent files last.
 Display disagreements between the non-normative =TASK_FILE= mirror and the
 resolved task file; =t0035.4= already supplies the explicit refresh action.
+
+Implemented 2026-08-22: =s= cycles Priority, Alphabetical, and Modified,
+anchoring the selected project by name. Modified opens and stats canonical task
+files, sorting unavailable files last. Stale mirrors receive a compact row mark
+and full recorded/resolved diagnostics; Refresh stages the canonical value for
+=C-s= without making the mirror authoritative.
 ** DONE [#A] t0036 Strip the priority cookie when matching project headings
 =orglib.syntax._project_title= strips trailing tags only, so =* [#A] ortask=
 does not match registry entry =ortask=: =orglib.parse(text).directories('ortask')=

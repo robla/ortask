@@ -52,7 +52,7 @@ from ortasklib import core, log as eventlog, manager, menu, taskui
 # ---------------------------------------------------------------------------
 
 PROJECT_SORT_ACTION = menu.MenuAction(
-    "sort", "s", "Cycle project sorting: Priority and Alphabetical"
+    "sort", "s", "Cycle project sorting: Priority, Alphabetical, and Modified"
 )
 PROJECT_MENU_ACTIONS = {
     "m": menu.MenuAction(
@@ -130,6 +130,10 @@ def _project_summary(
         parts.append("(no task file)")
     if metadata is not None and metadata.warning:
         parts.append(f"metadata: {metadata.warning}")
+    if metadata is not None:
+        mismatch = _project_task_file_mismatch(project, metadata)
+        if mismatch:
+            parts.append(mismatch)
     return "  ·  ".join(parts)
 
 
@@ -162,10 +166,24 @@ def _project_priority(metadata: manager.ProjectMetadata) -> str:
     return metadata.priority.upper() if metadata.priority else " "
 
 
-def _project_metadata_note(metadata: manager.ProjectMetadata) -> str:
+def _project_task_file_mismatch(
+    project: manager.Project, metadata: manager.ProjectMetadata
+) -> str | None:
+    """Avoid deriving a second warning from an already-ambiguous mirror."""
+    if metadata.warning and "TASK_FILE" in metadata.warning:
+        return None
+    return manager.task_file_mirror_mismatch(project, metadata.task_file)
+
+
+def _project_metadata_note(
+    project: manager.Project, metadata: manager.ProjectMetadata
+) -> str:
+    notes: list[str] = []
     if metadata.warning:
-        return f"(metadata: {metadata.warning})"
-    return ""
+        notes.append(f"metadata: {metadata.warning}")
+    if _project_task_file_mismatch(project, metadata):
+        notes.append("TASK_FILE differs")
+    return f"({' · '.join(notes)})" if notes else ""
 
 
 def _navigator_row(
@@ -178,7 +196,10 @@ def _navigator_row(
     )
     suffix = "  ".join(
         part
-        for part in (metadata.description or "", _project_metadata_note(metadata))
+        for part in (
+            metadata.description or "",
+            _project_metadata_note(project, metadata),
+        )
         if part
     )
     return f"{prefix}  {suffix}".rstrip()
@@ -191,7 +212,7 @@ def _navigator_dashboard_detail(
     parts = [f"{_project_location(project)}  ({_project_tasks(project)})"]
     if metadata.description:
         parts.append(metadata.description)
-    note = _project_metadata_note(metadata)
+    note = _project_metadata_note(project, metadata)
     if note:
         parts.append(note)
     return "  ".join(parts)
@@ -588,7 +609,10 @@ class _ProjectBrowser:
         effective_directories = manager.unique_resolved_directories(
             effective_entries, root
         ) or [root]
-        effective_count = len(effective_directories)
+        effective_state: dict[str, str | int] = {
+            "count": len(effective_directories),
+            "source": effective_source,
+        }
 
         resolved_file = manager.canonical_org_file(project)
         resolved_display = (
@@ -624,6 +648,18 @@ class _ProjectBrowser:
             "directories": tuple(custom.entries or []),
         }
         workspace: menu.WorkspaceView | None = None
+
+        def workspace_summary() -> str:
+            parts = [
+                "Effective directories: "
+                f"{effective_state['count']} ({effective_state['source']})"
+            ]
+            mismatch = manager.task_file_mirror_mismatch(
+                project, draft["task_file"]
+            )
+            if mismatch:
+                parts.append(mismatch)
+            return " · ".join(parts)
 
         def description_value() -> str | None:
             value = description_area.text.strip()
@@ -838,12 +874,14 @@ class _ProjectBrowser:
                     else ()
                 ),
             )
-            if workspace is not None and current_directories is not None:
+            if current_directories is not None:
                 effective = manager.unique_resolved_directories(
                     list(current_directories.entries), root
                 ) or [root]
-                count = len(effective)
-                workspace.summary = f"Effective directories: {count} (custom)"
+                effective_state["count"] = len(effective)
+                effective_state["source"] = "custom"
+            if workspace is not None:
+                workspace.summary = workspace_summary()
             session.set_outcome(message)
             return True
 
@@ -974,12 +1012,20 @@ class _ProjectBrowser:
             focus_index: int,
         ) -> None:
             if focus_index == 3:
-                draft["task_file"] = (
+                target = (
                     manager.friendly_path(resolved_file)
                     if resolved_file is not None
                     else None
                 )
-                session.set_transient_message("Refreshed TASK_FILE mirror")
+                if draft["task_file"] == target:
+                    session.set_transient_message("TASK_FILE mirror already matches")
+                    return
+                draft["task_file"] = target
+                if workspace is not None:
+                    workspace.summary = workspace_summary()
+                session.set_transient_message(
+                    "TASK_FILE correction staged; C-s saves it"
+                )
                 return
             if focus_index != 4:
                 return
@@ -1000,9 +1046,7 @@ class _ProjectBrowser:
             on_save=save_workspace,
             title=f"Project metadata: {project.name}",
             title_right=f"Registry: {self.display_path}",
-            summary=(
-                f"Effective directories: {effective_count} ({effective_source})"
-            ),
+            summary=workspace_summary(),
             instruction=(
                 "Tab/S-Tab fields · ←/→ priority · Enter action · "
                 "C-s save · C-g help · Esc back"

@@ -86,8 +86,9 @@ projmgr.py -i --todo-only
 
 `ptui` now uses optional Org priority and description metadata from
 `projects.org` as a project-steering dashboard. Its default order is priority
-then project name; press `s` to switch between Priority and Alphabetical without
-rewriting the index. Shift-Up/Down adjusts project priority through
+then project name; press `s` to cycle Priority, Alphabetical, and Modified
+(newest task file first) without rewriting the index. Shift-Up/Down adjusts
+project priority through
 `unset -> C -> B -> A` in one session buffer; `C-/`, `C-r`, and `C-s` provide
 undo, redo, and an exact-preimage-checked save. Dirty exit offers Save, Discard,
 or Continue Editing, and `#projects.org#` preserves crash-recovery data.
@@ -96,8 +97,9 @@ while a dirty list merges changes to disjoint project sections in memory and
 keeps the result dirty until `C-s`. Differing changes to one section open a
 named Reload/Retry/Continue conflict view without overwriting either version.
 Press `m` to edit priority, description, the task-file mirror, and custom
-directories in one compact, preimage-checked workspace. Task-file-modified
-ordering and mirror-mismatch diagnostics remain planned.
+directories in one compact, preimage-checked workspace. A stale `TASK_FILE`
+mirror is marked in the row and explained with recorded and resolved paths;
+refreshing it remains an explicit workspace edit.
 Registry symlinks remain authoritative for project membership and task-file
 resolution. See [`docs/ptui.md`](ptui.md) for the full specification, metadata
 shape, sort semantics, safety rules, and delivery order.

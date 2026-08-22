@@ -9,10 +9,10 @@ This remains partly a forward specification. `t0035.1` parses priority,
 description, and the task-file mirror; `t0035.2` displays the first two with
 open-task count and adds priority/alphabetical sorting; `t0035.3` adds buffered
 priority changes from the project list; `t0035.4` adds the `m` metadata
-workspace. Modified sorting is not implemented yet. `t0037.1` polls for
-external index changes, `t0037.2` supplies the pure section-level merge planner,
-and `t0037.3` rebases disjoint external changes into the open buffer or presents
-a named conflict.
+workspace; `t0035.5` completes the dashboard with Modified sorting and mirror
+diagnostics. `t0037.1` polls for external index changes, `t0037.2` supplies the
+pure section-level merge planner, and `t0037.3` rebases disjoint external
+changes into the open buffer or presents a named conflict.
 
 ## Project List
 
@@ -48,9 +48,9 @@ a cheap, predictable proxy for activity: `ptui` must not recursively scan
 project trees or invoke Git to calculate it. The selected project remains
 anchored by name when the order changes.
 
-Priority and Alphabetical are implemented by `t0035.2`; Modified remains
-`t0035.5`. Help lists only the modes that exist rather than advertising one
-that is not there yet.
+Priority and Alphabetical were implemented by `t0035.2`; `t0035.5` adds
+Modified to the same cycle. Help derives its description from the implemented
+mode ring.
 
 ## Metadata in `projects.org`
 
@@ -84,8 +84,12 @@ tests for it are worth keeping wherever this matching moves.
 `TASK_FILE` is an optional, non-normative mirror for human inspection. The
 symlink registry and normal task-file resolution remain authoritative; no
 command may discover or open a task file from this property. When the mirror
-differs from the resolved file, `ptui` should show the mismatch and offer to
-refresh it rather than silently treating it as configuration.
+differs from the resolved file, `ptui` marks the project row and shows both
+paths in the selected-project summary and metadata workspace. Relative mirrors
+are compared from the real project directory after expanding `~` and
+environment variables. An unset mirror is normal, and a repeated `TASK_FILE`
+reports its existing ambiguity instead of a second mismatch. Refresh stages
+the canonical path in the workspace; `C-s` saves it.
 
 Other properties, prose, tags, and child sections are allowed and must survive
 edits byte-for-byte outside the changed fields. `Directories` keeps its current
@@ -283,4 +287,5 @@ people open in Emacs, so the cookie wins anyway.
 5. Reconcile the open buffer and expose conflicts (`t0037.3`, done).
 6. Isolate the format-neutral transactional buffer (`t0038.1`, done).
 7. Add the `m` metadata workspace and bounded save path (`t0035.4`, done).
-8. Add modified-time sorting and the task-file mirror diagnostics.
+8. Add modified-time sorting and the task-file mirror diagnostics (`t0035.5`,
+   done).

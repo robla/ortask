@@ -721,7 +721,12 @@ class ProjectMetadata:
 
 PROJECT_SORT_PRIORITY = "priority"
 PROJECT_SORT_ALPHABETICAL = "alphabetical"
-PROJECT_SORT_MODES = (PROJECT_SORT_PRIORITY, PROJECT_SORT_ALPHABETICAL)
+PROJECT_SORT_MODIFIED = "modified"
+PROJECT_SORT_MODES = (
+    PROJECT_SORT_PRIORITY,
+    PROJECT_SORT_ALPHABETICAL,
+    PROJECT_SORT_MODIFIED,
+)
 _PROJECT_PRIORITY_RANK = {"A": 0, "B": 1, "C": 2}
 PROJECT_PRIORITY_SCALE = (None, "C", "B", "A")
 
@@ -750,6 +755,45 @@ def project_priority_sort_key(
     return rank, *project_name_sort_key(project)
 
 
+def project_modified_sort_key(project: Project) -> tuple[int, int, str, str]:
+    """Newest canonical task file first; unavailable files sort last."""
+    try:
+        org_file = canonical_org_file(project)
+        if org_file is None:
+            modified_ns = None
+        else:
+            with org_file.open("rb") as stream:
+                modified_ns = os.fstat(stream.fileno()).st_mtime_ns
+    except (OSError, RuntimeError):
+        modified_ns = None
+    unavailable = 1 if modified_ns is None else 0
+    newest_first = -modified_ns if modified_ns is not None else 0
+    return unavailable, newest_first, *project_name_sort_key(project)
+
+
+def task_file_mirror_mismatch(
+    project: Project, recorded: str | None
+) -> str | None:
+    """Describe a non-normative ``TASK_FILE`` disagreement, if one exists."""
+    value = recorded.strip() if recorded else ""
+    if not value:
+        return None
+    resolved_file = canonical_org_file(project)
+    resolved_display = (
+        friendly_path(resolved_file) if resolved_file is not None else "(no task file)"
+    )
+    if resolved_file is not None:
+        try:
+            expanded = Path(os.path.expandvars(value)).expanduser()
+            if not expanded.is_absolute():
+                expanded = real_project_path(project) / expanded
+            if expanded.resolve() == resolved_file:
+                return None
+        except (OSError, RuntimeError, ValueError):
+            pass
+    return f"TASK_FILE differs: recorded {value}; resolved {resolved_display}"
+
+
 def sort_projects(
     projects: list[Project] | tuple[Project, ...],
     metadata: dict[str, ProjectMetadata],
@@ -765,6 +809,8 @@ def sort_projects(
         )
     if mode == PROJECT_SORT_ALPHABETICAL:
         return sorted(projects, key=project_name_sort_key)
+    if mode == PROJECT_SORT_MODIFIED:
+        return sorted(projects, key=project_modified_sort_key)
     raise ValueError(f"unknown project sort mode: {mode}")
 
 
