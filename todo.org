@@ -319,7 +319,7 @@ alphabetical views, and keep the highlight anchored by project name. =s= cycles
 the modes that exist so far; =t0035.5= adds Modified, which =docs/ptui.md=
 lists as the third. Contextual Help lists the modes actually available, so it
 stays true at each step.
-*** TODO [#A] t0035.3 Add buffered project-priority editing
+*** DONE [#A] t0035.3 Add buffered project-priority editing
 Use Shift-Up/Down to change priority through =unset -> C -> B -> A=. Route
 changes through one bounded =projects.org= transaction with visible dirty
 state, undo/redo, =C-s= save, and Save/Discard/Cancel on exit.

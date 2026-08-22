@@ -40,12 +40,33 @@ from ortasklib import core, log as eventlog, manager, menu, taskui
 PROJECT_SORT_ACTION = menu.MenuAction(
     "sort", "s", "Cycle project sorting: Priority and Alphabetical"
 )
-PROJECT_MENU_ACTIONS = {"s": PROJECT_SORT_ACTION}
+PROJECT_MENU_ACTIONS = {
+    "s": PROJECT_SORT_ACTION,
+    "s-up": menu.MenuAction(
+        "priority_up", "Shift+↑", "Raise the highlighted project's priority"
+    ),
+    "s-down": menu.MenuAction(
+        "priority_down", "Shift+↓", "Lower the highlighted project's priority"
+    ),
+    "c-s": menu.MenuAction(
+        "save", "C-s", "Save buffered project metadata to projects.org"
+    ),
+    "c-_": menu.MenuAction(
+        "undo", "C-/", "Undo the most recent buffered project edit"
+    ),
+    "c-r": menu.MenuAction(
+        "redo", "C-r", "Redo the most recently undone project edit"
+    ),
+}
 
 
-def _project_menu_instruction(sort_mode: str) -> str:
+def _project_menu_instruction(sort_mode: str, *, dirty: bool = False) -> str:
     label = sort_mode.title()
-    return f"{label} sort · ↑↓/jk · ↵ open · s sort · C-g help · Esc/b/q exit"
+    prefix = "FILE MODIFIED · " if dirty else ""
+    return (
+        f"{prefix}{label} sort · ↑↓/jk · S-↑/↓ priority · ↵ open · s sort · "
+        "C-s save · C-/ undo · C-r redo · C-g help · Esc/b/q exit"
+    )
 
 
 PROJECT_MENU_INSTRUCTION = _project_menu_instruction(manager.PROJECT_SORT_PRIORITY)
@@ -336,15 +357,92 @@ class _ProjectBrowser:
         self.include_done = include_done
         self.sort_mode = manager.PROJECT_SORT_PRIORITY
         self.session: menu.InlineMenuSession | None = None
+        self.index_buffer: taskui.OrgBuffer | None = None
+        self.index_error: str | None = None
+        try:
+            projects = manager.discover_projects(self.workspace)
+            index_path, _ = manager.require_registry_index(self.workspace, projects)
+            self.index_buffer = taskui.OrgBuffer(
+                index_path,
+                registry=self.workspace,
+            )
+        except (OSError, manager.RegistryIndexError) as exc:
+            self.index_error = str(exc)
+
+    def _metadata(
+        self, projects: list[manager.Project]
+    ) -> dict[str, manager.ProjectMetadata]:
+        if self.index_buffer is not None:
+            return manager.project_metadata_from_text(
+                self.index_buffer.read(), projects
+            )
+        return manager.read_project_metadata(self.workspace, projects)
+
+    def _buffer_status(self) -> str:
+        if self.index_buffer is None:
+            return ""
+        return taskui.buffer_status(self.index_buffer)
+
+    @staticmethod
+    def _selected_project(
+        projects: list[manager.Project], index: int | None
+    ) -> manager.Project | None:
+        if index is None or not 0 <= index < len(projects):
+            return None
+        return projects[index]
+
+    def _replace_view(
+        self,
+        session: menu.InlineMenuSession,
+        project: manager.Project | None,
+        fallback_index: int,
+    ) -> None:
+        session.replace_view(
+            self.view(project.name if project is not None else None, fallback_index)
+        )
+
+    def _save_index(
+        self,
+        session: menu.InlineMenuSession,
+        project: manager.Project | None,
+        fallback_index: int,
+    ) -> bool:
+        if self.index_buffer is None:
+            session.set_transient_message(
+                self.index_error or "projects.org is not available for editing"
+            )
+            return False
+        changed = self.index_buffer.dirty
+        try:
+            self.index_buffer.save()
+        except taskui.BufferChangedError as exc:
+            session.set_transient_message(str(exc))
+            return False
+        self._replace_view(session, project, fallback_index)
+        message = (
+            "Saved changes to projects.org"
+            if changed
+            else "Saved projects.org (unchanged)"
+        )
+        session.set_outcome(message)
+        return True
+
+    def _initial_view(self) -> menu.MenuView:
+        if self.index_buffer is None:
+            return self.view()
+        recovered = taskui.recovery_text(self.index_buffer)
+        if recovered is None:
+            return self.view()
+        return self._recovery_view(recovered)
 
     def run(self) -> None:
         session = menu.InlineMenuSession(
-            self.view(),
+            self._initial_view(),
             action_keys=(
                 *taskui.InteractiveTaskController.action_keys(),
                 *PROJECT_MENU_ACTIONS,
             ),
-            final_message="No task changes",
+            final_message="No project changes",
         )
         self.session = session
         session.run()
@@ -357,22 +455,70 @@ class _ProjectBrowser:
         fallback_index: int = 0,
     ) -> menu.MenuView:
         discovered = manager.discover_projects(self.workspace)
-        metadata = manager.read_project_metadata(self.workspace, discovered)
+        metadata = self._metadata(discovered)
         projects = manager.sort_projects(discovered, metadata, self.sort_mode)
 
         def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+            project = self._selected_project(projects, result.index)
+            fallback = result.index if result.index is not None else 0
             if result.action == "sort":
-                selected = (
-                    projects[result.index].name
-                    if result.index is not None
-                    and 0 <= result.index < len(projects)
-                    else None
-                )
                 self.sort_mode = manager.next_project_sort_mode(self.sort_mode)
-                session.replace_view(
-                    self.view(selected, result.index if result.index is not None else 0)
-                )
+                self._replace_view(session, project, fallback)
                 session.set_transient_message(f"Sort: {self.sort_mode.title()}")
+                return
+            if result.action == "save":
+                self._save_index(session, project, fallback)
+                return
+            if result.action in {"undo", "redo"}:
+                if self.index_buffer is None:
+                    session.set_transient_message(
+                        self.index_error or "projects.org is not available for editing"
+                    )
+                    return
+                description = (
+                    self.index_buffer.undo()
+                    if result.action == "undo"
+                    else self.index_buffer.redo()
+                )
+                if description is None:
+                    session.set_transient_message(f"Nothing to {result.action}")
+                    return
+                self._replace_view(session, project, fallback)
+                verb = "Undid" if result.action == "undo" else "Redid"
+                session.set_transient_message(f"{verb}: {description}")
+                return
+            if result.action in {"priority_up", "priority_down"}:
+                if project is None:
+                    return
+                if self.index_buffer is None:
+                    session.set_transient_message(
+                        self.index_error or "projects.org is not available for editing"
+                    )
+                    return
+                current = metadata[project.name].priority
+                direction = 1 if result.action == "priority_up" else -1
+                try:
+                    target = manager.shift_project_priority(current, direction)
+                    revised = manager.change_project_priority(
+                        self.index_buffer.read(), project.name, target
+                    )
+                except (orglib.OrgStructureError, ValueError) as exc:
+                    session.set_transient_message(str(exc))
+                    return
+                if revised is None:
+                    boundary = "highest" if direction > 0 else "unset"
+                    session.set_transient_message(
+                        f"{project.name} priority is already {boundary}"
+                    )
+                    return
+                description = (
+                    f"Set {project.name} priority to {target}"
+                    if target is not None
+                    else f"Clear {project.name} priority"
+                )
+                self.index_buffer.apply_text(revised, description=description)
+                self._replace_view(session, project, fallback)
+                session.set_transient_message(description)
                 return
             if result.action != "select" or result.index is None:
                 return
@@ -403,17 +549,132 @@ class _ProjectBrowser:
             name = projects[index].name if 0 <= index < len(projects) else None
             session.replace_view(self.view(name, index))
 
-        return _project_view(
+        view = _project_view(
             projects,
             self.display_path,
             handle,
             listing=NAVIGATOR,
-            instruction=_project_menu_instruction(self.sort_mode),
+            instruction=_project_menu_instruction(
+                self.sort_mode,
+                dirty=self.index_buffer.dirty if self.index_buffer is not None else False,
+            ),
             select_help="Open the highlighted project",
             actions=PROJECT_MENU_ACTIONS,
             metadata=metadata,
             selected_index=_anchor_index(projects, selected_name, fallback_index),
             on_resume=resume,
+        )
+        selected_summary = view.status_text
+
+        def status() -> str:
+            return " · ".join(
+                part
+                for part in (
+                    self._buffer_status(),
+                    selected_summary() if selected_summary is not None else "",
+                )
+                if part
+            )
+
+        view.status_text = status
+        view.on_back = self._handle_project_back
+        if self.index_buffer is not None and self.index_buffer.dirty:
+            view.title += " *"
+        return view
+
+    def _handle_project_back(self, session: menu.InlineMenuSession) -> bool:
+        if self.index_buffer is None or not self.index_buffer.dirty:
+            return True
+        session.push_view(self._save_view())
+        return False
+
+    def _save_view(self) -> menu.MenuView:
+        assert self.index_buffer is not None
+        rows = [
+            menu.MenuRow(1, "SAVE", "Write pending edits to projects.org"),
+            menu.MenuRow(2, "DISCARD", "Revert edits and remove #projects.org#"),
+            menu.MenuRow(3, "CONTINUE", "Return to the project list"),
+        ]
+
+        def handle(
+            session: menu.InlineMenuSession,
+            result: menu.MenuResult,
+        ) -> None:
+            if result.action != "select" or result.index is None:
+                return
+            if result.index == 2:
+                session.pop_view()
+                return
+            if result.index == 0:
+                try:
+                    self.index_buffer.save()
+                except taskui.BufferChangedError as exc:
+                    session.set_transient_message(str(exc))
+                    return
+                message = "Saved changes to projects.org"
+            else:
+                self.index_buffer.discard()
+                message = "Discarded changes to projects.org"
+            session.pop_view()
+            session.pop_view(message=message)
+
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title="Save changes to projects.org?",
+            title_right=f"Registry: {self.display_path}",
+            summary="The project index has buffered edits",
+            instruction="↑↓/jk · ↵ choose · Esc/b/q continue editing",
+            select_help="Choose how to resolve the buffered edits",
+            back_help="Continue editing without saving or discarding",
+            status_text=self._buffer_status,
+        )
+
+    def _recovery_view(self, recovered: str) -> menu.MenuView:
+        assert self.index_buffer is not None
+        auto = self.index_buffer.autosave_path.name
+        rows = [
+            menu.MenuRow(1, "KEEP", f"Preserve {auto} for later"),
+            menu.MenuRow(2, "RECOVER", f"Load {auto} into the project buffer"),
+            menu.MenuRow(3, "DISCARD", f"Delete {auto} and use projects.org"),
+        ]
+
+        def finish(session: menu.InlineMenuSession, message: str) -> None:
+            session.replace_view(self.view())
+            session.set_outcome(message)
+
+        def keep(session: menu.InlineMenuSession) -> None:
+            finish(session, f"Keeping {auto} for later")
+
+        def handle(
+            session: menu.InlineMenuSession,
+            result: menu.MenuResult,
+        ) -> None:
+            if result.action != "select" or result.index is None:
+                return
+            if result.index == 1:
+                self.index_buffer.recover(recovered)
+                finish(session, f"Recovered {auto} into the project buffer")
+            elif result.index == 2:
+                self.index_buffer.discard()
+                finish(session, f"Discarded recovery data in {auto}")
+            else:
+                keep(session)
+
+        def back(session: menu.InlineMenuSession) -> bool:
+            keep(session)
+            return False
+
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title="Unsaved project metadata found",
+            title_right=f"Registry: {self.display_path}",
+            summary=f"Recovery file: {auto}",
+            instruction="↑↓/jk · ↵ choose · Esc/b/q keep for later",
+            select_help="Choose how to handle the recovery data",
+            back_help="Keep recovery data and open the saved project list",
+            on_back=back,
         )
 
 

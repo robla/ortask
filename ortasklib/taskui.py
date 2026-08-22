@@ -66,6 +66,17 @@ class BufferTransaction:
     description: str
 
 
+class BufferChangedError(OSError):
+    """The real file no longer matches the buffer's saved preimage."""
+
+    def __init__(self, path: Path, detail: str | None = None) -> None:
+        message = f"{path}: changed since the editing buffer was loaded"
+        if detail:
+            message += f" ({detail})"
+        super().__init__(message)
+        self.path = path
+
+
 class OrgBuffer:
     """In-memory editing buffer for one Org file, with Emacs-style auto-save.
 
@@ -117,7 +128,18 @@ class OrgBuffer:
         description: str = "Edit Org file",
     ) -> bool:
         """Record one logical edit and refresh the auto-save file."""
-        text = core.lines_to_text(new_lines)
+        return self.apply_text(
+            core.lines_to_text(new_lines),
+            description=description,
+        )
+
+    def apply_text(
+        self,
+        text: str,
+        *,
+        description: str = "Edit Org file",
+    ) -> bool:
+        """Record an exact-text logical edit and refresh the auto-save file."""
         if text == self._text:
             return False
         transaction = BufferTransaction(self._text, text, description)
@@ -165,8 +187,14 @@ class OrgBuffer:
             self._remove_autosave()
 
     def save(self) -> None:
-        """Atomically write the real file and clear the auto-save."""
+        """Write only if the real file still matches the saved preimage."""
         previous = self._saved_text
+        try:
+            current = self.path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise BufferChangedError(self.path, str(exc)) from exc
+        if current != previous:
+            raise BufferChangedError(self.path)
         core.atomic_write(self.path, self._text)
         eventlog.record_task_edits(
             previous,
@@ -204,6 +232,20 @@ class OrgBuffer:
             self.autosave_path.unlink()
         except FileNotFoundError:
             pass
+
+
+def buffer_status(buf: OrgBuffer) -> str:
+    """Shared header status for an interactive file-editing buffer."""
+    count = buf.undo_count
+    if buf.dirty:
+        noun = "edit" if count == 1 else "edits"
+        return f"FILE MODIFIED: {count} {noun}"
+    if buf.can_undo:
+        noun = "step" if count == 1 else "steps"
+        return f"FILE CLEAN · Undo: {count} {noun}"
+    if buf.can_redo:
+        return "FILE CLEAN · Redo available"
+    return ""
 
 
 def _task_sort_key(item: core.TodoItem) -> int:
@@ -614,7 +656,11 @@ def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
     # The external editor edits the real file, so flush any buffered changes
     # first, then re-read whatever it wrote back into the buffer.
     if buf.dirty:
-        buf.save()
+        try:
+            buf.save()
+        except BufferChangedError as exc:
+            print(exc)
+            return
         print(f"saved pending changes to {buf.path.name} before opening the editor")
     subprocess.run(argv, check=False)
     buf.reload()
@@ -711,7 +757,7 @@ def task_menu(
             return
 
 
-def _recovery_text(buf: OrgBuffer) -> str | None:
+def recovery_text(buf: OrgBuffer) -> str | None:
     """Return distinct auto-save content and clean up an identical stale copy."""
     if not buf.autosave_path.exists():
         return None
@@ -727,7 +773,7 @@ def _recovery_text(buf: OrgBuffer) -> str | None:
 
 def _maybe_recover(buf: OrgBuffer) -> None:
     """Offer plain-mode recovery while preserving the safe three-way choice."""
-    recovered = _recovery_text(buf)
+    recovered = recovery_text(buf)
     if recovered is None:
         return
     name = buf.path.name
@@ -769,7 +815,11 @@ def _resolve_buffer(buf: OrgBuffer) -> bool:
         buf.discard()
         print(f"discarded changes to {name}")
         return True
-    buf.save()
+    try:
+        buf.save()
+    except BufferChangedError as exc:
+        print(exc)
+        return False
     print(f"saved {name}")
     return True
 
@@ -938,22 +988,13 @@ class InteractiveTaskController:
         session.push_view(self.initial_view())
 
     def _buffer_status(self) -> str:
-        count = self.buf.undo_count
-        if self.buf.dirty:
-            noun = "edit" if count == 1 else "edits"
-            return f"FILE MODIFIED: {count} {noun}"
-        if self.buf.can_undo:
-            noun = "step" if count == 1 else "steps"
-            return f"FILE CLEAN · Undo: {count} {noun}"
-        if self.buf.can_redo:
-            return "FILE CLEAN · Redo available"
-        return ""
+        return buffer_status(self.buf)
 
     def _file_context(self) -> str:
         return f"File: {friendly_path(self.buf.path.resolve())}"
 
     def initial_view(self) -> menu.MenuView:
-        recovered = _recovery_text(self.buf)
+        recovered = recovery_text(self.buf)
         if recovered is None:
             return self._task_view()
         return self._recovery_view(recovered)
@@ -1130,7 +1171,11 @@ class InteractiveTaskController:
                 session.pop_view()
                 return
             if result.index == 0:
-                self.buf.save()
+                try:
+                    self.buf.save()
+                except BufferChangedError as exc:
+                    session.set_transient_message(str(exc))
+                    return
                 message = f"Saved changes to {name}"
             else:
                 self.buf.discard()
@@ -1172,7 +1217,11 @@ class InteractiveTaskController:
 
         if result.action == "save":
             changed = self.buf.dirty
-            self.buf.save()
+            try:
+                self.buf.save()
+            except BufferChangedError as exc:
+                session.set_transient_message(str(exc))
+                return
             session.replace_view(self._task_view(selected_id, fallback))
             message = (
                 f"Saved changes to {self.buf.path.name}"
@@ -1600,7 +1649,11 @@ class InteractiveTaskController:
                     description=f"Edit {task_id} {fields}",
                 )
             changed = self.buf.dirty
-            self.buf.save()
+            try:
+                self.buf.save()
+            except BufferChangedError as exc:
+                session.set_transient_message(str(exc))
+                return
             if changed:
                 message = f"Saved changes to {self.buf.path.name}"
             else:

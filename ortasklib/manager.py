@@ -723,6 +723,7 @@ PROJECT_SORT_PRIORITY = "priority"
 PROJECT_SORT_ALPHABETICAL = "alphabetical"
 PROJECT_SORT_MODES = (PROJECT_SORT_PRIORITY, PROJECT_SORT_ALPHABETICAL)
 _PROJECT_PRIORITY_RANK = {"A": 0, "B": 1, "C": 2}
+PROJECT_PRIORITY_SCALE = (None, "C", "B", "A")
 
 
 def project_name_sort_key(project: Project) -> tuple[str, str]:
@@ -776,6 +777,113 @@ def next_project_sort_mode(mode: str) -> str:
     return PROJECT_SORT_MODES[(index + 1) % len(PROJECT_SORT_MODES)]
 
 
+def shift_project_priority(priority: str | None, direction: int) -> str | None:
+    """Raise or lower an editable project priority, clamping at A and unset."""
+    normalized = priority.upper() if priority is not None else None
+    if normalized not in PROJECT_PRIORITY_SCALE:
+        raise ValueError(f"unsupported project priority: {priority}")
+    if direction not in {-1, 1}:
+        raise ValueError(f"priority direction must be -1 or 1: {direction}")
+    index = PROJECT_PRIORITY_SCALE.index(normalized)
+    shifted = min(max(index + direction, 0), len(PROJECT_PRIORITY_SCALE) - 1)
+    return PROJECT_PRIORITY_SCALE[shifted]
+
+
+def _project_heading_with_priority(
+    heading: str, current: str | None, target: str | None
+) -> str:
+    """Rewrite only one heading's leading priority cookie and preserve its EOL."""
+    if heading.endswith("\r\n"):
+        line, ending = heading[:-2], "\r\n"
+    elif heading.endswith("\n") or heading.endswith("\r"):
+        line, ending = heading[:-1], heading[-1]
+    else:
+        line, ending = heading, ""
+    match = re.match(r"^(?P<prefix>\*+[ \t]+)(?P<title>.*)$", line)
+    if match is None:  # pragma: no cover - ProjectSection already parsed it
+        raise ValueError("cannot locate project heading priority")
+    prefix = match.group("prefix")
+    title = match.group("title")
+    cookie = orglib.syntax.LEADING_PRIORITY_RE.match(title)
+    if current is not None:
+        if cookie is None:  # pragma: no cover - parser and source must agree
+            raise ValueError("cannot locate existing project priority cookie")
+        if target is None:
+            title = title[cookie.end():]
+        else:
+            start, end = cookie.span("priority")
+            title = title[:start] + target + title[end:]
+    elif target is not None:
+        title = f"[#{target}] {title}"
+    return prefix + title + ending
+
+
+def _malformed_priority_heading_line(text: str, project: str) -> int | None:
+    """Line of a cookie-like heading for ``project`` that Org cannot parse."""
+    wanted = project.casefold()
+    for line_num, line in enumerate(text.splitlines(), start=1):
+        match = orglib.syntax.ANY_HEADING_RE.match(line)
+        if match is None or len(match.group("stars")) != 1:
+            continue
+        title = orglib.syntax.TRAILING_TAGS_RE.sub("", match.group("title")).strip()
+        if not title.startswith("[#") or orglib.syntax.LEADING_PRIORITY_RE.match(title):
+            continue
+        closing = title.find("]")
+        if closing >= 0 and title[closing + 1:].strip().casefold() == wanted:
+            return line_num
+        if closing < 0:
+            parts = title.split(None, 1)
+            if len(parts) == 2 and parts[1].strip().casefold() == wanted:
+                return line_num
+    return None
+
+
+def change_project_priority(
+    text: str, project: str, target: str | None
+) -> str | None:
+    """Return a source-preserving project-priority edit, or ``None`` if unchanged.
+
+    Existing sections change only their heading line. Setting a priority for a
+    registered project with no index section appends the smallest valid section;
+    clearing an absent priority is a no-op.
+    """
+    if target is not None:
+        target = target.upper()
+        if target not in PROJECT_PRIORITY_SCALE:
+            raise ValueError(f"unsupported project priority: {target}")
+    malformed_line = _malformed_priority_heading_line(text, project)
+    if malformed_line is not None:
+        raise ValueError(
+            f"malformed priority cookie for project {project!r} "
+            f"at line {malformed_line}"
+        )
+
+    section = orglib.parse(text).project(project)
+    if section is None:
+        if target is None:
+            return None
+        prefix = text
+        if prefix and not prefix.endswith(("\n", "\r")):
+            prefix += "\n"
+        revised = prefix + f"* [#{target}] {project}\n"
+    else:
+        current = section.priority.upper() if section.priority else None
+        if current == target:
+            return None
+        heading = text[section.heading_span.start:section.heading_span.end]
+        replacement = _project_heading_with_priority(heading, current, target)
+        revised = (
+            text[:section.heading_span.start]
+            + replacement
+            + text[section.heading_span.end:]
+        )
+
+    check = orglib.parse(revised).project(project)
+    if check is None or (check.priority.upper() if check.priority else None) != target:
+        raise ValueError(f"cannot safely set priority for project {project!r}")
+    return revised
+
+
 def _index_value(value: str | None) -> str | None:
     stripped = value.strip() if value else ""
     return stripped or None
@@ -799,10 +907,27 @@ def _project_metadata(section: orglib.ProjectSection) -> ProjectMetadata:
     )
 
 
+def project_metadata_from_text(
+    text: str, projects: list[Project] | tuple[Project, ...]
+) -> dict[str, ProjectMetadata]:
+    """Join one in-memory index revision onto registered projects by name."""
+    metadata = {project.name: ProjectMetadata() for project in projects}
+    document = orglib.parse(text)
+    for project in projects:
+        try:
+            section = document.project(project.name)
+        except (orglib.OrgStructureError, ValueError) as exc:
+            metadata[project.name] = ProjectMetadata(warning=str(exc))
+            continue
+        if section is not None:
+            metadata[project.name] = _project_metadata(section)
+    return metadata
+
+
 def read_project_metadata(
     registry: Path, projects: list[Project] | tuple[Project, ...]
 ) -> dict[str, ProjectMetadata]:
-    """Join index metadata onto registry entries by name.
+    """Read and join index metadata onto registry entries by name.
 
     Every project gets an entry, so a caller can build a row without checking
     first. A registry with no index yields metadata for none of them and no
@@ -825,16 +950,7 @@ def read_project_metadata(
         )
         return dict.fromkeys(metadata, unreadable)
 
-    document = orglib.parse(text)
-    for project in projects:
-        try:
-            section = document.project(project.name)
-        except (orglib.OrgStructureError, ValueError) as exc:
-            metadata[project.name] = ProjectMetadata(warning=str(exc))
-            continue
-        if section is not None:
-            metadata[project.name] = _project_metadata(section)
-    return metadata
+    return project_metadata_from_text(text, projects)
 
 
 def registry_index_problems(registry: Path, projects: list[Project]) -> list[str]:

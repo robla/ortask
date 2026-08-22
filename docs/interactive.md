@@ -36,7 +36,9 @@ file.
 The project navigator reads optional priority and description metadata from
 the registry's `projects.org`. It starts in priority-then-name order and `s`
 switches between Priority and Alphabetical while keeping the highlight anchored
-to the same project.
+to the same project. Shift-Up/Down changes the selected project's priority in a
+session-wide `projects.org` buffer; `C-/`, `C-r`, and `C-s` undo, redo, and save
+those edits, with visible dirty state and save/discard handling on exit.
 
 The task selector has two modes, chosen automatically by
 `menu.interactive_select_available()`:
@@ -157,6 +159,9 @@ writes the complete current buffer:
 - `C-s` in the task list atomically saves the complete buffer and resets both
   transaction stacks. Save, Discard, reload after an external editor, and a
   successful task-workspace save are all history boundaries.
+- Every save first rereads the real file and requires an exact match with the
+  buffer's saved baseline. An external change refuses the save without losing
+  the disk version, dirty buffer, undo history, or auto-save.
 - `Ctrl-S` in a task workspace validates title, body, state, and priority,
   applies them to the same buffer, atomically saves the entire Org file, and
   removes the auto-save.

@@ -2412,6 +2412,161 @@ def test_project_browser_shows_metadata_and_anchors_sort_selection(
     assert session.current_view.rows[1].text.startswith("[B] bravo")
 
 
+def test_project_browser_buffers_priority_undo_redo_and_save(tmp_path: Path) -> None:
+    # Project priority changes stay in one buffer, follow sorting, and save on C-s.
+    registry = tmp_path / "registry"
+    for name in ("alpha", "bravo"):
+        project = tmp_path / "src" / name
+        write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+        register(registry, name, project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = (
+        manager.PROJECTS_INDEX_HEADER
+        + "* alpha :work:\nAlpha prose.\n"
+        + "* [#B] bravo\n:PROPERTIES:\n:DESCRIPTION: Other work\n:END:\n"
+    )
+    index.write_text(original, encoding="utf-8")
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+    assert browser.index_buffer is not None
+
+    class FakeSession:
+        def __init__(self, current_view) -> None:
+            self.current_view = current_view
+            self.message = ""
+            self.final_message = ""
+
+        def replace_view(self, replacement) -> None:
+            self.current_view = replacement
+
+        def set_transient_message(self, message: str) -> None:
+            self.message = message
+
+        def set_outcome(self, message: str) -> None:
+            self.message = self.final_message = message
+
+    session = FakeSession(browser.view())
+    assert session.current_view.rows[1].text.startswith("[ ] alpha")
+
+    # None -> C keeps alpha below B; C -> B reorders alpha before bravo by name.
+    session.current_view.on_result(session, menu.MenuResult("priority_up", 1))
+    assert session.current_view.selected_index == 1
+    session.current_view.on_result(session, menu.MenuResult("priority_up", 1))
+    assert session.current_view.selected_index == 0
+    assert session.current_view.rows[0].text.startswith("[B] alpha")
+    assert session.current_view.title == "Project navigator *"
+    assert session.current_view.status_text().startswith("FILE MODIFIED: 2 edits")
+    assert session.current_view.instruction.startswith("FILE MODIFIED")
+    assert index.read_text(encoding="utf-8") == original
+    assert browser.index_buffer.autosave_path.exists()
+
+    session.current_view.on_result(session, menu.MenuResult("undo", 0))
+    assert session.current_view.selected_index == 1
+    assert session.current_view.rows[1].text.startswith("[C] alpha")
+    session.current_view.on_result(session, menu.MenuResult("redo", 1))
+    assert session.current_view.selected_index == 0
+    assert session.current_view.rows[0].text.startswith("[B] alpha")
+
+    session.current_view.on_result(session, menu.MenuResult("save", 0))
+    assert session.final_message == "Saved changes to projects.org"
+    assert browser.index_buffer.dirty is False
+    assert not browser.index_buffer.autosave_path.exists()
+    assert index.read_text(encoding="utf-8") == original.replace(
+        "* alpha :work:", "* [#B] alpha :work:"
+    )
+
+
+def test_project_browser_stale_save_preserves_set_dirs_and_buffer(
+    tmp_path: Path,
+) -> None:
+    # A pmgr set-dirs write between edit and C-s must win without losing ours.
+    registry = tmp_path / "registry"
+    project_dir = tmp_path / "src" / "alpha"
+    write(project_dir / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+    register(registry, "alpha", project_dir)
+    old_dir = project_dir / "old"
+    new_dir = project_dir / "new"
+    old_dir.mkdir()
+    new_dir.mkdir()
+    index = registry / manager.PROJECTS_INDEX_NAME
+    index.write_text(
+        manager.PROJECTS_INDEX_HEADER
+        + f"* alpha\n** Directories\n   - {old_dir}\n",
+        encoding="utf-8",
+    )
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+    assert browser.index_buffer is not None
+
+    class FakeSession:
+        def __init__(self, current_view) -> None:
+            self.current_view = current_view
+            self.message = ""
+
+        def replace_view(self, replacement) -> None:
+            self.current_view = replacement
+
+        def set_transient_message(self, message: str) -> None:
+            self.message = message
+
+        def set_outcome(self, message: str) -> None:
+            raise AssertionError(f"stale save reported success: {message}")
+
+    session = FakeSession(browser.view())
+    session.current_view.on_result(session, menu.MenuResult("priority_up", 0))
+    assert "* [#C] alpha" in browser.index_buffer.read()
+
+    project = manager.discover_projects(registry)[0]
+    plan = manager.plan_registry_directories_update(project, [new_dir])
+    assert manager.apply_registry_directories_update(plan, keep_missing=False)
+    external = index.read_text(encoding="utf-8")
+    assert str(new_dir) in external and "[#C]" not in external
+
+    session.current_view.on_result(session, menu.MenuResult("save", 0))
+
+    assert "changed since the editing buffer was loaded" in session.message
+    assert index.read_text(encoding="utf-8") == external
+    assert "* [#C] alpha" in browser.index_buffer.read()
+    assert browser.index_buffer.dirty is True
+    assert browser.index_buffer.can_undo is True
+    assert browser.index_buffer.autosave_path.exists()
+
+
+@pytest.mark.skipif(
+    projmgr.menu.Application is None,
+    reason="prompt_toolkit not installed",
+)
+@pytest.mark.parametrize(
+    ("exit_keys", "saved"),
+    [("q\r", True), ("qqqj\r", False)],
+)
+def test_project_browser_exit_resolves_buffered_priority(
+    tmp_path: Path, exit_keys: str, saved: bool
+) -> None:
+    # Exit defaults to Save; backing out and choosing Discard preserves disk.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "alpha"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+    register(registry, "alpha", project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = manager.PROJECTS_INDEX_HEADER + "* alpha\n** Directories\n"
+    index.write_text(original, encoding="utf-8")
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("\x1b[1;2A" + exit_keys)
+            browser.run()
+
+    expected = original.replace("* alpha", "* [#C] alpha") if saved else original
+    assert index.read_text(encoding="utf-8") == expected
+    assert browser.index_buffer is not None
+    assert browser.index_buffer.dirty is False
+    assert not browser.index_buffer.autosave_path.exists()
+
+
 def test_projmgr_navigator_dashboard_keeps_the_location(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -2872,6 +3027,57 @@ def test_read_project_metadata_reports_a_repeated_property(tmp_path: Path) -> No
 
     assert entry.description == "first"
     assert entry.warning == "recorded more than once: DESCRIPTION"
+
+
+def test_change_project_priority_preserves_the_project_section_source() -> None:
+    # Priority editing changes only the cookie, preserving CRLF, tags, and content.
+    original = (
+        "#+TITLE: Projects\r\n\r\n"
+        "* [#C] sample  :work:tools:\r\n"
+        ":PROPERTIES:\r\n:DESCRIPTION: Keep me\r\n:CUSTOM: exact\r\n:END:\r\n"
+        "Project prose.\r\n** Directories\r\n   - ~/src/sample\r\n"
+        "* other\r\nOther prose.\r\n"
+    )
+
+    raised = manager.change_project_priority(original, "sample", "B")
+    assert raised == original.replace("* [#C] sample", "* [#B] sample", 1)
+    assert manager.change_project_priority(raised, "sample", None) == original.replace(
+        "* [#C] sample", "* sample", 1
+    )
+
+
+def test_change_project_priority_adds_only_a_missing_project_section() -> None:
+    # A migrated index may lack a project section; setting priority adds the minimum.
+    original = "#+TITLE: Projects\n\n* other\nOther prose.\n"
+    revised = manager.change_project_priority(original, "sample", "C")
+
+    assert revised == original + "* [#C] sample\n"
+    assert manager.change_project_priority(revised, "sample", "C") is None
+    assert manager.change_project_priority(original, "sample", None) is None
+
+
+def test_change_project_priority_rejects_malformed_cookie() -> None:
+    # Cookie-like syntax must not cause a second project section to be appended.
+    text = "#+TITLE: Projects\n\n* [#AB] sample :work:\nKeep me.\n"
+
+    with pytest.raises(ValueError, match="malformed priority cookie.*line 3"):
+        manager.change_project_priority(text, "sample", "C")
+
+    with pytest.raises(ValueError, match="malformed priority cookie.*line 3"):
+        manager.change_project_priority(text.replace("[#AB]", "[#A"), "sample", "C")
+
+
+def test_shift_project_priority_clamps_at_both_ends() -> None:
+    # Shift-Up follows unset/C/B/A while Shift-Down follows the reverse path.
+    assert manager.shift_project_priority(None, 1) == "C"
+    assert manager.shift_project_priority("C", 1) == "B"
+    assert manager.shift_project_priority("B", 1) == "A"
+    assert manager.shift_project_priority("A", 1) == "A"
+    assert manager.shift_project_priority("A", -1) == "B"
+    assert manager.shift_project_priority("C", -1) is None
+    assert manager.shift_project_priority(None, -1) is None
+    with pytest.raises(ValueError, match="unsupported project priority"):
+        manager.shift_project_priority("1", 1)
 
 
 def test_set_dirs_noninteractive_default_keeps_missing_entries(
@@ -5874,6 +6080,28 @@ def test_org_buffer_apply_save_and_discard(tmp_path: Path) -> None:
     assert not buf.autosave_path.exists()
     assert buf.dirty is False
     assert buf.can_undo is False and buf.can_redo is False
+
+
+def test_org_buffer_stale_save_preserves_disk_buffer_and_history(tmp_path: Path) -> None:
+    # A changed preimage refuses save without losing either writer's version.
+    original = "* Tasks\n** TODO t0001 one\n"
+    external = "* Tasks\n** TODO t0001 externally edited\n"
+    org_file = write(tmp_path / "todo.org", original)
+    buf = taskui.OrgBuffer(org_file)
+    buf.apply_text(
+        "* Tasks\n** DONE t0001 one\n",
+        description="Finish t0001",
+    )
+    org_file.write_text(external, encoding="utf-8")
+
+    with pytest.raises(taskui.BufferChangedError, match="changed since"):
+        buf.save()
+
+    assert org_file.read_text(encoding="utf-8") == external
+    assert buf.read() == "* Tasks\n** DONE t0001 one\n"
+    assert buf.dirty is True
+    assert buf.undo_count == 1
+    assert buf.autosave_path.read_text(encoding="utf-8") == buf.read()
 
 
 def test_org_buffer_undo_redo_tracks_logical_edits_and_autosave(tmp_path: Path) -> None:

@@ -87,9 +87,11 @@ projmgr.py -i --todo-only
 `ptui` now uses optional Org priority and description metadata from
 `projects.org` as a project-steering dashboard. Its default order is priority
 then project name; press `s` to switch between Priority and Alphabetical without
-rewriting the index. Task-file-modified ordering, the buffered `m` metadata
-workspace, and Shift-Up/Down priority adjustment remain planned. All future
-saves must remain atomic bounded edits of the selected project section.
+rewriting the index. Shift-Up/Down adjusts project priority through
+`unset -> C -> B -> A` in one session buffer; `C-/`, `C-r`, and `C-s` provide
+undo, redo, and an exact-preimage-checked save. Dirty exit offers Save, Discard,
+or Continue Editing, and `#projects.org#` preserves crash-recovery data.
+Task-file-modified ordering and the `m` metadata workspace remain planned.
 Registry symlinks remain authoritative for project membership and task-file
 resolution. See [`docs/ptui.md`](ptui.md) for the full specification, metadata
 shape, sort semantics, safety rules, and delivery order.

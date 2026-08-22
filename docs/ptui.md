@@ -5,11 +5,11 @@ open a registered project, but to help the user decide which project deserves
 attention next. The registry remains the source of project membership;
 `projects.org` supplies optional presentation and prioritization metadata.
 
-This remains partly a forward specification. Priority, description, and the
-task-file mirror are parsed as of `t0035.1`; `t0035.2` displays priority,
-description, and open-task count, defaults to priority-first ordering, and lets
-`s` switch to alphabetical ordering. Metadata editing and Modified sorting are
-not implemented yet.
+This remains partly a forward specification. `t0035.1` parses priority,
+description, and the task-file mirror; `t0035.2` displays the first two with
+open-task count and adds priority/alphabetical sorting; `t0035.3` adds buffered
+priority changes from the project list. The `m` metadata workspace and Modified
+sorting are not implemented yet.
 
 ## Project List
 
@@ -100,16 +100,17 @@ Pressing `m` on a project opens a compact metadata workspace. It should show:
 - the effective directory count and an action for the existing directory-stack
   workflow.
 
-Shift-Up and Shift-Down on the project list should provide the fast path for
-raising or lowering priority through `unset -> C -> B -> A`. `m` is the
-discoverable path for deliberate edits. A changed priority may move the row in
-the default sort, but the highlight follows the same project.
+Shift-Up and Shift-Down on the project list raise or lower priority through
+`unset -> C -> B -> A`. A changed priority may move the row in the default sort,
+but the highlight follows the same project. The future `m` workspace is the
+discoverable path for deliberate metadata edits.
 
-Metadata edits are buffered. `C-s` atomically saves the affected bounded
-project section; leaving a dirty workspace presents Save, Discard, and Cancel.
-The project-list footer and title must visibly report dirty state. An absent
-project section may be created in an already migrated index, but metadata
-editing must not implicitly run `pmgr migrate`.
+Project-list priority edits are buffered in one `projects.org` buffer. `C-/`
+and `C-r` undo and redo them, and `C-s` atomically saves the exact buffer after
+a source-preimage check. Leaving with edits presents Save, Discard, and
+Continue Editing. The project-list footer and title report dirty state. An
+absent project section is created when its priority is first set in an already
+migrated index; editing never implicitly runs `pmgr migrate`.
 
 ## Safety and Implementation Boundaries
 
@@ -127,32 +128,29 @@ dirty-state reporting, and save behavior cannot disagree.
 
 ### Write path
 
-Two mechanisms exist, and each supplies half of what the paragraph above asks
-for. The decisions below were settled 2026-08-22; the comparison is kept
-because the gap it names is what the work has to close.
+The two write mechanisms now share stale-source protection, while retaining
+different transaction scopes:
 
 | | `taskui.OrgBuffer` | `manager.plan_/apply_registry_directories_update` |
 |---|---|---|
 | Buffering, undo/redo, dirty state | yes | no |
 | Auto-save sibling | yes (`#projects.org#`) | no |
-| Preimage check before writing | **no** | yes |
-| Scope of the write | the whole file | one bounded section |
+| Preimage check before writing | yes | yes |
+| Scope of the write | exact buffered file built from bounded edits | one bounded section |
 
-`OrgBuffer` takes any Org path, so it runs on `projects.org` unchanged, and its
-undo/redo is what the metadata workspace wants. But `save()` calls
-`core.atomic_write` on the entire buffer with no check that the file is still
-the one that was read, so a `ptui` session holding a buffer open would overwrite
-a `pmgr set-dirs` run from another terminal. The index path has the check and
-the bounded rewrite, and no buffering at all.
+As of `t0035.3`, `ptui` holds one `OrgBuffer` over `projects.org` for the whole
+session. Priority operations replace only the matched heading line in that
+buffer; unrelated source remains byte-identical. `save()` rereads the file and
+requires it to match the saved baseline exactly before atomically writing the
+buffer. `manager.apply_registry_directories_update` retains its independent
+bounded rewrite and the same preimage rule.
 
 The case to design against is concrete: `ptui` open in one terminal with a
 dirty priority edit, `pmgr set-dirs` run in another, then `C-s`.
 
 **What happens then:** the save refuses, with a recoverable error naming the
-file that moved. It never discards the other write, and it never silently wins.
-So `OrgBuffer` is the base — `ptui` holds one `projects.org` buffer open, which
-is what makes undo across several edits work — and it gains the preimage check
-the index write path already has.
+file that moved. It never discards the other write, the dirty buffer, its undo
+history, or `#projects.org#`, and it never silently wins.
 
 Refusing is the floor rather than the goal. What the session should eventually
 do is merge: two people editing different project sections of one file is not a
@@ -250,7 +248,7 @@ people open in Emacs, so the cookie wins anyway.
    Nothing below could write a cookie safely until it landed.
 1. Parse project priority and description, then add priority/alphabetical sort
    (`t0035.1`–`t0035.2`, done).
-2. Add buffered priority changes from the project list.
+2. Add buffered priority changes from the project list (`t0035.3`, done).
 3. Add external-change detection, pure section merging, and buffer
    reconciliation (`t0037`).
 4. Add the `m` metadata workspace and bounded save path.
