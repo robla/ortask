@@ -331,7 +331,7 @@ that =manager.apply_registry_directories_update= already does. At this stage a
 changed file refused save without discarding either version; =t0037= later
 added in-memory reconciliation while retaining that final safety check. The
 auto-save sibling =#projects.org#= stays and is reserved in =docs/config.md=.
-*** TODO [#B] t0035.4 Build the project metadata workspace
+*** DONE [#B] t0035.4 Build the project metadata workspace
 Make =m= open a compact editor for priority and description while showing the
 read-only project name, resolved task file, recorded task-file mirror, and
 directory-stack controls. Require an already migrated registry index. Decided
@@ -342,10 +342,16 @@ share =t0035.3='s transaction path, external editor included. Two independent
 writers for one section is the outcome to avoid. Build on =t0038.1='s
 =taskui.OrgBuffer= adapter; do not create transaction or source-patching state
 inside the metadata view.
+
+Implemented 2026-08-22: =m= opens one bounded workspace for priority,
+description, the task-file mirror, and custom directories. =C-s= composes its
+fields into one buffered transaction and saves through the existing reconcile
+path; dirty exit offers Save/Discard/Continue. The workspace and =cdproj='s
+private editor both save-check and reload an =OrgBuffer= around =$VISUAL=.
 *** TODO [#B] t0035.5 Add modified sorting and task-file mirror diagnostics
 Add newest-task-file-first sorting with unreadable or absent files last.
 Display disagreements between the non-normative =TASK_FILE= mirror and the
-resolved task file, with an explicit refresh action.
+resolved task file; =t0035.4= already supplies the explicit refresh action.
 ** DONE [#A] t0036 Strip the priority cookie when matching project headings
 =orglib.syntax._project_title= strips trailing tags only, so =* [#A] ortask=
 does not match registry entry =ortask=: =orglib.parse(text).directories('ortask')=

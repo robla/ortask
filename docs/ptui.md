@@ -8,10 +8,11 @@ attention next. The registry remains the source of project membership;
 This remains partly a forward specification. `t0035.1` parses priority,
 description, and the task-file mirror; `t0035.2` displays the first two with
 open-task count and adds priority/alphabetical sorting; `t0035.3` adds buffered
-priority changes from the project list. The `m` metadata workspace and Modified
-sorting are not implemented yet. `t0037.1` polls for external index changes,
-`t0037.2` supplies the pure section-level merge planner, and `t0037.3` rebases
-disjoint external changes into the open buffer or presents a named conflict.
+priority changes from the project list; `t0035.4` adds the `m` metadata
+workspace. Modified sorting is not implemented yet. `t0037.1` polls for
+external index changes, `t0037.2` supplies the pure section-level merge planner,
+and `t0037.3` rebases disjoint external changes into the open buffer or presents
+a named conflict.
 
 ## Project List
 
@@ -92,19 +93,27 @@ meaning and precedence.
 
 ## Metadata Mode
 
-Pressing `m` on a project opens a compact metadata workspace. It should show:
+Pressing `m` on a project opens a compact metadata workspace showing:
 
 - project name, read-only;
 - priority, editable as `A`, `B`, `C`, or unset;
 - short description, editable;
 - resolved task-file path, read-only;
 - recorded `TASK_FILE` mirror and a refresh action;
-- the effective directory count and an action for the existing directory-stack
-  workflow.
+- the effective directory count and an editable custom directory stack;
+- an action that opens `projects.org` at the project heading in `$VISUAL`.
+
+Tab and Shift-Tab move among fields. Left and Right change priority, Enter
+activates buttons, and `C-s` applies all changed fields as one `OrgBuffer`
+transaction before saving the complete index. Esc offers Save, Discard, and
+Continue when workspace fields are dirty. The directory field records one path
+per line and initially shows only the custom stack. Leaving a missing custom
+stack blank creates no override; clearing an existing stack saves an empty
+custom section, which selects the project root.
 
 Shift-Up and Shift-Down on the project list raise or lower priority through
 `unset -> C -> B -> A`. A changed priority may move the row in the default sort,
-but the highlight follows the same project. The future `m` workspace is the
+but the highlight follows the same project. The `m` workspace is the
 discoverable path for deliberate metadata edits.
 
 Project-list priority edits are buffered in one `projects.org` buffer. `C-/`
@@ -113,6 +122,12 @@ a source-preimage check. Leaving with edits presents Save, Discard, and
 Continue Editing. The project-list footer and title report dirty state. An
 absent project section is created when its priority is first set in an already
 migrated index; editing never implicitly runs `pmgr migrate`.
+
+The workspace's external-editor action first saves or rejects the current
+buffer, opens the same project section, and reloads the result. `cdproj`'s
+private-list editor uses the same `OrgBuffer` plus bounded directory writer,
+so it also checks the loaded source revision before handing the file to
+`$VISUAL`.
 
 ## Safety and Implementation Boundaries
 
@@ -144,9 +159,12 @@ As of `t0035.3`, `ptui` holds one `taskui.OrgBuffer` adapter over
 `projects.org` for the whole session. As of `t0038.1`, its transactional state
 machine is the peer `textbuffer.TextFileBuffer`; the adapter supplies ortask's
 writer, auto-save naming, and activity observer. Priority operations replace
-only the matched heading line in that buffer; unrelated source remains
-byte-identical. `save()` rereads the file and requires it to match the saved
-baseline exactly before atomically writing the buffer.
+only the matched heading line in that buffer. Metadata properties replace one
+drawer line, and directory editing replaces one direct-child section; unrelated
+source remains byte-identical. `pmgr set-dirs` calls the same in-memory
+directory writer before its preimage-checked section update. `save()` rereads
+the file and requires it to match the saved baseline exactly before atomically
+writing the buffer.
 
 The case to design against is concrete: `ptui` open in one terminal with a
 dirty priority edit, `pmgr set-dirs` run in another, then `C-s`.
@@ -264,5 +282,5 @@ people open in Emacs, so the cookie wins anyway.
 4. Add the pure project-section merge planner (`t0037.2`, done).
 5. Reconcile the open buffer and expose conflicts (`t0037.3`, done).
 6. Isolate the format-neutral transactional buffer (`t0038.1`, done).
-7. Add the `m` metadata workspace and bounded save path.
+7. Add the `m` metadata workspace and bounded save path (`t0035.4`, done).
 8. Add modified-time sorting and the task-file mirror diagnostics.

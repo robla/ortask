@@ -19,6 +19,20 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from prompt_toolkit.document import Document
+    from prompt_toolkit.formatted_text import FormattedText
+    from prompt_toolkit.layout import FormattedTextControl, HSplit, VSplit, Window
+    from prompt_toolkit.widgets import TextArea
+except ImportError:  # pragma: no cover - optional interactive dependency
+    Document = None
+    FormattedText = None
+    FormattedTextControl = None
+    HSplit = None
+    VSplit = None
+    Window = None
+    TextArea = None
+
 # Make ``ortasklib`` importable regardless of the working directory.
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
@@ -41,6 +55,9 @@ PROJECT_SORT_ACTION = menu.MenuAction(
     "sort", "s", "Cycle project sorting: Priority and Alphabetical"
 )
 PROJECT_MENU_ACTIONS = {
+    "m": menu.MenuAction(
+        "metadata", "m", "Edit the highlighted project's metadata"
+    ),
     "s": PROJECT_SORT_ACTION,
     "s-up": menu.MenuAction(
         "priority_up", "Shift+↑", "Raise the highlighted project's priority"
@@ -65,7 +82,7 @@ def _project_menu_instruction(sort_mode: str, *, dirty: bool = False) -> str:
     prefix = "FILE MODIFIED · " if dirty else ""
     return (
         f"{prefix}{label} sort · ↑↓/jk · S-↑/↓ priority · ↵ open · s sort · "
-        "C-s save · C-/ undo · C-r redo · C-g help · Esc/b/q exit"
+        "m metadata · C-s save · C-/ undo · C-r redo · C-g help · Esc/b/q exit"
     )
 
 
@@ -530,6 +547,490 @@ class _ProjectBrowser:
             message += f" · {reconciliation}"
         return True, message
 
+    def _metadata_view(self, project: manager.Project) -> menu.WorkspaceView:
+        """Build one compact editor over the browser's shared index buffer."""
+        assert self.index_buffer is not None
+        assert all(
+            dependency is not None
+            for dependency in (
+                Document,
+                FormattedText,
+                FormattedTextControl,
+                HSplit,
+                VSplit,
+                Window,
+                TextArea,
+            )
+        )
+        source = self.index_buffer.read()
+        metadata = manager.project_metadata_from_text(source, [project])[project.name]
+        if metadata.warning:
+            raise ValueError(metadata.warning)
+
+        candidates = manager.directory_candidates_from_index(
+            project, self.index_buffer.path, source
+        )
+        custom = candidates[0]
+        inherited = next(
+            (candidate for candidate in candidates[1:] if candidate.defines_stack),
+            None,
+        )
+        root = manager.real_project_path(project)
+        if custom.defines_stack:
+            effective_entries = custom.entries or []
+            effective_source = "custom"
+        elif inherited is not None:
+            effective_entries = inherited.entries or []
+            effective_source = "project"
+        else:
+            effective_entries = [str(root)]
+            effective_source = "project root"
+        effective_directories = manager.unique_resolved_directories(
+            effective_entries, root
+        ) or [root]
+        effective_count = len(effective_directories)
+
+        resolved_file = manager.canonical_org_file(project)
+        resolved_display = (
+            manager.friendly_path(resolved_file)
+            if resolved_file is not None
+            else "(no task file)"
+        )
+        description_area = TextArea(
+            text=metadata.description or "",
+            multiline=False,
+            wrap_lines=False,
+            height=1,
+            dont_extend_height=True,
+        )
+        description_area.buffer.cursor_position = len(description_area.text)
+        directory_area = TextArea(
+            text="\n".join(custom.entries or []),
+            multiline=True,
+            wrap_lines=False,
+            scrollbar=True,
+            height=3,
+            dont_extend_height=True,
+        )
+        directory_area.buffer.cursor_position = len(directory_area.text)
+        draft: dict[str, str | None] = {
+            "priority": metadata.priority,
+            "task_file": metadata.task_file,
+        }
+        baseline: dict[str, object] = {
+            "priority": draft["priority"],
+            "description": metadata.description,
+            "task_file": draft["task_file"],
+            "directories": tuple(custom.entries or []),
+        }
+        workspace: menu.WorkspaceView | None = None
+
+        def description_value() -> str | None:
+            value = description_area.text.strip()
+            return value or None
+
+        def directory_values() -> tuple[str, ...]:
+            return tuple(
+                line.strip()
+                for line in directory_area.text.splitlines()
+                if line.strip()
+            )
+
+        def is_dirty() -> bool:
+            return (
+                draft["priority"] != baseline["priority"]
+                or description_value() != baseline["description"]
+                or draft["task_file"] != baseline["task_file"]
+                or directory_values() != baseline["directories"]
+            )
+
+        def reset_control(control, text: str) -> None:
+            control.buffer.reset(Document(text, cursor_position=len(text)))
+
+        def discard_workspace_edits() -> None:
+            draft["priority"] = baseline["priority"]
+            draft["task_file"] = baseline["task_file"]
+            reset_control(description_area, str(baseline["description"] or ""))
+            reset_control(
+                directory_area,
+                "\n".join(str(entry) for entry in baseline["directories"]),
+            )
+
+        def readonly_line(label_text: str, value) -> object:
+            def render():
+                return FormattedText(
+                    [
+                        ("class:field.label", f"{label_text}: "),
+                        ("", value()),
+                    ]
+                )
+
+            return Window(
+                FormattedTextControl(render),
+                height=1,
+                always_hide_cursor=True,
+                wrap_lines=False,
+            )
+
+        def field_label(label_text: str) -> object:
+            return Window(
+                FormattedTextControl(
+                    FormattedText([("class:field.label", label_text)])
+                ),
+                height=1,
+                always_hide_cursor=True,
+            )
+
+        def compact_choice(label_text: str, focus_index: int) -> object:
+            def render():
+                value = draft["priority"] or "none"
+                text = f" {label_text} [{value}] "
+                focused = (
+                    workspace is not None
+                    and workspace.focused_index == focus_index
+                )
+                fragments = (
+                    [("class:choice.focused", text)]
+                    if focused
+                    else [
+                        ("class:field.label", f" {label_text} "),
+                        ("", f"[{value}] "),
+                    ]
+                )
+                return FormattedText([("[SetCursorPosition]", ""), *fragments])
+
+            return Window(
+                FormattedTextControl(render, focusable=True, show_cursor=False),
+                height=1,
+                width=22,
+                dont_extend_width=True,
+                always_hide_cursor=True,
+            )
+
+        def compact_button(label_text: str, focus_index: int, width: int) -> object:
+            def render():
+                focused = (
+                    workspace is not None
+                    and workspace.focused_index == focus_index
+                )
+                style = "class:choice.focused" if focused else "class:field.label"
+                return FormattedText(
+                    [
+                        ("[SetCursorPosition]", ""),
+                        (style, f"[ {label_text} ]"),
+                    ]
+                )
+
+            return Window(
+                FormattedTextControl(render, focusable=True, show_cursor=False),
+                height=1,
+                width=width,
+                dont_extend_width=True,
+                always_hide_cursor=True,
+            )
+
+        priority_control = compact_choice("Priority", 0)
+        mirror_control = compact_button("Refresh TASK_FILE", 3, 23)
+        editor_control = compact_button("Open projects.org in editor", 4, 32)
+        container = HSplit(
+            [
+                VSplit(
+                    [
+                        readonly_line("Project", lambda: project.name),
+                        priority_control,
+                    ],
+                    height=1,
+                ),
+                field_label("Description"),
+                description_area,
+                readonly_line("Resolved task file", lambda: resolved_display),
+                readonly_line(
+                    "Recorded TASK_FILE",
+                    lambda: draft["task_file"] or "(unset)",
+                ),
+                mirror_control,
+                field_label("Custom directories (one path per line)"),
+                directory_area,
+                editor_control,
+            ]
+        )
+
+        def save_workspace(session: menu.InlineMenuSession) -> bool:
+            assert self.index_buffer is not None
+            revised = self.index_buffer.read()
+            changed_fields: list[str] = []
+            try:
+                if draft["priority"] != baseline["priority"]:
+                    changed = manager.change_project_priority(
+                        revised, project.name, draft["priority"]
+                    )
+                    if changed is not None:
+                        revised = changed
+                        changed_fields.append("priority")
+                description = description_value()
+                if description != baseline["description"]:
+                    changed = manager.change_project_property(
+                        revised, project.name, "DESCRIPTION", description
+                    )
+                    if changed is not None:
+                        revised = changed
+                        changed_fields.append("description")
+                if draft["task_file"] != baseline["task_file"]:
+                    changed = manager.change_project_property(
+                        revised, project.name, "TASK_FILE", draft["task_file"]
+                    )
+                    if changed is not None:
+                        revised = changed
+                        changed_fields.append("task-file mirror")
+                directories = directory_values()
+                if directories != baseline["directories"]:
+                    paths = manager.unique_resolved_directories(
+                        list(directories), root
+                    )
+                    changed = manager.change_project_directories(
+                        revised, project.name, paths
+                    )
+                    if changed is not None:
+                        revised = changed
+                        changed_fields.append("directories")
+            except (
+                orglib.OrgStructureError,
+                manager.RegistryIndexError,
+                ValueError,
+            ) as exc:
+                session.set_transient_message(str(exc))
+                return False
+
+            if changed_fields:
+                self.index_buffer.apply_text(
+                    revised,
+                    description=(
+                        f"Edit {project.name} " + " and ".join(changed_fields)
+                    ),
+                )
+            saved, message = self._save_index_changes()
+            if not saved:
+                if self.index_conflicts:
+                    session.push_view(self._conflict_view(parent_is_save=False))
+                else:
+                    session.set_transient_message(message)
+                return False
+
+            current = orglib.parse(self.index_buffer.read()).project(project.name)
+            assert current is not None
+            current_directories = orglib.parse(self.index_buffer.read()).directories(
+                project.name
+            ).section
+            baseline["priority"] = current.priority
+            baseline["description"] = current.description
+            baseline["task_file"] = current.task_file
+            baseline["directories"] = tuple(
+                current_directories.entries if current_directories is not None else ()
+            )
+            draft["priority"] = current.priority
+            draft["task_file"] = current.task_file
+            reset_control(description_area, current.description or "")
+            reset_control(
+                directory_area,
+                "\n".join(
+                    current_directories.entries
+                    if current_directories is not None
+                    else ()
+                ),
+            )
+            if workspace is not None and current_directories is not None:
+                effective = manager.unique_resolved_directories(
+                    list(current_directories.entries), root
+                ) or [root]
+                count = len(effective)
+                workspace.summary = f"Effective directories: {count} (custom)"
+            session.set_outcome(message)
+            return True
+
+        def launch_editor(session: menu.InlineMenuSession) -> None:
+            assert self.index_buffer is not None
+            if core.editor_argv(self.index_buffer.path) is None:
+                session.set_transient_message("VISUAL or EDITOR is not set")
+                return
+            saved, message = self._save_index_changes()
+            if not saved:
+                if self.index_conflicts:
+                    session.push_view(self._conflict_view(parent_is_save=False))
+                else:
+                    session.set_transient_message(message)
+                return
+            section = orglib.parse(self.index_buffer.read()).project(project.name)
+            if section is None:
+                session.set_transient_message(
+                    f"projects.org has no section for {project.name!r}"
+                )
+                return
+            argv = core.editor_argv(
+                self.index_buffer.path, section.heading_span.start_line + 1
+            )
+            assert argv is not None
+
+            def run_editor() -> None:
+                subprocess.run(argv, check=False)
+
+            def done() -> None:
+                assert self.index_buffer is not None
+                try:
+                    self.index_buffer.reload()
+                    replacement = self._metadata_view(project)
+                except (
+                    OSError,
+                    UnicodeError,
+                    orglib.OrgStructureError,
+                    ValueError,
+                ) as exc:
+                    session.set_transient_message(
+                        f"Cannot reload projects.org: {exc}"
+                    )
+                    return
+                self.index_conflicts = ()
+                self._reconciliation_key = None
+                session.replace_view(replacement)
+                session.set_outcome(
+                    f"Edited {manager.friendly_path(self.index_buffer.path)}"
+                )
+
+            session.set_outcome(message)
+            session.suspend(run_editor, on_done=done)
+
+        def dirty_resolution_view(*, for_editor: bool) -> menu.MenuView:
+            rows = [
+                menu.MenuRow(
+                    1,
+                    "SAVE",
+                    "Save projects.org"
+                    + (" and open the editor" if for_editor else " and return"),
+                ),
+                menu.MenuRow(2, "CONTINUE", "Return to the metadata workspace"),
+                menu.MenuRow(
+                    3,
+                    "DISCARD",
+                    "Discard workspace fields"
+                    + (" and open the editor" if for_editor else " and return"),
+                ),
+            ]
+
+            def handle(
+                session: menu.InlineMenuSession,
+                result: menu.MenuResult,
+            ) -> None:
+                if result.action != "select" or result.index is None:
+                    return
+                if result.index == 1:
+                    session.pop_view()
+                    return
+                if result.index == 2:
+                    discard_workspace_edits()
+                    session.pop_view()
+                    if for_editor:
+                        launch_editor(session)
+                    else:
+                        session.pop_view(message="Discarded project metadata edits")
+                    return
+                session.pop_view()
+                if save_workspace(session):
+                    if for_editor:
+                        launch_editor(session)
+                    else:
+                        session.pop_view(message="Saved project metadata")
+
+            return menu.MenuView(
+                rows=rows,
+                on_result=handle,
+                title=f"Unsaved project metadata: {project.name}",
+                title_right=f"Registry: {self.display_path}",
+                summary="One or more workspace fields have changed",
+                instruction="↑↓/jk · ↵ choose · Esc/b/q continue editing",
+                select_help="Choose how to handle unsaved metadata fields",
+                back_help="Continue editing without resolving changes",
+                selected_index=1,
+            )
+
+        def back(session: menu.InlineMenuSession) -> bool:
+            if not is_dirty():
+                return True
+            session.push_view(dirty_resolution_view(for_editor=False))
+            return False
+
+        def change_choice(
+            session: menu.InlineMenuSession,
+            focus_index: int,
+            direction: int,
+        ) -> None:
+            if focus_index != 0:
+                return
+            draft["priority"] = manager.shift_project_priority(
+                draft["priority"], direction
+            )
+            session.set_message(None)
+
+        def activate_control(
+            session: menu.InlineMenuSession,
+            focus_index: int,
+        ) -> None:
+            if focus_index == 3:
+                draft["task_file"] = (
+                    manager.friendly_path(resolved_file)
+                    if resolved_file is not None
+                    else None
+                )
+                session.set_transient_message("Refreshed TASK_FILE mirror")
+                return
+            if focus_index != 4:
+                return
+            if is_dirty():
+                session.push_view(dirty_resolution_view(for_editor=True))
+            else:
+                launch_editor(session)
+
+        workspace = menu.WorkspaceView(
+            container=container,
+            focus_targets=[
+                priority_control,
+                description_area,
+                directory_area,
+                mirror_control,
+                editor_control,
+            ],
+            on_save=save_workspace,
+            title=f"Project metadata: {project.name}",
+            title_right=f"Registry: {self.display_path}",
+            summary=(
+                f"Effective directories: {effective_count} ({effective_source})"
+            ),
+            instruction=(
+                "Tab/S-Tab fields · ←/→ priority · Enter action · "
+                "C-s save · C-g help · Esc back"
+            ),
+            dirty_label="PROJECT EDITED",
+            help_entries=[
+                ("Tab/Shift-Tab", "Move among editable fields and actions"),
+                ("Left/Right", "Change project priority"),
+                ("Typing", "Edit the description or custom directory stack"),
+                ("Enter (description)", "Move to custom directories"),
+                ("Enter (directories)", "Insert a new directory line"),
+                ("Enter (button)", "Refresh TASK_FILE or open the index editor"),
+                ("Ctrl-S", "Save the entire projects.org buffer"),
+                ("Esc", "Return, warning first if fields are unsaved"),
+                ("C-g", "Show or close this help"),
+            ],
+            enter_moves_focus=frozenset({1}),
+            focused_index=1,
+            is_dirty=is_dirty,
+            on_back=back,
+            status_text=self._buffer_status,
+            choice_focus_indices=frozenset({0}),
+            on_choice_change=change_choice,
+            activate_focus_indices=frozenset({3, 4}),
+            on_activate=activate_control,
+        )
+        return workspace
+
     def _initial_view(self) -> menu.MenuView:
         if self.index_buffer is None:
             return self.view()
@@ -609,6 +1110,27 @@ class _ProjectBrowser:
                 self._replace_view(session, project, fallback)
                 verb = "Undid" if result.action == "undo" else "Redid"
                 session.set_transient_message(f"{verb}: {description}")
+                return
+            if result.action == "metadata":
+                if project is None:
+                    return
+                if self.index_buffer is None:
+                    session.set_transient_message(
+                        self.index_error or "projects.org is not available for editing"
+                    )
+                    return
+                try:
+                    workspace = self._metadata_view(project)
+                except (
+                    OSError,
+                    UnicodeError,
+                    orglib.OrgStructureError,
+                    manager.RegistryIndexError,
+                    ValueError,
+                ) as exc:
+                    session.set_transient_message(str(exc))
+                    return
+                session.push_view(workspace)
                 return
             if result.action in {"priority_up", "priority_down"}:
                 if project is None:
@@ -1466,6 +1988,15 @@ class _CdprojSession:
         self.status = 1
         self.error: str | None = None
         self.warnings: list[str] = []
+        self.index_buffer: taskui.OrgBuffer | None = None
+        if projects:
+            index_path, _ = manager.require_registry_index(
+                projects[0].path.parent, projects
+            )
+            self.index_buffer = taskui.OrgBuffer(
+                index_path,
+                registry=projects[0].path.parent,
+            )
 
     # -- output ----------------------------------------------------------
 
@@ -1614,7 +2145,12 @@ class _CdprojSession:
         session.pop_view(message=f"{project.name} ({label}): {message}")
 
     def edit_view(self, project: manager.Project) -> menu.MenuView:
-        candidates = manager.directory_candidates(project)
+        assert self.index_buffer is not None
+        candidates = manager.directory_candidates_from_index(
+            project,
+            self.index_buffer.path,
+            self.index_buffer.read(),
+        )
         rows = []
         for index, candidate in enumerate(candidates):
             if candidate.entries is not None:
@@ -1663,11 +2199,38 @@ class _CdprojSession:
         path = candidate.path
         line_num = candidate.line_num
         if candidate.label == "private":
+            assert self.index_buffer is not None
+            if core.editor_argv(path) is None:
+                session.set_transient_message("VISUAL or EDITOR is not set")
+                return
             try:
-                path, line_num = manager.ensure_registry_project_directories(project)
-            except manager.RegistryIndexError as exc:
+                lookup = orglib.parse(self.index_buffer.read()).directories(
+                    project.name
+                )
+                if lookup.section is None:
+                    revised = manager.change_project_directories(
+                        self.index_buffer.read(), project.name, []
+                    )
+                    if revised is not None:
+                        self.index_buffer.apply_text(
+                            revised,
+                            description=f"Initialize {project.name} directories",
+                        )
+                self.index_buffer.save()
+                lookup = orglib.parse(self.index_buffer.read()).directories(
+                    project.name
+                )
+            except (
+                orglib.OrgStructureError,
+                manager.RegistryIndexError,
+                taskui.BufferChangedError,
+                ValueError,
+            ) as exc:
                 session.set_transient_message(str(exc))
                 return
+            assert lookup.project_span is not None
+            path = self.index_buffer.path
+            line_num = lookup.project_span.start_line + 1
         argv = core.editor_argv(path, line_num)
         if argv is None:
             session.set_transient_message("VISUAL or EDITOR is not set")
@@ -1680,6 +2243,15 @@ class _CdprojSession:
             subprocess.run(argv, check=False)
 
         def done() -> None:
+            if candidate.label == "private":
+                assert self.index_buffer is not None
+                try:
+                    self.index_buffer.reload()
+                except (OSError, UnicodeError) as exc:
+                    session.set_transient_message(
+                        f"Cannot reload projects.org: {exc}"
+                    )
+                    return
             session.pop_view(
                 message=f"Edited {manager.friendly_path(path)}{hint}"
             )

@@ -174,6 +174,7 @@ class WorkspaceView:
     title_right: str = ""
     summary: str = ""
     instruction: str = "Tab fields · Ctrl-S save · Esc back · C-g help"
+    dirty_label: str = "TASK EDITED"
     help_entries: list[tuple[str, str]] = field(default_factory=list)
     enter_moves_focus: frozenset[int] = frozenset()
     focused_index: int = 0
@@ -998,7 +999,7 @@ class InlineMenuSession:
                 and view.is_dirty is not None
                 and view.is_dirty()
             ):
-                instruction = f"TASK EDITED · {instruction}"
+                instruction = f"{view.dirty_label} · {instruction}"
         return FormattedText([("", "\n"), ("class:hint", instruction)])
 
     def _active_body(self):

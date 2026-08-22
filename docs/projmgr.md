@@ -95,7 +95,9 @@ The session polls `projects.org`: external writes refresh a clean project list,
 while a dirty list merges changes to disjoint project sections in memory and
 keeps the result dirty until `C-s`. Differing changes to one section open a
 named Reload/Retry/Continue conflict view without overwriting either version.
-Task-file-modified ordering and the `m` metadata workspace remain planned.
+Press `m` to edit priority, description, the task-file mirror, and custom
+directories in one compact, preimage-checked workspace. Task-file-modified
+ordering and mirror-mismatch diagnostics remain planned.
 Registry symlinks remain authoritative for project membership and task-file
 resolution. See [`docs/ptui.md`](ptui.md) for the full specification, metadata
 shape, sort semantics, safety rules, and delivery order.

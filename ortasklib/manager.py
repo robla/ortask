@@ -884,6 +884,126 @@ def change_project_priority(
     return revised
 
 
+def _source_eol(text: str) -> str:
+    """Use the source's first line ending, defaulting to LF for new text."""
+    match = re.search(r"\r\n|\n|\r", text)
+    return match.group(0) if match is not None else "\n"
+
+
+def _line_body_and_eol(line: str) -> tuple[str, str]:
+    """Split one source line without treating a bare CR as content."""
+    if line.endswith("\r\n"):
+        return line[:-2], "\r\n"
+    if line.endswith(("\n", "\r")):
+        return line[:-1], line[-1]
+    return line, ""
+
+
+def change_project_property(
+    text: str,
+    project: str,
+    property_name: str,
+    target: str | None,
+) -> str | None:
+    """Return one source-preserving project property edit.
+
+    The matched property line is the only existing line rewritten. Missing
+    drawers are inserted directly below the project heading; unrelated drawer
+    entries and project content remain byte-identical.
+    """
+    name = property_name.strip().upper()
+    if not name or re.search(r"[\s:]", name):
+        raise ValueError(f"invalid project property name: {property_name!r}")
+    if target is not None and any(character in target for character in "\r\n"):
+        raise ValueError(f"{name} must be a single line")
+    target = _index_value(target)
+    malformed_line = _malformed_priority_heading_line(text, project)
+    if malformed_line is not None:
+        raise ValueError(
+            f"malformed priority cookie for project {project!r} "
+            f"at line {malformed_line}"
+        )
+
+    section = orglib.parse(text).project(project)
+    if section is None:
+        if target is None:
+            return None
+        eol = _source_eol(text)
+        prefix = text
+        if prefix and not prefix.endswith(("\n", "\r")):
+            prefix += eol
+        revised = (
+            prefix
+            + f"* {project}{eol}"
+            + f":PROPERTIES:{eol}:{name}: {target}{eol}:END:{eol}"
+        )
+    else:
+        values = section.property_values(name)
+        if len(values) > 1:
+            raise ValueError(
+                f"cannot edit repeated {name} property for project {project!r}"
+            )
+        current = _index_value(values[0]) if values else None
+        if current == target:
+            return None
+
+        if section.drawer_span is None:
+            if target is None:  # pragma: no cover - no value implies no drawer
+                return None
+            heading = text[
+                section.heading_span.start : section.heading_span.end
+            ]
+            eol = _source_eol(heading or text)
+            separator = "" if heading.endswith(("\n", "\r")) else eol
+            drawer = (
+                separator
+                + f":PROPERTIES:{eol}:{name}: {target}{eol}:END:{eol}"
+            )
+            insertion = section.heading_span.end
+            revised = text[:insertion] + drawer + text[insertion:]
+        else:
+            span = section.drawer_span
+            drawer = text[span.start : span.end]
+            lines = drawer.splitlines(keepends=True)
+            matches: list[int] = []
+            for index, line in enumerate(lines[1:-1], start=1):
+                body, _ending = _line_body_and_eol(line)
+                match = orglib.syntax.PROPERTY_RE.match(body)
+                if (
+                    match is not None
+                    and match.group("name").casefold() == name.casefold()
+                ):
+                    matches.append(index)
+            if len(matches) > 1:  # parser values and source should agree
+                raise ValueError(
+                    f"cannot edit repeated {name} property for project {project!r}"
+                )
+            if matches:
+                index = matches[0]
+                if target is None:
+                    del lines[index]
+                else:
+                    body, ending = _line_body_and_eol(lines[index])
+                    indent = body[: len(body) - len(body.lstrip())]
+                    lines[index] = f"{indent}:{name}: {target}{ending}"
+            else:
+                assert target is not None
+                closing = len(lines) - 1
+                eol = _source_eol(drawer or text)
+                lines.insert(closing, f":{name}: {target}{eol}")
+            replacement = "".join(lines)
+            revised = text[:span.start] + replacement + text[span.end:]
+
+    check = orglib.parse(revised).project(project)
+    if check is None:
+        raise ValueError(f"cannot safely set {name} for project {project!r}")
+    actual = tuple(_index_value(value) for value in check.property_values(name))
+    expected = () if target is None else (target,)
+    if actual != expected:
+        raise ValueError(f"cannot safely set {name} for project {project!r}")
+    return revised
+
+
 def _index_value(value: str | None) -> str | None:
     stripped = value.strip() if value else ""
     return stripped or None
@@ -1355,38 +1475,6 @@ def registry_index_problems(registry: Path, projects: list[Project]) -> list[str
     return problems
 
 
-def ensure_registry_project_directories(project: Project) -> tuple[Path, int]:
-    """Ensure one project has an index section and return its heading line."""
-    index_path, text = require_registry_index(project.path.parent, [project])
-    lookup = orglib.parse(text).directories(project.name)
-    if lookup.section is not None and lookup.project_span is not None:
-        return index_path, lookup.project_span.start_line + 1
-
-    if lookup.project_span is None:
-        prefix = text
-        if prefix and not prefix.endswith(("\n", "\r")):
-            prefix += "\n"
-        addition = f"* {project.name}\n** Directories\n"
-        revised = prefix + addition
-    else:
-        insertion = lookup.project_span.end
-        prefix = text[:insertion]
-        if prefix and not prefix.endswith(("\n", "\r")):
-            prefix += "\n"
-        revised = prefix + "** Directories\n" + text[insertion:]
-
-    check = orglib.parse(revised).directories(project.name)
-    if check.project_span is None or check.section is None:
-        raise RegistryIndexError(
-            f"{index_path}: cannot create a safe section for {project.name!r}"
-        )
-    try:
-        core.atomic_write(index_path, revised)
-    except OSError as exc:
-        raise RegistryIndexError(f"cannot write {index_path}: {exc}") from exc
-    return index_path, check.project_span.start_line + 1
-
-
 def unique_resolved_directories(entries: list[str], root: Path) -> list[Path]:
     """Resolve and deduplicate directory spellings, keeping their first order."""
     unique: list[Path] = []
@@ -1450,22 +1538,32 @@ def proposed_registry_directories(
     return plan.live_paths + plan.missing
 
 
-def registry_directories_section(paths: tuple[Path, ...]) -> str:
+def registry_directories_section(
+    paths: tuple[Path, ...], *, eol: str = "\n"
+) -> str:
     """Render the canonical direct-child directory section."""
-    return "** Directories\n" + "".join(
-        f"   - {format_directory_path(path)}\n" for path in paths
+    return f"** Directories{eol}" + "".join(
+        f"   - {format_directory_path(path)}{eol}" for path in paths
     )
 
 
-def render_registry_directories_update(
-    plan: RegistryDirectoriesPlan, *, keep_missing: bool
-) -> tuple[str, str]:
-    """Return ``(complete index, replacement section)`` without writing."""
-    text = plan.previous_index_text
+def change_project_directories(
+    text: str,
+    project: str,
+    paths: list[Path] | tuple[Path, ...],
+) -> str | None:
+    """Return one bounded, in-memory rewrite of a project's directory stack."""
+    malformed_line = _malformed_priority_heading_line(text, project)
+    if malformed_line is not None:
+        raise ValueError(
+            f"malformed priority cookie for project {project!r} "
+            f"at line {malformed_line}"
+        )
+    final_paths = tuple(dict.fromkeys(path.resolve() for path in paths))
     document = orglib.parse(text)
-    lookup = document.directories(plan.project.name)
-    final_paths = proposed_registry_directories(plan, keep_missing=keep_missing)
-    section_text = registry_directories_section(final_paths)
+    lookup = document.directories(project)
+    eol = _source_eol(text)
+    section_text = registry_directories_section(final_paths, eol=eol)
 
     if lookup.section is not None:
         span = lookup.section.span
@@ -1474,20 +1572,34 @@ def render_registry_directories_update(
         insertion = lookup.project_span.end
         prefix = text[:insertion]
         if prefix and not prefix.endswith(("\n", "\r")):
-            prefix += "\n"
+            prefix += eol
         revised = prefix + section_text + text[insertion:]
     else:
         prefix = text
         if prefix and not prefix.endswith(("\n", "\r")):
-            prefix += "\n"
-        revised = prefix + f"* {plan.project.name}\n" + section_text
+            prefix += eol
+        revised = prefix + f"* {project}{eol}" + section_text
 
-    check = orglib.parse(revised).directories(plan.project.name)
-    if check.section is None:
+    check = orglib.parse(revised).directories(project)
+    expected = tuple(format_directory_path(path) for path in final_paths)
+    if check.section is None or check.section.entries != expected:
         raise RegistryIndexError(
-            f"{plan.index_path}: cannot create a safe section "
-            f"for {plan.project.name!r}"
+            f"cannot create a safe Directories section for {project!r}"
         )
+    return None if revised == text else revised
+
+
+def render_registry_directories_update(
+    plan: RegistryDirectoriesPlan, *, keep_missing: bool
+) -> tuple[str, str]:
+    """Return ``(complete index, replacement section)`` without writing."""
+    text = plan.previous_index_text
+    final_paths = proposed_registry_directories(plan, keep_missing=keep_missing)
+    section_text = registry_directories_section(
+        final_paths, eol=_source_eol(text)
+    )
+    changed = change_project_directories(text, plan.project.name, final_paths)
+    revised = changed if changed is not None else text
     return revised, section_text
 
 
@@ -1512,13 +1624,10 @@ def apply_registry_directories_update(
     return True
 
 
-def directory_candidates(project: Project) -> list[DirectorySource]:
-    """Both places a project's directory stack may live, private first.
-
-    The private candidate is always the migrated registry index. Missing or
-    incomplete migration is an error rather than a fallback to a legacy file.
-    """
-    index_path, index_text = require_registry_index(project.path.parent, [project])
+def directory_candidates_from_index(
+    project: Project, index_path: Path, index_text: str
+) -> list[DirectorySource]:
+    """Both directory sources using the caller's in-memory index revision."""
     lookup = orglib.parse(index_text).directories(project.name)
     private_entries = (
         list(lookup.section.entries) if lookup.section is not None else None
@@ -1539,6 +1648,16 @@ def directory_candidates(project: Project) -> list[DirectorySource]:
             entries = None
         sources.append(DirectorySource("project", org_file, entries))
     return sources
+
+
+def directory_candidates(project: Project) -> list[DirectorySource]:
+    """Both places a project's directory stack may live, private first.
+
+    The private candidate is always the migrated registry index. Missing or
+    incomplete migration is an error rather than a fallback to a legacy file.
+    """
+    index_path, index_text = require_registry_index(project.path.parent, [project])
+    return directory_candidates_from_index(project, index_path, index_text)
 
 
 def directory_sources(project: Project) -> list[DirectorySource]:

@@ -2475,6 +2475,101 @@ def test_project_browser_buffers_priority_undo_redo_and_save(tmp_path: Path) -> 
     )
 
 
+@pytest.mark.skipif(
+    projmgr.TextArea is None,
+    reason="prompt_toolkit not installed",
+)
+def test_project_metadata_workspace_applies_one_buffered_transaction(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Metadata fields should compose one source-preserving OrgBuffer transaction.
+    from prompt_toolkit.document import Document
+    from ortasklib import menu
+
+    registry = tmp_path / "registry"
+    project_dir = tmp_path / "src" / "alpha"
+    docs_dir = project_dir / "docs"
+    code_dir = project_dir / "code"
+    docs_dir.mkdir(parents=True)
+    code_dir.mkdir()
+    task_file = write(
+        project_dir / "tasks.org",
+        "* Tasks\n** TODO t0001 Work\n",
+    )
+    register(registry, "alpha", project_dir)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = (
+        manager.PROJECTS_INDEX_HEADER
+        + "* [#B] alpha :work:\n"
+        + ":PROPERTIES:\n:DESCRIPTION: Old summary\n:CUSTOM: exact\n:END:\n"
+        + "Keep this prose.\n** Directories\n   - docs\n"
+        + "* other\nOther source.\n"
+    )
+    index.write_text(original, encoding="utf-8")
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+
+    class FakeSession:
+        def __init__(self, current_view) -> None:
+            self.views = [current_view]
+            self.message = ""
+
+        @property
+        def current_view(self):
+            return self.views[-1]
+
+        def push_view(self, view) -> None:
+            self.views.append(view)
+
+        def set_message(self, message: str | None) -> None:
+            self.message = message or ""
+
+        def set_transient_message(self, message: str) -> None:
+            self.message = message
+
+        def set_outcome(self, message: str) -> None:
+            self.message = message
+
+    session = FakeSession(browser.view())
+    session.current_view.on_result(session, menu.MenuResult("metadata", 0))
+    workspace = session.current_view
+    assert isinstance(workspace, menu.WorkspaceView)
+    assert workspace.summary == "Effective directories: 1 (custom)"
+    assert workspace.focused_index == 1
+    assert workspace.dirty_label == "PROJECT EDITED"
+
+    workspace.on_choice_change(session, 0, 1)
+    workspace.focus_targets[1].buffer.set_document(
+        Document("New summary", cursor_position=11)
+    )
+    directories = f"{docs_dir}\n{code_dir}"
+    workspace.focus_targets[2].buffer.set_document(
+        Document(directories, cursor_position=len(directories))
+    )
+    workspace.on_activate(session, 3)
+    assert workspace.is_dirty is not None and workspace.is_dirty()
+
+    monkeypatch.setattr(
+        browser,
+        "_save_index_changes",
+        lambda: (True, "Kept changes buffered for test"),
+    )
+    workspace.on_save(session)
+
+    assert browser.index_buffer is not None
+    revised = browser.index_buffer.read()
+    assert browser.index_buffer.undo_count == 1
+    assert index.read_text(encoding="utf-8") == original
+    assert "* [#A] alpha :work:" in revised
+    assert ":DESCRIPTION: New summary" in revised
+    assert f":TASK_FILE: {task_file.resolve()}" in revised
+    assert f"   - {docs_dir.resolve()}" in revised
+    assert f"   - {code_dir.resolve()}" in revised
+    assert ":CUSTOM: exact\n" in revised
+    assert ":END:\nKeep this prose." in revised
+    assert revised.endswith("* other\nOther source.\n")
+    assert workspace.is_dirty() is False
+
+
 def test_project_browser_same_section_conflict_preserves_both_versions(
     tmp_path: Path,
 ) -> None:
@@ -3311,6 +3406,79 @@ def test_change_project_priority_rejects_malformed_cookie() -> None:
         manager.change_project_priority(text.replace("[#AB]", "[#A"), "sample", "C")
 
 
+def test_change_project_property_preserves_unrelated_project_source() -> None:
+    # Property edits retain CRLF, unknown fields, prose, tags, and sibling sections.
+    original = (
+        "#+TITLE: Projects\r\n\r\n"
+        "* [#B] sample :work:\r\n"
+        ":PROPERTIES:\r\n:DESCRIPTION: Old\r\n:CUSTOM: exact\r\n:END:\r\n"
+        "Project prose.\r\n** Notes\r\nKeep.\r\n"
+        "* other\r\nOther prose.\r\n"
+    )
+
+    described = manager.change_project_property(
+        original, "sample", "DESCRIPTION", "New"
+    )
+    assert described is not None
+    mirrored = manager.change_project_property(
+        described, "sample", "TASK_FILE", "~/src/sample/tasks.org"
+    )
+    assert mirrored is not None
+    cleared = manager.change_project_property(
+        mirrored, "sample", "DESCRIPTION", None
+    )
+    assert cleared is not None
+
+    assert ":DESCRIPTION:" not in cleared
+    assert ":CUSTOM: exact\r\n:TASK_FILE: ~/src/sample/tasks.org\r\n" in cleared
+    assert "Project prose.\r\n** Notes\r\nKeep.\r\n" in cleared
+    assert cleared.endswith("* other\r\nOther prose.\r\n")
+
+
+def test_change_project_property_rejects_ambiguous_or_multiline_values() -> None:
+    # A metadata writer must refuse repeated fields and non-Org single-line values.
+    repeated = (
+        "* sample\n:PROPERTIES:\n:DESCRIPTION: one\n"
+        ":DESCRIPTION: two\n:END:\n"
+    )
+
+    with pytest.raises(ValueError, match="repeated DESCRIPTION"):
+        manager.change_project_property(repeated, "sample", "DESCRIPTION", "new")
+    with pytest.raises(ValueError, match="single line"):
+        manager.change_project_property("* sample\n", "sample", "DESCRIPTION", "a\nb")
+    with pytest.raises(ValueError, match="malformed priority cookie"):
+        manager.change_project_property(
+            "* [#AB] sample\n", "sample", "DESCRIPTION", "new"
+        )
+
+
+def test_change_project_directories_is_a_bounded_in_memory_writer(
+    tmp_path: Path,
+) -> None:
+    # Directory editing replaces one child section and leaves adjacent source exact.
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    original = (
+        "#+TITLE: Projects\r\n\r\n"
+        "* [#A] sample :work:\r\n:PROPERTIES:\r\n:CUSTOM: yes\r\n:END:\r\n"
+        "Prose.\r\n** Directories\r\n   - old\r\n"
+        "* other\r\nKeep byte-for-byte.\r\n"
+    )
+
+    revised = manager.change_project_directories(
+        original, "sample", [first, second, first]
+    )
+    assert revised is not None
+
+    lookup = orglib.parse(revised).directories("sample")
+    assert lookup.section is not None
+    assert lookup.section.entries == (str(first), str(second))
+    assert ":PROPERTIES:\r\n:CUSTOM: yes\r\n:END:\r\nProse.\r\n" in revised
+    assert revised.endswith("* other\r\nKeep byte-for-byte.\r\n")
+
+
 def test_shift_project_priority_clamps_at_both_ends() -> None:
     # Shift-Up follows unset/C/B/A while Shift-Down follows the reverse path.
     assert manager.shift_project_priority(None, 1) == "C"
@@ -3900,6 +4068,35 @@ def test_cdproj_private_editor_initializes_index_section(
     assert captured["path"] == index
     assert captured["line"] == 3
     assert "error" not in captured
+
+
+def test_cdproj_private_editor_refuses_a_stale_index(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # The external-editor entrance must not overwrite a newer projects.org revision.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    project = manager.discover_projects(registry)[0]
+    candidate = manager.directory_candidates(project)[0]
+    session = projmgr._CdprojSession("registry", [project], tmp_path / "out")
+    index = registry / manager.PROJECTS_INDEX_NAME
+    external = index.read_text(encoding="utf-8") + "* external\n"
+    index.write_text(external, encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    class FakeSession:
+        def set_transient_message(self, message: str) -> None:
+            captured["error"] = message
+
+        def suspend(self, callback, on_done) -> None:
+            raise AssertionError("stale index opened in editor")
+
+    monkeypatch.setattr(core, "editor_argv", lambda path, line=None: ["editor"])
+    session.edit_source(FakeSession(), project, candidate)
+
+    assert "changed since the editing buffer was loaded" in str(captured["error"])
+    assert index.read_text(encoding="utf-8") == external
 
 
 def test_projmgr_cdproj_never_edits_the_task_file(
