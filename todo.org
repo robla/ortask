@@ -18,7 +18,7 @@ Keep each agent's repository guidance aligned with the implemented scripts,
 package boundaries, optional TUI dependencies, pytest suite, task-file
 resolution, supported commands, and data-safety rules.
 *** DONE t0012.1 Refresh AGENTS.md
-*** TODO t0012.2 Have Claude refresh CLAUDE.md
+*** DONE t0012.2 Have Claude refresh CLAUDE.md
 *** TODO t0012.3 Have Gemini refresh GEMINI.md
 ** TODO t0013 Assess interactive performance and responsiveness
 Measure input-to-repaint latency for navigation, view transitions, filtering,
