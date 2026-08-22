@@ -358,7 +358,7 @@ something different in its third column:
 |----------------|---------------------|--------------------|
 | Title          | `Project navigator` | `Change directory` |
 | Row label      | `PROJ`              | `CD`               |
-| Third column   | open task count     | directory, and which list sets the stack |
+| Third column   | open task count     | effective directory count and project location |
 
 ```text
 Project navigator                                  Registry: ~/tmpsorta/proj2026
@@ -372,14 +372,18 @@ Project navigator                                  Registry: ~/tmpsorta/proj2026
 Change directory                                   Registry: ~/tmpsorta/proj2026
 ~/src/elusync  ·  todo.org
 
-▶  1  CD      elusync       ~/src/elusync  [private]
-   2  CD      elweek        ~/tmpsorta/electorama-weekly
+▶  1  CD      elusync        3 dir*  ~/src/elusync
+   2  CD      elweek         4 dir   ~/tmpsorta/electorama-weekly
+
+* = custom · ↑↓/jk · ↵ select · e edit · Esc/q cancel
 ```
 
 The count is the number of open top-level tasks, the same rows `list` prints,
-so the two never disagree. The `[private]` / `[project]` marker names the list
-that will set the stack if you press Enter — the private list wins outright,
-so knowing which one is in play matters before the fact, not after.
+so the two never disagree. In `cdproj`, the count is the effective stack size
+after path resolution, deduplication, and project-root fallback. A trailing `*`
+means the registry-defined custom stack wins; an unmarked count comes from the
+project Org file or the project root. The UI says “custom” rather than exposing
+the registry implementation term “private.”
 
 Both labels stay in `menu.PROJECT_ROW_LABELS`, which is what colors a row as a
 project rather than a task. Renaming one without adding it there would quietly

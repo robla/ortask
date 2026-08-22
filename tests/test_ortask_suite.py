@@ -2019,26 +2019,33 @@ def test_projmgr_navigator_counts_the_same_tasks_as_list(
     assert len(summaries["counted"]["tasks"]) == 2
 
 
-def test_projmgr_cdproj_rows_name_the_winning_list(
+def test_projmgr_cdproj_rows_count_the_stack_and_mark_custom_sources(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    """Which list will set the stack is worth knowing before Enter, not after."""
+    # Rows show the effective count; only registry-defined stacks get "*".
     registry, project = _cdproj_registry(
         tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
     )
     entry = manager.discover_projects(registry)[0]
-    assert "[" not in projmgr._project_stack(entry)
+    assert projmgr._project_stack(entry) == f" 1 dir   {project}"
 
     (project / "TODO.org").write_text(
-        "* Tasks\n** TODO t0001 task\n* Directories\n** file:/shared/one\n",
+        "* Tasks\n** TODO t0001 task\n* Directories\n"
+        "** file:/shared/one\n** file:/shared/two\n",
         encoding="utf-8",
     )
     entry = manager.discover_projects(registry)[0]
-    assert projmgr._project_stack(entry).endswith("[project]")
+    assert projmgr._project_stack(entry) == f" 2 dir   {project}"
 
-    _write_private_index(registry, "** file:/private/one\n")
+    _write_private_index(
+        registry,
+        "** file:/private/one\n** file:/private/one\n",
+    )
     entry = manager.discover_projects(registry)[0]
-    assert projmgr._project_stack(entry).endswith("[private]")
+    assert projmgr._project_stack(entry) == f" 1 dir*  {project}"
+
+    session = projmgr._CdprojSession("~/registry", [entry], tmp_path / "out")
+    assert session.project_view().instruction.startswith("* = custom · ")
 
 
 def test_projmgr_project_menu_summary_follows_the_highlight(
@@ -2135,17 +2142,17 @@ def test_menu_right_aligned_context_yields_to_the_left(tmp_path: Path) -> None:
 
 
 def test_menu_dashboards_escape_rich_markup(capsys) -> None:
-    # Cell text is data. Rich reads "[private]" and "[#A]" as console markup and
-    # drops what it cannot resolve, which silently ate both.
+    # Cell text is data. Rich reads bracketed notes and "[#A]" as console markup
+    # and drops what it cannot resolve, which must not silently eat either.
     from ortasklib import menu
 
     menu.print_project_dashboard(
         "Change directory",
         "~/projects",
-        [menu.ProjectRow(1, "myproj", "~/src/myproj  [private]")],
+        [menu.ProjectRow(1, "myproj", "~/src/myproj  [literal]")],
         "Directories",
     )
-    assert "[private]" in capsys.readouterr().out
+    assert "[literal]" in capsys.readouterr().out
 
     menu.print_task_dashboard(
         "Tasks", Path("x.org"), [menu.MenuRow(1, "TODO", "Fix [#A] handling")]
@@ -2754,19 +2761,25 @@ def test_cdproj_private_editor_initializes_index_section(
 def test_projmgr_cdproj_never_edits_the_task_file(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    """``cdproj`` resolves and reports; Org content belongs to ``ortask.py``."""
+    # cdproj resolves and reports; Org content belongs to ortask.py.
     from ortasklib import menu
 
     original = "* Tasks\n** TODO t0001 task\n"
     registry, project = _cdproj_registry(tmp_path, monkeypatch, capsys, original)
+    prompts: list[str] = []
     monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
-    monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
+    monkeypatch.setattr(
+        menu,
+        "prompt_text",
+        lambda prompt: prompts.append(prompt) or "1",
+    )
 
     out_file = tmp_path / "out.txt"
     assert projmgr.cmd_cdproj(
         argparse.Namespace(registry=str(registry), out=str(out_file))
     ) == 0
     assert (project / "TODO.org").read_text(encoding="utf-8") == original
+    assert prompts == ["* = custom · number, Esc/q=cancel"]
 
 
 def test_projmgr_cdproj_private_list_wins_outright(

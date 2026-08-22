@@ -104,17 +104,21 @@ def _project_tasks(project: manager.Project) -> str:
 
 
 def _project_stack(project: manager.Project) -> str:
-    """Where a project is, and which list will set its directory stack.
+    """Effective stack size before the aligned project location.
 
-    ``directory_sources`` returns private first, and the private list wins
-    outright, so the first label is the one that will decide — worth knowing
-    before Enter rather than after.
+    A registry-defined stack is called "custom" in the UI. The asterisk is a
+    compact footnote marker rather than an internal source-name label.
     """
     location = _project_location(project)
     sources = manager.directory_sources(project)
-    if not sources:
-        return location
-    return f"{location}  [{sources[0].label}]"
+    if sources:
+        source = sources[0]
+        directories = _stack_for_source(source, project)
+        marker = "*" if source.label == "private" else " "
+    else:
+        directories = [manager.real_project_path(project)]
+        marker = " "
+    return f"{len(directories):>2} dir{marker}  {location}"
 
 
 def _project_location_and_tasks(project: manager.Project) -> str:
@@ -775,6 +779,16 @@ def _dedupe(paths: list[Path]) -> list[Path]:
     return unique
 
 
+def _stack_for_source(
+    source: manager.DirectorySource,
+    project: manager.Project,
+) -> list[Path]:
+    """Resolve and deduplicate one source, falling back to the project root."""
+    root = manager.real_project_path(project)
+    entries = manager.resolve_directories(source.entries or [], root)
+    return _dedupe(entries) or [root]
+
+
 class _CdprojSession:
     """Pick a project, resolve its directory stack, and write it to a file.
 
@@ -814,11 +828,7 @@ class _CdprojSession:
     def stack_for(
         self, source: manager.DirectorySource, project: manager.Project
     ) -> list[Path]:
-        root = manager.real_project_path(project)
-        # A section that exists but lists nothing would otherwise write an empty
-        # stack, which the shell function reads as "do nothing at all".
-        entries = manager.resolve_directories(source.entries or [], root)
-        return _dedupe(entries) or [root]
+        return _stack_for_source(source, project)
 
     def resolve_stack(
         self, project: manager.Project
@@ -913,7 +923,9 @@ class _CdprojSession:
             self.display_path,
             handle,
             listing=CDPROJ,
-            instruction="↑↓/jk · ↵ select · e edit · Esc/q cancel",
+            instruction=(
+                "* = custom · ↑↓/jk · ↵ select · e edit · Esc/q cancel"
+            ),
             select_help="Load the highlighted project's directory stack",
             back_help="Cancel without changing the directory stack",
             actions={
@@ -1008,7 +1020,9 @@ def _cdproj_fallback(session: _CdprojSession) -> int:
     """Numbered-menu path for pipes and terminals without prompt_toolkit."""
     _print_project_dashboard(session.projects, session.display_path, CDPROJ)
     try:
-        choice = menu.prompt_text("number, Esc/q=cancel").strip().lower()
+        choice = menu.prompt_text(
+            "* = custom · number, Esc/q=cancel"
+        ).strip().lower()
     except menu.ContextCancelled:
         return 1
     if not choice.isdigit() or not 1 <= int(choice) <= len(session.projects):

@@ -40,7 +40,7 @@ The project navigator (=ptui= / =projmgr.py -i=) and directory switcher (=cdproj
 
 1. **Visual Distinction**:
    - =ptui=: Titled /Project Navigator/, labeled =PROJ=, showing open task counts. Focus is browsing and launching task managers.
-   - =cdproj=: Titled /Change directory/, labeled =CD=, showing target directory paths and active stack sources (=[private]= vs =[project]=).
+   - =cdproj=: Titled /Change directory/, labeled =CD=, showing effective stack counts before aligned project paths; =*= marks a registry-defined custom stack.
 2. **Directory Resolution & Precedence**:
    - When resolving stacks, the private list (=directories-private.org= in the registry) wins outright over shared task file =* Directories=, issuing stderr warnings for any omitted shared paths.
 

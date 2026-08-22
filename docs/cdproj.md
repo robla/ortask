@@ -194,12 +194,12 @@ There is no `--edit`. Editing is a key in the picker, not a mode of the command.
 The picker follows the bounded inline contract in `docs/interactive.md`:
 `full_screen=False`, content-sized within the usual ceiling. It titles itself
 `Change directory` and labels its rows `CD`, so it is not mistaken for the
-`ptui` navigator built from the same list; each row shows the project's
-directory and, when a `* Directories` section exists, the list that will set
-the stack.
+`ptui` navigator built from the same list. Each row shows the effective stack
+size before the project directory, keeping paths column-aligned. A trailing
+`*` on the count means the registry-defined custom stack wins.
 
 ```text
-↑↓/jk · ↵ select · e edit · Esc/q cancel
+* = custom · ↑↓/jk · ↵ select · e edit · Esc/q cancel
 ```
 
 - `↵` resolves the highlighted project's directories, writes them, and exits 0.
