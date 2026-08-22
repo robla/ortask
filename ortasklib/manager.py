@@ -68,6 +68,16 @@ class RegistryMigrationError(Exception):
         super().__init__("\n".join(self.messages))
 
 
+class RegistryIndexError(Exception):
+    """The registry index cannot safely serve private project settings."""
+
+    def __init__(self, messages: list[str] | tuple[str, ...] | str) -> None:
+        if isinstance(messages, str):
+            messages = [messages]
+        self.messages = tuple(messages)
+        super().__init__("\n".join(self.messages))
+
+
 @dataclass(frozen=True)
 class LegacyDirectoryFile:
     """One validated legacy file and its deterministic index representation."""
@@ -591,44 +601,206 @@ def project_root_for(start: Path) -> Path:
 
 @dataclass(frozen=True)
 class DirectorySource:
-    """One file that can define a project's ``* Directories`` section.
+    """One location that can define a project's ``Directories`` section.
 
-    ``label`` is ``"private"`` for the registry-local file, which is not part of
-    the project's own repository, or ``"project"`` for the project's task file,
-    which usually is. ``entries`` is ``None`` when the file has no
-    ``* Directories`` section, which is how a candidate location is
-    distinguished from a real source.
+    ``label`` is ``"private"`` for the project section in the registry index,
+    or ``"project"`` for the project's task file. ``entries`` is ``None`` when
+    the location has no ``Directories`` section. ``line_num`` identifies the
+    project heading to open when a shared index is edited.
     """
 
     label: str
     path: Path
     entries: list[str] | None
+    line_num: int | None = None
 
     @property
     def defines_stack(self) -> bool:
         return self.entries is not None
 
 
+def legacy_private_files(registry: Path) -> list[Path]:
+    """Return migration leftovers without reading their contents."""
+    try:
+        children = sorted(registry.iterdir(), key=lambda path: path.name.casefold())
+    except OSError as exc:
+        raise RegistryIndexError(f"cannot read registry {registry}: {exc}") from exc
+    return [
+        child / DIRECTORIES_PRIVATE_NAME
+        for child in children
+        if not child.name.startswith(".")
+        and child.is_dir()
+        and _path_exists(child / DIRECTORIES_PRIVATE_NAME)
+    ]
+
+
+def _read_registry_index(registry: Path) -> tuple[Path, str]:
+    """Read a complete migrated index or raise the consumer-facing gate."""
+    index_path = registry / PROJECTS_INDEX_NAME
+    if not _path_exists(index_path):
+        raise RegistryIndexError("registry not migrated; run pmgr migrate")
+
+    leftovers = legacy_private_files(registry)
+    if leftovers:
+        names = ", ".join(friendly_path(path) for path in leftovers)
+        raise RegistryIndexError(
+            f"registry migration incomplete ({names}); run pmgr migrate"
+        )
+
+    try:
+        return index_path, index_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise RegistryIndexError(f"cannot read {index_path}: {exc}") from exc
+
+
+def require_registry_index(
+    registry: Path, projects: list[Project] | tuple[Project, ...] = ()
+) -> tuple[Path, str]:
+    """Return a complete index after validating registered project sections."""
+    index_path, text = _read_registry_index(registry)
+    errors = _validate_index(text, list(projects), index_path)
+    if errors:
+        raise RegistryIndexError(errors)
+    return index_path, text
+
+
+def _index_project_headings(text: str) -> list[tuple[str, int]]:
+    """Return normalized top-level heading names and one-based line numbers."""
+    headings: list[tuple[str, int]] = []
+    for line_num, line in enumerate(text.splitlines(), start=1):
+        match = orglib.syntax.ANY_HEADING_RE.match(line)
+        if match and len(match.group("stars")) == 1:
+            title = orglib.syntax.TRAILING_TAGS_RE.sub("", match.group("title")).strip()
+            headings.append((title, line_num))
+    return headings
+
+
+def registry_index_problems(registry: Path, projects: list[Project]) -> list[str]:
+    """Diagnose migration and index structure without changing either layout."""
+    problems: list[str] = []
+    index_path = registry / PROJECTS_INDEX_NAME
+    try:
+        leftovers = legacy_private_files(registry)
+    except RegistryIndexError as exc:
+        return list(exc.messages)
+
+    if not _path_exists(index_path):
+        problems.append("registry not migrated; run pmgr migrate")
+        return problems
+    if leftovers:
+        names = ", ".join(friendly_path(path) for path in leftovers)
+        problems.append(
+            f"registry migration incomplete ({names}); run pmgr migrate"
+        )
+
+    try:
+        text = index_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        problems.append(f"cannot read {index_path}: {exc}")
+        return problems
+
+    headings = _index_project_headings(text)
+    registered: dict[str, list[str]] = {}
+    for project in projects:
+        registered.setdefault(project.name.casefold(), []).append(project.name)
+    for values in registered.values():
+        if len(values) > 1:
+            problems.append(
+                "registry project names collide case-insensitively: "
+                + ", ".join(values)
+            )
+        if values[0].casefold() in _RESERVED_INDEX_HEADINGS:
+            problems.append(
+                f"{index_path}: project name {values[0]!r} is reserved by the index"
+            )
+
+    indexed: dict[str, list[tuple[str, int]]] = {}
+    for name, line_num in headings:
+        if not name:
+            problems.append(f"{index_path}: empty top-level heading at line {line_num}")
+            continue
+        indexed.setdefault(name.casefold(), []).append((name, line_num))
+
+    document = orglib.parse(text)
+    for folded, occurrences in indexed.items():
+        if folded in _RESERVED_INDEX_HEADINGS:
+            continue
+        if len(occurrences) > 1:
+            lines = ", ".join(str(line) for _, line in occurrences)
+            problems.append(
+                f"{index_path}: duplicate project heading "
+                f"for {occurrences[0][0]!r} at lines {lines}"
+            )
+            continue
+        name = occurrences[0][0]
+        if folded not in registered:
+            problems.append(f"{index_path}: stale project section {name!r}")
+        try:
+            document.directories(name)
+        except (orglib.OrgStructureError, ValueError) as exc:
+            problems.append(f"{index_path}: {exc}")
+
+    return problems
+
+
+def ensure_registry_project_directories(project: Project) -> tuple[Path, int]:
+    """Ensure one project has an index section and return its heading line."""
+    index_path, text = require_registry_index(project.path.parent, [project])
+    lookup = orglib.parse(text).directories(project.name)
+    if lookup.section is not None and lookup.project_span is not None:
+        return index_path, lookup.project_span.start_line + 1
+
+    if lookup.project_span is None:
+        prefix = text
+        if prefix and not prefix.endswith(("\n", "\r")):
+            prefix += "\n"
+        addition = f"* {project.name}\n** Directories\n"
+        revised = prefix + addition
+    else:
+        insertion = lookup.project_span.end
+        prefix = text[:insertion]
+        if prefix and not prefix.endswith(("\n", "\r")):
+            prefix += "\n"
+        revised = prefix + "** Directories\n" + text[insertion:]
+
+    check = orglib.parse(revised).directories(project.name)
+    if check.project_span is None or check.section is None:
+        raise RegistryIndexError(
+            f"{index_path}: cannot create a safe section for {project.name!r}"
+        )
+    try:
+        core.atomic_write(index_path, revised)
+    except OSError as exc:
+        raise RegistryIndexError(f"cannot write {index_path}: {exc}") from exc
+    return index_path, check.project_span.start_line + 1
+
+
 def directory_candidates(project: Project) -> list[DirectorySource]:
     """Both places a project's directory stack may live, private first.
 
-    Candidates are returned whether or not they exist, so callers can offer to
-    create the private file. Use :func:`directory_sources` for the subset that
-    actually defines a stack.
+    The private candidate is always the migrated registry index. Missing or
+    incomplete migration is an error rather than a fallback to a legacy file.
     """
-    candidates: list[tuple[str, Path]] = [
-        ("private", project.path / DIRECTORIES_PRIVATE_NAME),
+    index_path, index_text = require_registry_index(project.path.parent, [project])
+    lookup = orglib.parse(index_text).directories(project.name)
+    private_entries = (
+        list(lookup.section.entries) if lookup.section is not None else None
+    )
+    private_line = (
+        lookup.project_span.start_line + 1
+        if lookup.project_span is not None
+        else None
+    )
+    sources = [
+        DirectorySource("private", index_path, private_entries, private_line)
     ]
     org_file = canonical_org_file(project)
     if org_file is not None:
-        candidates.append(("project", org_file))
-    sources: list[DirectorySource] = []
-    for label, path in candidates:
         try:
-            entries = core.parse_directories(path.read_text(encoding="utf-8"))
-        except OSError:
+            entries = core.parse_directories(org_file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError):
             entries = None
-        sources.append(DirectorySource(label, path, entries))
+        sources.append(DirectorySource("project", org_file, entries))
     return sources
 
 

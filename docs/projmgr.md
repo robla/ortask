@@ -152,8 +152,8 @@ own Org task file or the private list in the registry. When both define one, the
 private list wins outright and sets the order; any directory the project's list
 has and the private list lacks is reported on stderr as a warning, without
 changing the stack or the exit status. With neither, the stack is the project
-root alone. After `t0026`, resolving or editing the private list requires a
-migrated registry index and never falls back to a legacy file.
+root alone. Resolving or editing the private list requires a migrated registry
+index and never falls back to a legacy file.
 
 `cdproj` reads the project's Org content and never writes it. The picker may
 initialize or open one project section in an already-migrated registry index

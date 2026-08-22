@@ -584,6 +584,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     problems: list[str] = []
     notes: list[str] = []
+    projects = manager.discover_projects(registry)
 
     for record in manager.summarize_projects(registry, include_all=True):
         if "warning" in record:
@@ -608,6 +609,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                     f"{child.name}: dangling link {link.name} -> "
                     f"{os.readlink(link)}"
                 )
+
+    problems.extend(manager.registry_index_problems(registry, projects))
 
     print(f"Registry: {registry_display}")
     for note in notes:
@@ -722,7 +725,11 @@ class _CdprojSession:
 
     def write_selection(self, project: manager.Project) -> tuple[str, str]:
         """Resolve one project's stack, write it, and bank its warnings."""
-        directories, label, warnings = self.resolve_stack(project)
+        try:
+            directories, label, warnings = self.resolve_stack(project)
+        except manager.RegistryIndexError as exc:
+            self.error = f"cdproj: {exc}"
+            return "Could not resolve the directory stack", "index error"
         self.warnings.extend(warnings)
         return self.write_stack(directories), label
 
@@ -805,7 +812,7 @@ class _CdprojSession:
                 return
             if not 0 <= result.index < len(candidates):
                 return
-            self.edit_source(session, candidates[result.index])
+            self.edit_source(session, project, candidates[result.index])
 
         return menu.MenuView(
             rows=rows,
@@ -818,21 +825,26 @@ class _CdprojSession:
         )
 
     def edit_source(
-        self, session: menu.InlineMenuSession, candidate: manager.DirectorySource
+        self,
+        session: menu.InlineMenuSession,
+        project: manager.Project,
+        candidate: manager.DirectorySource,
     ) -> None:
         """Open one directory list in the user's editor, then return to the picker.
 
-        The private file lives in the registry, which ``projmgr.py`` owns, so it
-        is created on demand. The project's task file is never written here —
-        ``ortask.py`` owns Org content — so a missing section is only reported.
+        A missing private section is added to the migrated index on demand. The
+        project's task file is never written here, so a missing shared section
+        is only reported.
         """
-        if candidate.label == "private" and not candidate.path.exists():
+        path = candidate.path
+        line_num = candidate.line_num
+        if candidate.label == "private":
             try:
-                core.atomic_write(candidate.path, "* Directories\n")
-            except OSError as exc:
-                session.set_transient_message(f"could not create the file: {exc}")
+                path, line_num = manager.ensure_registry_project_directories(project)
+            except manager.RegistryIndexError as exc:
+                session.set_transient_message(str(exc))
                 return
-        argv = core.editor_argv(candidate.path)
+        argv = core.editor_argv(path, line_num)
         if argv is None:
             session.set_transient_message("VISUAL or EDITOR is not set")
             return
@@ -845,7 +857,7 @@ class _CdprojSession:
 
         def done() -> None:
             session.pop_view(
-                message=f"Edited {manager.friendly_path(candidate.path)}{hint}"
+                message=f"Edited {manager.friendly_path(path)}{hint}"
             )
 
         session.suspend(run_editor, on_done=done)
@@ -874,6 +886,12 @@ def cmd_cdproj(args: argparse.Namespace) -> int:
         return 1
 
     projects = manager.discover_projects(workspace)
+    try:
+        manager.require_registry_index(workspace, projects)
+    except manager.RegistryIndexError as exc:
+        for message in exc.messages:
+            print(f"cdproj: {message}", file=sys.stderr)
+        return 1
     if not projects:
         print("No projects discovered.", file=sys.stderr)
         return 1

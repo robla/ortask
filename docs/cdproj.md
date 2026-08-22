@@ -77,12 +77,10 @@ never part of the project's own repository and needs no per-project
 `.gitignore` entry. Both locations use the same entry format and the same
 parser.
 
-**Status (2026-08-21): migration is available; consumer cutover is pending.**
-Today `cdproj` still reads one file per registry entry,
-`<registry>/<project>/directories-private.org`. Task `t0026.2` added `pmgr
-migrate`; `t0026.3` cuts consumers over to one index at
-`<registry>/projects.org`, with a `Directories` section under the top-level
-heading named for the registry entry:
+**Status (2026-08-21): migration and consumer cutover are implemented.**
+`cdproj` reads private stacks from `<registry>/projects.org`, with a
+`Directories` section under the top-level heading named for the registry
+entry:
 
 ```org
 # ~/Projects/projects.org
@@ -317,15 +315,15 @@ function unchanged.
   `** Directories` section and rejects duplicate project or section headings.
 - `orglib.Document.directories(project)` — the public `orglib` boundary for
   that lookup. It distinguishes missing project, missing section, and empty
-  section and exposes exact project and section spans. This is how `manager`
-  should reach it in `t0026.3`.
+  section and exposes exact project and section spans. `manager` uses this
+  boundary for index reads and bounded section initialization.
 - `core.editor_argv()` — the editor argv, shared with `taskui._open_editor()`.
   It takes an optional line number, which is how `e` opens the index at the
   right project.
 - `manager.directory_candidates()` / `directory_sources()` — the candidate
-  locations, private first, and the subset of them that defines a stack. After
-  `t0026`, the index is the only private candidate; a missing or incompletely
-  migrated index is an error rather than a fallback.
+  locations, private first, and the subset of them that defines a stack. The
+  index is the only private candidate; a missing or incompletely migrated
+  index is an error rather than a fallback.
 - `manager.resolve_directories()` — `~`, `$VAR`, and relative-to-project-root
   expansion. Separate from parsing, because resolving needs a project root that
   `core` has no opinion about.

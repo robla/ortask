@@ -710,9 +710,7 @@ All six steps are complete (`t0019.1`–`t0019.6`):
 - `add` does not offer to create a task file for a project that has none, and
   `cdproj` still has no way to append the current directory to a project's stack
   (`docs/cdproj.md`).
-- `t0026.3` must cut private-stack consumers over to the index now that the
-  resumable `migrate` command exists. The remaining `projadd` alias can
-  eventually go.
+- The remaining `projadd` alias can eventually go.
 
 ### Completion Criteria
 
@@ -746,10 +744,10 @@ models or silently discard text from a legacy private file.
    from its temporary `init` alias, validates all old files, writes the complete
    index atomically, and removes only legacy files represented exactly in the
    index. It supports dry-run and safe cleanup after interruption.
-3. **`t0026.3`: enforce the cutover.** Make `projects.org` the migration marker
-   and sole private-stack source. Private-stack consumers error before migration
-   or during mixed-state cleanup; `doctor` diagnoses those states. Unrelated
-   project verbs keep working.
+3. **`t0026.3`: enforce the cutover (done).** `projects.org` is the migration
+   marker and sole private-stack source. Private-stack consumers error before
+   migration or during mixed-state cleanup; `doctor` diagnoses those states.
+   Unrelated project verbs keep working.
 4. **`t0031.1`: add `pmgr set-dirs`.** Accept directories positionally or via
    `--stdin`, select a project with `--project` or unambiguous `$PWD`
    detection, and patch only that project's direct-child `Directories` region.

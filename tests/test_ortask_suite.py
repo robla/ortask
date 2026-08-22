@@ -1931,8 +1931,7 @@ def test_projmgr_cdproj_rows_name_the_winning_list(
     entry = manager.discover_projects(registry)[0]
     assert projmgr._project_stack(entry).endswith("[project]")
 
-    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
-    private.write_text("* Directories\n** file:/private/one\n", encoding="utf-8")
+    _write_private_index(registry, "** file:/private/one\n")
     entry = manager.discover_projects(registry)[0]
     assert projmgr._project_stack(entry).endswith("[private]")
 
@@ -2087,6 +2086,9 @@ def test_projmgr_doctor_reports_problems_and_exits_two(
     healthy = tmp_path / "src" / "healthy"
     write(healthy / "tasks.org", "* Tasks\n** TODO t0001 Fine\n")
     register(registry, "healthy", healthy)
+    (registry / manager.PROJECTS_INDEX_NAME).write_text(
+        manager.PROJECTS_INDEX_HEADER, encoding="utf-8"
+    )
 
     args = argparse.Namespace(registry=None)
     assert projmgr.cmd_doctor(args) == 0
@@ -2110,6 +2112,48 @@ def test_projmgr_doctor_reports_problems_and_exits_two(
     assert "problem: healthy: dangling link tasks.org -> " in out
 
 
+def test_projmgr_doctor_reports_registry_index_states(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Doctor diagnoses missing, mixed, unreadable, stale, and ambiguous indexes.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    args = argparse.Namespace(registry=str(registry))
+    index = registry / manager.PROJECTS_INDEX_NAME
+
+    index.unlink()
+    assert projmgr.cmd_doctor(args) == 2
+    assert "problem: registry not migrated; run pmgr migrate" in capsys.readouterr().out
+
+    index.write_text(
+        manager.PROJECTS_INDEX_HEADER
+        + "* myproj\n** Directories\n** Directories\n"
+        + "* vanished\n** Directories\n",
+        encoding="utf-8",
+    )
+    assert projmgr.cmd_doctor(args) == 2
+    out = capsys.readouterr().out
+    assert "duplicate Directories heading for project 'myproj'" in out
+    assert "stale project section 'vanished'" in out
+
+    index.write_text("* myproj\n* MYPROJ\n", encoding="utf-8")
+    assert projmgr.cmd_doctor(args) == 2
+    assert "duplicate project heading for 'myproj'" in capsys.readouterr().out
+
+    index.unlink()
+    index.mkdir()
+    assert projmgr.cmd_doctor(args) == 2
+    assert "cannot read" in capsys.readouterr().out
+    index.rmdir()
+
+    index.write_text(manager.PROJECTS_INDEX_HEADER, encoding="utf-8")
+    legacy = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
+    legacy.write_text("* Directories\n", encoding="utf-8")
+    assert projmgr.cmd_doctor(args) == 2
+    assert "registry migration incomplete" in capsys.readouterr().out
+
+
 def _cdproj_registry(tmp_path: Path, monkeypatch, capsys, org_text: str) -> tuple:
     """Register one project and return ``(registry, project_dir)``."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -2120,7 +2164,25 @@ def _cdproj_registry(tmp_path: Path, monkeypatch, capsys, org_text: str) -> tupl
     write(project / "TODO.org", org_text)
     assert projmgr.cmd_add(_add_args(project, name="myproj")) == 0
     capsys.readouterr()
+    (registry / manager.PROJECTS_INDEX_NAME).write_text(
+        manager.PROJECTS_INDEX_HEADER, encoding="utf-8"
+    )
     return registry, project
+
+
+def _write_private_index(
+    registry: Path, entries: str, project: str = "myproj"
+) -> Path:
+    """Write one migrated private directory section for a cdproj fixture."""
+    index = registry / manager.PROJECTS_INDEX_NAME
+    index.write_text(
+        manager.PROJECTS_INDEX_HEADER
+        + f"* {project}\n"
+        + "** Directories\n"
+        + entries,
+        encoding="utf-8",
+    )
+    return index
 
 
 def test_core_parse_directories() -> None:
@@ -2205,6 +2267,77 @@ def test_projmgr_cdproj_writes_only_directories(
     ]
 
 
+def test_projmgr_cdproj_requires_complete_migration(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # cdproj neither falls back before migration nor reads an incomplete layout.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    index = registry / manager.PROJECTS_INDEX_NAME
+    index.unlink()
+    out_file = tmp_path / "out.txt"
+    args = argparse.Namespace(
+        registry=str(registry), out=str(out_file), project="myproj"
+    )
+
+    assert projmgr.cmd_cdproj(args) == 1
+    assert capsys.readouterr().err.strip() == (
+        "cdproj: registry not migrated; run pmgr migrate"
+    )
+    assert not out_file.exists()
+
+    index.write_text(manager.PROJECTS_INDEX_HEADER, encoding="utf-8")
+    legacy = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
+    legacy.write_text("* Directories\n** file:/legacy\n", encoding="utf-8")
+    assert projmgr.cmd_cdproj(args) == 1
+    assert "cdproj: registry migration incomplete" in capsys.readouterr().err
+    assert not out_file.exists()
+
+
+def test_cdproj_private_editor_initializes_index_section(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Explicit private editing adds one bounded section and opens its heading.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    project = manager.discover_projects(registry)[0]
+    candidate = manager.directory_candidates(project)[0]
+    captured: dict[str, object] = {}
+
+    class FakeSession:
+        def set_transient_message(self, message: str) -> None:
+            captured["error"] = message
+
+        def suspend(self, callback, on_done) -> None:
+            callback()
+            on_done()
+
+        def pop_view(self, message: str) -> None:
+            captured["message"] = message
+
+    def editor_argv(path: Path, line_num: int | None = None) -> list[str]:
+        captured["path"] = path
+        captured["line"] = line_num
+        return ["editor"]
+
+    monkeypatch.setattr(core, "editor_argv", editor_argv)
+    monkeypatch.setattr(
+        projmgr.subprocess, "run", lambda argv, check: captured.setdefault("argv", argv)
+    )
+    session = projmgr._CdprojSession("registry", [project], tmp_path / "out")
+    session.edit_source(FakeSession(), project, candidate)
+
+    index = registry / manager.PROJECTS_INDEX_NAME
+    assert index.read_text(encoding="utf-8") == (
+        manager.PROJECTS_INDEX_HEADER + "* myproj\n** Directories\n"
+    )
+    assert captured["path"] == index
+    assert captured["line"] == 3
+    assert "error" not in captured
+
+
 def test_projmgr_cdproj_never_edits_the_task_file(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -2232,8 +2365,7 @@ def test_projmgr_cdproj_private_list_wins_outright(
     registry, project = _cdproj_registry(
         tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
     )
-    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
-    private.write_text("* Directories\n** file:/private/one\n", encoding="utf-8")
+    _write_private_index(registry, "*** file:/private/one\n")
 
     monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
@@ -2265,7 +2397,7 @@ def test_projmgr_cdproj_private_list_wins_outright(
     ) == 0
     assert out_file2.read_text(encoding="utf-8").splitlines() == ["/private/one"]
     assert capsys.readouterr().err.strip() == (
-        "myproj: in TODO.org but not directories-private.org: /shared/one"
+        "myproj: in TODO.org but not projects.org: /shared/one"
     )
 
 
@@ -2282,9 +2414,8 @@ def test_projmgr_cdproj_private_list_sets_the_order(
         "* Tasks\n** TODO t0001 task\n"
         "* Directories\n** file:/a\n** file:/b\n** file:/c\n",
     )
-    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
-    private.write_text(
-        "* Directories\n** file:/c\n** file:/b\n** file:/a\n", encoding="utf-8"
+    _write_private_index(
+        registry, "*** file:/c\n*** file:/b\n*** file:/a\n"
     )
     monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
@@ -2311,10 +2442,9 @@ def test_projmgr_cdproj_compares_resolved_paths(
         "* Tasks\n** TODO t0001 task\n"
         "* Directories\n** ./docs\n** docs\n",
     )
-    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
-    private.write_text(
-        f"* Directories\n** {project}/docs\n** file:/private/only\n",
-        encoding="utf-8",
+    _write_private_index(
+        registry,
+        f"*** {project}/docs\n*** file:/private/only\n",
     )
     monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
@@ -2340,9 +2470,8 @@ def test_projmgr_cdproj_dedupes_the_winning_list(
     registry, _ = _cdproj_registry(
         tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
     )
-    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
-    private.write_text(
-        "* Directories\n** file:/a\n** file:/b\n** file:/a\n", encoding="utf-8"
+    _write_private_index(
+        registry, "*** file:/a\n*** file:/b\n*** file:/a\n"
     )
     monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
@@ -2366,8 +2495,7 @@ def test_projmgr_cdproj_empty_private_section_wins_and_reports(
         capsys,
         "* Tasks\n** TODO t0001 task\n* Directories\n** file:/shared/one\n",
     )
-    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
-    private.write_text("* Directories\n", encoding="utf-8")
+    _write_private_index(registry, "")
     monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
 
@@ -2379,7 +2507,7 @@ def test_projmgr_cdproj_empty_private_section_wins_and_reports(
     assert out_file.read_text(encoding="utf-8").splitlines() == [
         str(project.resolve())
     ]
-    assert "not directories-private.org: /shared/one" in capsys.readouterr().err
+    assert "not projects.org: /shared/one" in capsys.readouterr().err
 
 
 def test_projmgr_cdproj_routes_resolve_alike(
@@ -2394,8 +2522,7 @@ def test_projmgr_cdproj_routes_resolve_alike(
         capsys,
         "* Tasks\n** TODO t0001 task\n* Directories\n** file:/shared/one\n",
     )
-    private = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
-    private.write_text("* Directories\n** file:/private/one\n", encoding="utf-8")
+    _write_private_index(registry, "*** file:/private/one\n")
     monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
     monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
 
@@ -2417,7 +2544,7 @@ def test_projmgr_cdproj_routes_resolve_alike(
     assert results[0] == results[1]
     assert results[0][0].splitlines() == ["/private/one"]
     assert results[0][1] == (
-        "myproj: in TODO.org but not directories-private.org: /shared/one"
+        "myproj: in TODO.org but not projects.org: /shared/one"
     )
 
 
@@ -2477,6 +2604,41 @@ def test_projmgr_cdproj_direct_resolution(
     assert projmgr.cmd_cdproj(
         argparse.Namespace(registry=str(registry), out=str(out_file), project="nonexistent")
     ) == 1
+
+
+def test_project_verbs_unrelated_to_private_stacks_work_before_migration(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # list, add, rm, and init remain available without a projects.org marker.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "registry"
+    existing = tmp_path / "existing"
+    write(existing / "tasks.org", "* Tasks\n** TODO t0001 Existing\n")
+    register(registry, "existing", existing)
+
+    assert projmgr.cmd_list(
+        argparse.Namespace(registry=str(registry), format="names", all=False)
+    ) == 0
+    assert capsys.readouterr().out.strip() == "existing"
+
+    added = tmp_path / "added"
+    write(added / "tasks.org", "* Tasks\n** TODO t0001 Added\n")
+    assert projmgr.cmd_add(
+        _add_args(added, name="added", registry=str(registry))
+    ) == 0
+    capsys.readouterr()
+    assert projmgr.cmd_rm(
+        argparse.Namespace(
+            name="added", registry=str(registry), force=False, dry_run=False
+        )
+    ) == 0
+    capsys.readouterr()
+    assert projmgr.cmd_init(
+        argparse.Namespace(
+            registry=str(registry), force=False, dry_run=False
+        )
+    ) == 0
+    assert not (registry / manager.PROJECTS_INDEX_NAME).exists()
 
 
 def test_core_editor_argv(monkeypatch) -> None:

@@ -57,10 +57,10 @@ bespoke backend and a read-only surface — `parse(text) -> Document`,
 `Document.tasks()`, `Document.directories(project)`, and `Document.render()`.
 The directory lookup returns immutable source spans and distinguishes missing
 project, missing section, and empty section. `manager.summarize_projects()` and
-`projmgr._project_tasks()` are routed through the task side; directory consumers
-remain on the legacy parser until `t0026.3`. The other `parse_org()` call sites
-have not moved by design. Mutation, backend selection, and the fidelity
-declaration below are still design, not code.
+`projmgr._project_tasks()` are routed through the task side; registry directory
+consumers use the source-backed project lookup. The other `parse_org()` call
+sites have not moved by design. Generic mutation, backend selection, and the
+fidelity declaration below are still design, not code.
 
 `orglib` is a **peer of `ortasklib`, not a member of it** — a top-level package
 imported as `import orglib`. Side by side, the boundary between them is a public

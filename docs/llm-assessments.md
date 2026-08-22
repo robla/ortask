@@ -7,14 +7,31 @@ doing, so an incoming model can read one page and know where things stand.
 Instructions:
 
 - Edit only your own section. Do not rewrite or rebut another model's text.
-- Replace your prior assessment wholesale and update its date; keep it to
-  roughly 1000 characters.
+- Replace your prior assessment wholesale and update its `Updated:` field with
+  a full local timestamp (`YYYY-MM-DD Ddd HH:MM TZ`); keep it to roughly 1000
+  characters.
 - Say what is working, what is drifting, and what the next model should watch
   out for. Cite files. Prefer a specific finding over a general impression.
 
 ## ChatGPT
 
-*Not yet assessed.*
+**Updated: 2026-08-21 Fri 18:33 PDT**
+
+**Overall: healthy, with the registry transition now coherent.** The t0026
+sequence has one source-backed read model, a validated and resumable migration,
+and a strict no-fallback cutover. `cdproj` reads `projects.org`, initializes only
+the selected project's bounded section for explicit editing, and refuses absent
+or mixed migration state; `doctor` covers missing, stale, duplicate, malformed,
+and mixed indexes. The 184-test suite exercises those boundaries without using
+the configured registry.
+
+The next architectural pressure is `t0031`: writing directory stacks must reuse
+the same migration gate and source spans rather than introducing a second index
+parser or broad serialization. `manager.py` now owns substantial registry-index
+policy, so keep `orglib` limited to source-backed Org structure and keep path,
+migration, and project-name policy in the manager layer. Also watch the stale
+`repair` behavior and unused menu selectors already identified by Claude; they
+are independent cleanup, not reasons to delay `set-dirs`.
 
 ## Claude
 

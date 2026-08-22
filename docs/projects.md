@@ -131,18 +131,17 @@ present and future, in a registry that is under version control:
 
 Private files are never candidates for task-file resolution.
 
-That per-entry scheme is being replaced by one index file at the registry root,
+That per-entry scheme is replaced by one index file at the registry root,
 `projects.org`, holding a section per entry (`docs/config.md`, `t0026`). The
 entry keeps holding the pointers — the symlinks are what makes it a project —
 and stops holding the settings. The `*-private.org` suffix stays reserved, both
 for files left behind by the migration and for anything later that needs to be
 per-entry.
 
-`pmgr migrate` now performs the one-time conversion. The index's existence is
-the migration marker; after the `t0026.3` cutover, private-stack consumers never
-combine or fall back between the two layouts. They report `run pmgr migrate`
-when the index is absent, and treat an old private file beside it as incomplete
-cleanup.
+`pmgr migrate` performs the one-time conversion. The index's existence is the
+migration marker; private-stack consumers never combine or fall back between
+the two layouts. They report `run pmgr migrate` when the index is absent, and
+treat an old private file beside it as incomplete cleanup.
 Commands unrelated to private directory settings, including `list`, `add`,
 `rm`, and `init`, remain usable before migration. `pmgr doctor` is the
 read-only diagnostic for either state.

@@ -126,13 +126,12 @@ require the registry to be a repository.
 
 ## The registry index file
 
-**Status: migration implemented (`t0026.2`); consumer cutover pending
-(`t0026.3`).** The sections above describe today's consumer behavior. The
-cutover below supersedes the per-entry `directories-private.org` scheme; there
-is deliberately no long-lived fallback between the two models.
+**Status: implemented (`t0026.1`–`t0026.3`).** The registry index supersedes
+the per-entry `directories-private.org` scheme; there is no fallback between
+the two models.
 
-Private per-project config moves out of one file per registry entry
-(`<entry>/directories-private.org`) and into **one Org file at the registry
+Private per-project config no longer lives in one file per registry entry
+(`<entry>/directories-private.org`). It lives in **one Org file at the registry
 root**. The symlinks do not change: they remain the pointers, because that is
 what they are, and the outward-symlink marker rule still decides what is a
 project. Only the private config is centralized.
@@ -227,23 +226,21 @@ its top-level behavior for project task files, while
 heading and then its unique direct-child `** Directories`. The public
 `orglib.parse(text).directories(project)` result distinguishes a missing
 project, a missing section, and an empty section, and carries exact source spans
-for both the project and directory subtrees. `t0026.2` uses those spans for
-migration validation; the consumer cutover remains in `t0026.3`.
+for both the project and directory subtrees. Migration validation and current
+private-stack consumers use those source-backed lookups.
 
 Three consequences worth deciding deliberately:
 
 1. **A project in the registry but not in the index** has no private stack. It
    falls back to the project's own `* Directories`, then to the project root.
    Silent and normal — the same as having no private file today.
-2. **A project in the index but not in the registry** is a stale section. Today
-   this state cannot exist, because deleting an entry deletes its private file
-   with it; centralizing makes config outlive the entry. `pmgr doctor` should
-   report it. That is the real cost of this change, and `doctor` is the
-   mitigation.
+2. **A project in the index but not in the registry** is a stale section.
+   Deleting an entry no longer deletes its private config with it, so `pmgr
+   doctor` reports the stale section.
 3. **Duplicate headings for one project** should be a reported error, not a
    silent first-wins.
 
-`pmgr doctor` grows the checks that go with those: a section matching no
+`pmgr doctor` performs the checks that go with those: a section matching no
 registry entry, duplicate sections for one entry, duplicate direct-child
 `Directories` sections, an index that cannot be read or parsed, and a
 `directories-private.org` left behind after the index was created.
@@ -257,8 +254,8 @@ than beside it.
 ### Migration gate
 
 The existence of `<registry>/projects.org` marks the registry as migrated.
-After the cutover, commands that consume or edit private directory settings
-require that marker and never fall back to `directories-private.org`:
+Commands that consume or edit private directory settings require that marker
+and never fall back to `directories-private.org`:
 
 - `cdproj`, its picker/editor path, and the planned `set-dirs` stop with
   `registry not migrated; run pmgr migrate` when the index is absent.
