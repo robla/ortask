@@ -2475,10 +2475,10 @@ def test_project_browser_buffers_priority_undo_redo_and_save(tmp_path: Path) -> 
     )
 
 
-def test_project_browser_stale_save_preserves_set_dirs_and_buffer(
+def test_project_browser_same_section_conflict_preserves_both_versions(
     tmp_path: Path,
 ) -> None:
-    # A pmgr set-dirs write between edit and C-s must win without losing ours.
+    # Differing ptui/set-dirs edits to one project must remain a named conflict.
     registry = tmp_path / "registry"
     project_dir = tmp_path / "src" / "alpha"
     write(project_dir / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
@@ -2498,11 +2498,18 @@ def test_project_browser_stale_save_preserves_set_dirs_and_buffer(
 
     class FakeSession:
         def __init__(self, current_view) -> None:
-            self.current_view = current_view
+            self.views = [current_view]
             self.message = ""
 
+        @property
+        def current_view(self):
+            return self.views[-1]
+
         def replace_view(self, replacement) -> None:
-            self.current_view = replacement
+            self.views[-1] = replacement
+
+        def push_view(self, view) -> None:
+            self.views.append(view)
 
         def set_transient_message(self, message: str) -> None:
             self.message = message
@@ -2520,9 +2527,19 @@ def test_project_browser_stale_save_preserves_set_dirs_and_buffer(
     external = index.read_text(encoding="utf-8")
     assert str(new_dir) in external and "[#C]" not in external
 
+    browser._poll_index(session)
+
+    assert browser.index_conflicts[0].project == "alpha"
+    assert session.message == "Merge conflict: alpha"
+    assert session.current_view.status_text().startswith("MERGE CONFLICT: alpha")
     session.current_view.on_result(session, menu.MenuResult("save", 0))
 
-    assert "changed since the editing buffer was loaded" in session.message
+    assert session.current_view.title == "Merge conflict: alpha"
+    assert [row.status for row in session.current_view.rows] == [
+        "RELOAD",
+        "RETRY",
+        "CONTINUE",
+    ]
     assert index.read_text(encoding="utf-8") == external
     assert "* [#C] alpha" in browser.index_buffer.read()
     assert browser.index_buffer.dirty is True
@@ -2530,7 +2547,193 @@ def test_project_browser_stale_save_preserves_set_dirs_and_buffer(
     assert browser.index_buffer.autosave_path.exists()
     assert browser.index_buffer.external_change is not None
     assert browser.index_buffer.external_change.text == external
-    assert session.current_view.status_text().startswith("EXTERNAL CHANGE:")
+    assert browser.index_buffer.undo_count == 1
+    assert browser.index_buffer.autosave_path.read_text(encoding="utf-8") == (
+        browser.index_buffer.read()
+    )
+
+
+def test_project_browser_rebases_disjoint_external_edit_and_logs_only_ours(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Polling rebases one local section over another external section in memory.
+    registry = tmp_path / "registry"
+    for name in ("alpha", "bravo"):
+        project = tmp_path / "src" / name
+        write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+        register(registry, name, project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    base = manager.PROJECTS_INDEX_HEADER + "* alpha\nAlpha.\n* bravo\nBravo.\n"
+    index.write_text(base, encoding="utf-8")
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+    assert browser.index_buffer is not None
+
+    class FakeSession:
+        def __init__(self, current_view) -> None:
+            self.current_view = current_view
+            self.message = ""
+
+        def replace_view(self, replacement) -> None:
+            self.current_view = replacement
+
+        def set_transient_message(self, message: str) -> None:
+            self.message = message
+
+    session = FakeSession(browser.view())
+    session.current_view.on_result(session, menu.MenuResult("priority_up", 0))
+    ours = base.replace("* alpha", "* [#C] alpha")
+    theirs = base.replace("* bravo", "* [#A] bravo")
+    merged = theirs.replace("* alpha", "* [#C] alpha")
+    index.write_text(theirs, encoding="utf-8")
+
+    browser._poll_index(session)
+
+    assert index.read_text(encoding="utf-8") == theirs
+    assert browser.index_buffer.saved_text == theirs
+    assert browser.index_buffer.read() == merged
+    assert browser.index_buffer.dirty is True
+    assert browser.index_buffer.undo_count == 1
+    assert browser.index_buffer.can_redo is False
+    assert browser.index_buffer.autosave_path.read_text(encoding="utf-8") == merged
+    assert browser.index_conflicts == ()
+    assert browser.index_buffer.external_change is None
+    assert session.message == "Merged external changes: bravo"
+    assert session.current_view.rows[0].text.startswith("[A] bravo")
+    assert session.current_view.rows[1].text.startswith("[C] alpha")
+    assert session.current_view.selected_index == 1
+
+    description = browser.index_buffer.undo()
+    assert description == "Reapply alpha after external changes"
+    assert browser.index_buffer.read() == theirs
+    assert browser.index_buffer.dirty is False
+    assert not browser.index_buffer.autosave_path.exists()
+    assert index.read_text(encoding="utf-8") == theirs
+    assert browser.index_buffer.redo() == description
+
+    recorded: list[tuple[str, str, Path]] = []
+
+    def record(before: str, after: str, source_file: Path, **kwargs) -> None:
+        recorded.append((before, after, source_file))
+
+    monkeypatch.setattr(taskui.eventlog, "record_task_edits", record)
+    saved, message = browser._save_index_changes()
+
+    assert saved is True
+    assert message == "Saved changes to projects.org"
+    assert recorded == [(theirs, merged, index)]
+    assert index.read_text(encoding="utf-8") == merged
+    assert not browser.index_buffer.autosave_path.exists()
+
+
+def test_project_browser_conflict_reload_discards_only_local_edit(
+    tmp_path: Path,
+) -> None:
+    # The conflict screen can reload Theirs without ever overwriting it first.
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "alpha"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+    register(registry, "alpha", project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    base = manager.PROJECTS_INDEX_HEADER + "* alpha\nAlpha.\n"
+    index.write_text(base, encoding="utf-8")
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+    assert browser.index_buffer is not None
+
+    class FakeSession:
+        def __init__(self, current_view) -> None:
+            self.views = [current_view]
+            self.message = ""
+
+        @property
+        def current_view(self):
+            return self.views[-1]
+
+        def replace_view(self, replacement) -> None:
+            self.views[-1] = replacement
+
+        def push_view(self, view) -> None:
+            self.views.append(view)
+
+        def pop_view(self, message: str | None = None) -> None:
+            self.views.pop()
+            if message:
+                self.message = message
+
+        def set_transient_message(self, message: str) -> None:
+            self.message = message
+
+        def set_outcome(self, message: str) -> None:
+            raise AssertionError(f"conflicting save reported success: {message}")
+
+    session = FakeSession(browser.view())
+    session.current_view.on_result(session, menu.MenuResult("priority_up", 0))
+    ours = browser.index_buffer.read()
+    auto = browser.index_buffer.autosave_path.read_text(encoding="utf-8")
+    theirs = base.replace("* alpha", "* [#A] alpha")
+    index.write_text(theirs, encoding="utf-8")
+
+    session.current_view.on_result(session, menu.MenuResult("save", 0))
+
+    assert session.current_view.title == "Merge conflict: alpha"
+    assert browser.index_buffer.saved_text == base
+    assert browser.index_buffer.read() == ours
+    assert browser.index_buffer.undo_count == 1
+    assert browser.index_buffer.autosave_path.read_text(encoding="utf-8") == auto
+    assert index.read_text(encoding="utf-8") == theirs
+
+    session.current_view.on_result(session, menu.MenuResult("select", 0))
+
+    assert len(session.views) == 1
+    assert session.message == "Reloaded projects.org; local edits discarded"
+    assert browser.index_buffer.saved_text == theirs
+    assert browser.index_buffer.read() == theirs
+    assert browser.index_buffer.dirty is False
+    assert browser.index_buffer.can_undo is False
+    assert browser.index_conflicts == ()
+    assert not browser.index_buffer.autosave_path.exists()
+    assert index.read_text(encoding="utf-8") == theirs
+
+
+def test_project_browser_final_preimage_check_blocks_second_external_change(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A second disk write after reconciliation must still defeat the final save.
+    registry = tmp_path / "registry"
+    for name in ("alpha", "bravo"):
+        project = tmp_path / "src" / name
+        write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+        register(registry, name, project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    base = manager.PROJECTS_INDEX_HEADER + "* alpha\nAlpha.\n* bravo\nBravo.\n"
+    index.write_text(base, encoding="utf-8")
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+    assert browser.index_buffer is not None
+    ours = base.replace("* alpha", "* [#C] alpha")
+    theirs = base.replace("* bravo", "* [#B] bravo")
+    merged = theirs.replace("* alpha", "* [#C] alpha")
+    second = theirs.replace("Bravo.", "Bravo changed again.")
+    browser.index_buffer.apply_text(ours, description="Set alpha priority to C")
+    index.write_text(theirs, encoding="utf-8")
+    real_save = browser.index_buffer.save
+
+    def raced_save() -> None:
+        index.write_text(second, encoding="utf-8")
+        real_save()
+
+    monkeypatch.setattr(browser.index_buffer, "save", raced_save)
+
+    saved, message = browser._save_index_changes()
+
+    assert saved is False
+    assert "changed" in message
+    assert index.read_text(encoding="utf-8") == second
+    assert browser.index_buffer.saved_text == theirs
+    assert browser.index_buffer.read() == merged
+    assert browser.index_buffer.dirty is True
+    assert browser.index_buffer.undo_count == 1
+    assert browser.index_buffer.autosave_path.read_text(encoding="utf-8") == merged
+    assert browser.index_buffer.external_change is not None
+    assert browser.index_buffer.external_change.text == second
 
 
 def test_project_browser_poll_adopts_clean_index_and_refreshes_rows(
@@ -6351,6 +6554,53 @@ def test_org_buffer_poll_records_dirty_external_text(tmp_path: Path) -> None:
     assert buf.read() == ours
     assert buf.undo_count == 1
     assert buf.autosave_path.read_text(encoding="utf-8") == ours
+
+
+def test_org_buffer_rebase_external_change_is_one_undoable_transaction(
+    tmp_path: Path,
+) -> None:
+    # Rebase adopts Theirs, autosaves merged Ours, and never writes the real file.
+    original = "* alpha\nAlpha.\n* bravo\nBravo.\n"
+    ours = original.replace("* alpha", "* [#C] alpha")
+    theirs = original.replace("* bravo", "* [#A] bravo")
+    merged = theirs.replace("* alpha", "* [#C] alpha")
+    org_file = write(tmp_path / "projects.org", original)
+    buf = taskui.OrgBuffer(org_file)
+    buf.apply_text(ours, description="Set alpha priority to C")
+    buf.apply_text(
+        ours.replace("[#C]", "[#B]"),
+        description="Set alpha priority to B",
+    )
+    assert buf.undo() == "Set alpha priority to B"
+    assert buf.can_redo is True
+    org_file.write_text(theirs, encoding="utf-8")
+    change = buf.check_external_change()
+    assert change is not None
+
+    changed = buf.rebase_external_change(
+        change,
+        merged,
+        description="Reapply alpha after external changes",
+    )
+
+    assert changed is True
+    assert org_file.read_text(encoding="utf-8") == theirs
+    assert buf.saved_text == theirs
+    assert buf.read() == merged
+    assert buf.dirty is True
+    assert buf.undo_count == 1
+    assert buf.can_redo is False
+    assert buf.external_change is None
+    assert buf.autosave_path.read_text(encoding="utf-8") == merged
+    assert buf.undo() == "Reapply alpha after external changes"
+    assert buf.read() == theirs
+    assert buf.dirty is False
+    assert not buf.autosave_path.exists()
+    assert buf.redo() == "Reapply alpha after external changes"
+    buf.discard()
+    assert buf.read() == theirs
+    assert org_file.read_text(encoding="utf-8") == theirs
+    assert not buf.autosave_path.exists()
 
 
 def test_org_buffer_poll_ignores_a_touched_identical_file(tmp_path: Path) -> None:

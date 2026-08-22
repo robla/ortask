@@ -243,6 +243,10 @@ controllers beneath it, and restores stable project selection on return. Its
 poll callback asks the generic `taskui.OrgBuffer` for external file changes;
 the buffer uses device/inode/size/mtime only as a hint, retains exact Base/Ours/
 Theirs text for dirty changes, and repeats the exact comparison before save.
+The browser passes those texts to `manager.plan_project_index_merge()`. On
+success, `OrgBuffer.rebase_external_change()` adopts Theirs as the saved
+baseline and retains the merge as one undoable, auto-saved transaction without
+writing the real index; the browser owns project-named conflict recovery UI.
 Numbered fallbacks retain their plain prompts by policy.
 
 `InlineMenuSession` initializes prompt_toolkit with `erase_when_done=True` so

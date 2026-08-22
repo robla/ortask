@@ -327,12 +327,10 @@ state, undo/redo, =C-s= save, and Save/Discard/Cancel on exit.
 Decided 2026-08-22 (see "Write path" in =docs/ptui.md=): =ptui= holds one
 =taskui.OrgBuffer= over =projects.org= open for the session, which is what
 makes undo across several edits work, and =save()= gains the preimage check
-that =manager.apply_registry_directories_update= already does — if the file
-changed since it was read, the save refuses with a recoverable error naming it,
-and never discards the other write. The auto-save sibling =#projects.org#=
-stays and is reserved in =docs/config.md=. Merging instead of refusing is
-=t0037=, not this task. Tests: a =pmgr set-dirs= run between read and =C-s=
-produces the error and leaves both the buffer and the file intact.
+that =manager.apply_registry_directories_update= already does. At this stage a
+changed file refused save without discarding either version; =t0037= later
+added in-memory reconciliation while retaining that final safety check. The
+auto-save sibling =#projects.org#= stays and is reserved in =docs/config.md=.
 *** TODO [#B] t0035.4 Build the project metadata workspace
 Make =m= open a compact editor for priority and description while showing the
 read-only project name, resolved task file, recorded task-file mirror, and
@@ -358,7 +356,7 @@ is reachable by hand-editing today, before any of =t0035= lands. Strip a leading
 =docs/config.md=, which documents tags only. Tests: =cdproj= resolves the same
 stack with and without a cookie, and =set-dirs= and =migrate= preserve a cookie
 and a property drawer on a section they rewrite. Blocks =t0035.1= and =t0035.3=.
-** TODO t0037 Handle concurrent edits to projects.org in ptui
+** DONE t0037 Handle concurrent edits to projects.org in ptui
 =t0035.3= makes a stale save refuse. Refusing is correct and unhelpful: two
 people — or one person in two terminals — editing different project sections of
 one file is not a conflict in any useful sense, and =pmgr set-dirs=,
@@ -392,7 +390,7 @@ local edit falls outside an addressable project section. Apply replacements
 back-to-front and validate the merged document. Tests cover disjoint edits,
 identical edits, same-section conflicts, external add/delete/reorder, source
 fidelity, malformed input, and a guarantee that the helper performs no writes.
-*** TODO t0037.3 Reconcile the open ptui buffer and expose conflicts
+*** DONE t0037.3 Reconcile the open ptui buffer and expose conflicts
 On detection and immediately before =C-s=, call the planner in memory. A
 successful dirty merge makes Theirs the new saved baseline and the merged text
 the dirty buffer; collapse local undo to one rebased transaction and clear redo

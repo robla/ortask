@@ -39,8 +39,10 @@ switches between Priority and Alphabetical while keeping the highlight anchored
 to the same project. Shift-Up/Down changes the selected project's priority in a
 session-wide `projects.org` buffer; `C-/`, `C-r`, and `C-s` undo, redo, and save
 those edits, with visible dirty state and save/discard handling on exit. The
-project session also polls the index: clean buffers adopt external writes,
-while dirty buffers preserve both versions and block save rather than overwrite.
+project session also polls the index: clean buffers adopt external writes and
+dirty buffers merge disjoint project-section changes in memory. A same-section
+overlap remains a persistent named conflict with reload, retry, and continue
+controls; no reconciliation writes the real index before `C-s`.
 
 The task selector has two modes, chosen automatically by
 `menu.interactive_select_available()`:

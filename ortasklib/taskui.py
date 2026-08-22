@@ -313,6 +313,43 @@ class OrgBuffer:
         self.external_change = change
         return change
 
+    def rebase_external_change(
+        self,
+        change: ExternalFileChange,
+        merged_text: str,
+        *,
+        description: str = "Reapply edits after external changes",
+    ) -> bool:
+        """Adopt Theirs as Base and retain merged local work as one transaction.
+
+        This changes only the in-memory buffer and its auto-save sibling. The
+        caller must pass the exact pending observation it planned against, so a
+        superseded or non-content disk state cannot be rebased accidentally.
+        """
+        if change != self.external_change:
+            raise ValueError("external change is no longer current")
+        if change.kind != "changed" or change.text is None:
+            raise ValueError(f"cannot rebase external state: {change.kind}")
+        if change.signature is None:  # pragma: no cover - changed always has one
+            raise ValueError("cannot rebase an external change without a signature")
+
+        theirs = change.text
+        self._saved_text = theirs
+        self._text = theirs
+        self._disk_signature = change.signature
+        self.external_change = None
+        self.dirty = False
+        self._clear_history()
+        if merged_text == theirs:
+            self._remove_autosave()
+            return False
+
+        self._undo_stack.append(
+            BufferTransaction(theirs, merged_text, description)
+        )
+        self._set_text(merged_text)
+        return True
+
     def save(self) -> None:
         """Write only if the real file still matches the saved preimage."""
         change = self.check_external_change(force=True)

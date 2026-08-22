@@ -10,10 +10,8 @@ description, and the task-file mirror; `t0035.2` displays the first two with
 open-task count and adds priority/alphabetical sorting; `t0035.3` adds buffered
 priority changes from the project list. The `m` metadata workspace and Modified
 sorting are not implemented yet. `t0037.1` polls for external index changes,
-adopts them when the project buffer is clean, and blocks rather than overwrites
-when it is dirty; section-level reconciliation remains pending.
-`t0037.2` supplies the pure section-level merge planner; applying its result to
-the open buffer remains `t0037.3`.
+`t0037.2` supplies the pure section-level merge planner, and `t0037.3` rebases
+disjoint external changes into the open buffer or presents a named conflict.
 
 ## Project List
 
@@ -152,16 +150,11 @@ bounded rewrite and the same preimage rule.
 The case to design against is concrete: `ptui` open in one terminal with a
 dirty priority edit, `pmgr set-dirs` run in another, then `C-s`.
 
-**What happens then:** the save refuses, with a recoverable error naming the
-file that moved. It never discards the other write, the dirty buffer, its undo
-history, or `#projects.org#`, and it never silently wins.
-
-Refusing is the floor rather than the goal. What the session should eventually
-do is merge: two people editing different project sections of one file is not a
-conflict in any meaningful sense, and the tool should say so by absorbing the
-other write instead of refusing. That is `t0037`, in three stages: detect the
-change, plan a pure section-level merge, then reconcile the open buffer and
-alert only when reconciliation cannot succeed.
+**What happens then:** polling or `C-s` plans a merge. A change to another
+project section is absorbed into the in-memory buffer, while the local priority
+edit remains dirty. A differing change to the same section opens a conflict
+view naming that project and does not alter either version. The real index is
+not written until an explicit successful save.
 
 **Merging is an in-memory operation.** It updates the buffer, and may refresh
 the auto-save sibling; it never writes `projects.org`, which still changes only
@@ -219,18 +212,15 @@ polls device, inode, size, and nanosecond mtime during its refresh cycle, then
 reads and compares exact text when that signature changes. `C-s` always reads
 and compares exact text again before its atomic write, including when the
 signature appears unchanged. A clean buffer adopts changed disk text as its new
-clean baseline and refreshes the project rows. A dirty buffer records a
-structured external state containing Theirs, preserves Base, Ours, history,
-and auto-save, displays a persistent alert, and blocks save. Missing and
-unreadable files also block save. Polling uses no watcher thread and never
-writes `projects.org`.
+clean baseline and refreshes the project rows. A dirty buffer records Theirs
+and, as of `t0037.3`, immediately invokes the section planner. Success makes
+Theirs the saved baseline, collapses the replayed local work to one undo step,
+and refreshes the auto-save without writing the real index. `C-s` performs a
+second exact check before its atomic write; event logging therefore compares
+Theirs with the saved merge rather than attributing absorbed changes to `ptui`.
+Missing and unreadable files block save. Polling uses no watcher thread.
 
-`t0037.3` applies the planner to a dirty buffer and provides reconciliation UI.
-Until then, retrying `C-s` repeats the exact check, Continue Editing preserves
-the local buffer, and Discard on exit leaves the external disk version
-untouched.
-
-The eventual conflict state offers reload/discard, continue editing, and retry.
+The conflict state offers reload/discard, continue editing, and retry.
 It does not make force-overwrite a routine recovery action. `C-s` remains
 blocked until the user reloads, edits or undoes the overlap and retries, or
 reconciliation succeeds after another external change.
@@ -269,6 +259,6 @@ people open in Emacs, so the cookie wins anyway.
 3. Detect external index changes without weakening save safety (`t0037.1`,
    done).
 4. Add the pure project-section merge planner (`t0037.2`, done).
-5. Reconcile the open buffer and expose conflicts (`t0037.3`).
+5. Reconcile the open buffer and expose conflicts (`t0037.3`, done).
 6. Add the `m` metadata workspace and bounded save path.
 7. Add modified-time sorting and the task-file mirror diagnostics.

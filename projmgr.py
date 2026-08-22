@@ -359,6 +359,10 @@ class _ProjectBrowser:
         self.session: menu.InlineMenuSession | None = None
         self.index_buffer: taskui.OrgBuffer | None = None
         self.index_error: str | None = None
+        self.index_conflicts: tuple[manager.ProjectIndexMergeConflict, ...] = ()
+        self._reconciliation_key: (
+            tuple[taskui.ExternalFileChange, str] | None
+        ) = None
         self._rendered_project_view: menu.MenuView | None = None
         self._rendered_projects: list[manager.Project] = []
         try:
@@ -383,7 +387,85 @@ class _ProjectBrowser:
     def _buffer_status(self) -> str:
         if self.index_buffer is None:
             return ""
+        if self.index_conflicts:
+            names = tuple(
+                dict.fromkeys(
+                    conflict.project
+                    for conflict in self.index_conflicts
+                    if conflict.project
+                )
+            )
+            target = ", ".join(names) if names else "projects.org structure"
+            count = self.index_buffer.undo_count
+            noun = "edit" if count == 1 else "edits"
+            return f"MERGE CONFLICT: {target} · FILE MODIFIED: {count} {noun}"
         return taskui.buffer_status(self.index_buffer)
+
+    def _conflict_message(self) -> str:
+        names = tuple(
+            dict.fromkeys(
+                conflict.project
+                for conflict in self.index_conflicts
+                if conflict.project
+            )
+        )
+        if names:
+            return f"Merge conflict: {', '.join(names)}"
+        if self.index_conflicts:
+            return f"Merge conflict: {self.index_conflicts[0].detail}"
+        if self.index_buffer is not None and self.index_buffer.external_change:
+            return self.index_buffer.external_change.summary
+        return "projects.org cannot be saved"
+
+    def _reconcile_index(self, *, force: bool) -> tuple[bool, str | None]:
+        """Reconcile one observed index revision entirely in memory."""
+        if self.index_buffer is None:
+            return False, self.index_error or "projects.org is unavailable"
+        previous_saved = self.index_buffer.saved_text
+        change = self.index_buffer.check_external_change(force=force)
+        if change is None:
+            self.index_conflicts = ()
+            self._reconciliation_key = None
+            message = (
+                "Reloaded external projects.org changes"
+                if self.index_buffer.saved_text != previous_saved
+                else None
+            )
+            return True, message
+        if change.kind != "changed" or change.text is None:
+            self.index_conflicts = ()
+            self._reconciliation_key = None
+            return False, change.summary
+
+        key = (change, self.index_buffer.read())
+        if not force and key == self._reconciliation_key:
+            return False, None
+        plan = manager.plan_project_index_merge(
+            self.index_buffer.saved_text,
+            self.index_buffer.read(),
+            change.text,
+        )
+        self._reconciliation_key = key
+        if not plan.can_merge:
+            self.index_conflicts = plan.conflicts
+            return False, self._conflict_message()
+
+        assert plan.merged_text is not None
+        replayed = ", ".join(plan.replayed_projects) or "project edits"
+        self.index_buffer.rebase_external_change(
+            change,
+            plan.merged_text,
+            description=f"Reapply {replayed} after external changes",
+        )
+        self.index_conflicts = ()
+        self._reconciliation_key = None
+        absorbed = ", ".join(plan.absorbed_projects)
+        message = (
+            f"Merged external changes: {absorbed}"
+            if absorbed
+            else "Merged external projects.org changes"
+        )
+        return True, message
 
     @staticmethod
     def _selected_project(
@@ -414,20 +496,36 @@ class _ProjectBrowser:
                 self.index_error or "projects.org is not available for editing"
             )
             return False
+        saved, message = self._save_index_changes()
+        if not saved:
+            if self.index_conflicts:
+                session.push_view(self._conflict_view(parent_is_save=False))
+            else:
+                session.set_transient_message(message)
+            return False
+        self._replace_view(session, project, fallback_index)
+        session.set_outcome(message)
+        return True
+
+    def _save_index_changes(self) -> tuple[bool, str]:
+        """Reconcile, then perform the final exact-preimage save."""
+        assert self.index_buffer is not None
+        ready, reconciliation = self._reconcile_index(force=True)
+        if not ready:
+            return False, reconciliation or self._conflict_message()
         changed = self.index_buffer.dirty
         try:
             self.index_buffer.save()
         except taskui.BufferChangedError as exc:
-            session.set_transient_message(str(exc))
-            return False
-        self._replace_view(session, project, fallback_index)
+            return False, str(exc)
         message = (
             "Saved changes to projects.org"
             if changed
             else "Saved projects.org (unchanged)"
         )
-        session.set_outcome(message)
-        return True
+        if reconciliation:
+            message += f" · {reconciliation}"
+        return True, message
 
     def _initial_view(self) -> menu.MenuView:
         if self.index_buffer is None:
@@ -438,18 +536,23 @@ class _ProjectBrowser:
         return self._recovery_view(recovered)
 
     def _poll_index(self, session: menu.InlineMenuSession) -> None:
-        """Adopt clean index writes and expose dirty external changes."""
+        """Adopt or reconcile index writes without touching the real file."""
         if self.index_buffer is None:
             return
-        previous = self.index_buffer.saved_text
-        self.index_buffer.check_external_change()
-        if self.index_buffer.saved_text == previous:
-            return
-        if session.current_view is self._rendered_project_view:
+        previous_saved = self.index_buffer.saved_text
+        previous_text = self.index_buffer.read()
+        previous_conflicts = self.index_conflicts
+        _ready, message = self._reconcile_index(force=False)
+        changed = (
+            self.index_buffer.saved_text != previous_saved
+            or self.index_buffer.read() != previous_text
+        )
+        if changed and session.current_view is self._rendered_project_view:
             index = self._rendered_project_view.selected_index
             project = self._selected_project(self._rendered_projects, index)
             self._replace_view(session, project, index)
-            session.set_transient_message("Reloaded external projects.org changes")
+        if message and (changed or self.index_conflicts != previous_conflicts):
+            session.set_transient_message(message)
 
     def run(self) -> None:
         session = menu.InlineMenuSession(
@@ -625,14 +728,17 @@ class _ProjectBrowser:
                 session.pop_view()
                 return
             if result.index == 0:
-                try:
-                    self.index_buffer.save()
-                except taskui.BufferChangedError as exc:
-                    session.set_transient_message(str(exc))
+                saved, message = self._save_index_changes()
+                if not saved:
+                    if self.index_conflicts:
+                        session.push_view(self._conflict_view(parent_is_save=True))
+                    else:
+                        session.set_transient_message(message)
                     return
-                message = "Saved changes to projects.org"
             else:
                 self.index_buffer.discard()
+                self.index_conflicts = ()
+                self._reconciliation_key = None
                 message = "Discarded changes to projects.org"
             session.pop_view()
             session.pop_view(message=message)
@@ -646,6 +752,73 @@ class _ProjectBrowser:
             instruction="↑↓/jk · ↵ choose · Esc/b/q continue editing",
             select_help="Choose how to resolve the buffered edits",
             back_help="Continue editing without saving or discarding",
+            status_text=self._buffer_status,
+        )
+
+    def _conflict_view(self, *, parent_is_save: bool) -> menu.MenuView:
+        assert self.index_buffer is not None
+        rows = [
+            menu.MenuRow(
+                1,
+                "RELOAD",
+                "Discard local edits and load the current projects.org",
+            ),
+            menu.MenuRow(
+                2,
+                "RETRY",
+                "Repeat exact detection and in-memory reconciliation",
+            ),
+            menu.MenuRow(3, "CONTINUE", "Keep both versions and continue editing"),
+        ]
+
+        def return_to_project(
+            session: menu.InlineMenuSession,
+            message: str,
+        ) -> None:
+            session.pop_view()
+            if parent_is_save:
+                session.pop_view()
+            session.set_transient_message(message)
+
+        def handle(
+            session: menu.InlineMenuSession,
+            result: menu.MenuResult,
+        ) -> None:
+            if result.action != "select" or result.index is None:
+                return
+            if result.index == 2:
+                return_to_project(session, "Continuing with merge conflict unresolved")
+                return
+            if result.index == 0:
+                try:
+                    self.index_buffer.reload()
+                except (OSError, UnicodeError) as exc:
+                    session.set_transient_message(f"Cannot reload projects.org: {exc}")
+                    return
+                self.index_conflicts = ()
+                self._reconciliation_key = None
+                return_to_project(session, "Reloaded projects.org; local edits discarded")
+                return
+
+            ready, message = self._reconcile_index(force=True)
+            if not ready:
+                session.set_transient_message(message or self._conflict_message())
+                return
+            return_to_project(
+                session,
+                message or "projects.org no longer conflicts",
+            )
+
+        details = "; ".join(conflict.detail for conflict in self.index_conflicts)
+        return menu.MenuView(
+            rows=rows,
+            on_result=handle,
+            title=self._conflict_message(),
+            title_right=f"Registry: {self.display_path}",
+            summary=details,
+            instruction="↑↓/jk · ↵ choose · Esc/b/q back · C-g help",
+            select_help="Resolve or defer the projects.org merge conflict",
+            back_help="Return without resolving the conflict",
             status_text=self._buffer_status,
         )
 
