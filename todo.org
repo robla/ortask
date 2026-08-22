@@ -369,7 +369,7 @@ says so, and only refuses what it genuinely cannot reconcile. Implement after
 =OrgBuffer= save path. Integrate only =ptui=/=projects.org= here, but keep the
 buffer seam reusable for a later =orti= task-file reconciler. The complete
 state and merge contract is in =docs/ptui.md=.
-*** TODO t0037.1 Detect external changes without weakening save safety
+*** DONE t0037.1 Detect external changes without weakening save safety
 Give =OrgBuffer= a remembered disk signature for inexpensive UI polling. Use
 device/inode, size, and nanosecond mtime only as a change hint; after a hint,
 read the file and compare exact text with the saved baseline. Always repeat the

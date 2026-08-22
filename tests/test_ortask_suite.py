@@ -2528,6 +2528,47 @@ def test_project_browser_stale_save_preserves_set_dirs_and_buffer(
     assert browser.index_buffer.dirty is True
     assert browser.index_buffer.can_undo is True
     assert browser.index_buffer.autosave_path.exists()
+    assert browser.index_buffer.external_change is not None
+    assert browser.index_buffer.external_change.text == external
+    assert session.current_view.status_text().startswith("EXTERNAL CHANGE:")
+
+
+def test_project_browser_poll_adopts_clean_index_and_refreshes_rows(
+    tmp_path: Path,
+) -> None:
+    # A clean browser adopts an external metadata edit and redraws the same project.
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "alpha"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+    register(registry, "alpha", project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = manager.PROJECTS_INDEX_HEADER + "* alpha\n"
+    index.write_text(original, encoding="utf-8")
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+
+    class FakeSession:
+        def __init__(self, current_view) -> None:
+            self.current_view = current_view
+            self.message = ""
+
+        def replace_view(self, replacement) -> None:
+            self.current_view = replacement
+
+        def set_transient_message(self, message: str) -> None:
+            self.message = message
+
+    session = FakeSession(browser.view())
+    external = original.replace("* alpha", "* [#A] alpha")
+    index.write_text(external, encoding="utf-8")
+
+    browser._poll_index(session)
+
+    assert browser.index_buffer is not None
+    assert browser.index_buffer.saved_text == external
+    assert browser.index_buffer.dirty is False
+    assert session.current_view.rows[0].text.startswith("[A] alpha")
+    assert session.current_view.selected_index == 0
+    assert session.message == "Reloaded external projects.org changes"
 
 
 @pytest.mark.skipif(
@@ -6102,6 +6143,141 @@ def test_org_buffer_stale_save_preserves_disk_buffer_and_history(tmp_path: Path)
     assert buf.dirty is True
     assert buf.undo_count == 1
     assert buf.autosave_path.read_text(encoding="utf-8") == buf.read()
+
+
+def test_org_buffer_poll_records_dirty_external_text(tmp_path: Path) -> None:
+    # Dirty polling captures Theirs without changing Base, Ours, history, or auto-save.
+    original = "* Tasks\n** TODO t0001 one\n"
+    ours = "* Tasks\n** DONE t0001 one\n"
+    theirs = "* Tasks\n** TODO t0001 externally changed\n"
+    org_file = write(tmp_path / "todo.org", original)
+    buf = taskui.OrgBuffer(org_file)
+    buf.apply_text(ours, description="Finish t0001")
+    org_file.write_text(theirs, encoding="utf-8")
+
+    change = buf.check_external_change()
+
+    assert change is not None and change.kind == "changed"
+    assert change.text == theirs
+    assert buf.external_change == change
+    assert buf.saved_text == original
+    assert buf.read() == ours
+    assert buf.undo_count == 1
+    assert buf.autosave_path.read_text(encoding="utf-8") == ours
+
+
+def test_org_buffer_poll_ignores_a_touched_identical_file(tmp_path: Path) -> None:
+    # A metadata hint with byte-identical text refreshes the hint without an alert.
+    original = "* Tasks\n** TODO t0001 one\n"
+    org_file = write(tmp_path / "todo.org", original)
+    buf = taskui.OrgBuffer(org_file)
+    stat = org_file.stat()
+    os.utime(
+        org_file,
+        ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000),
+    )
+
+    assert buf.check_external_change() is None
+    assert buf.saved_text == original
+    assert buf.read() == original
+    assert buf.external_change is None
+
+
+def test_org_buffer_poll_adopts_a_replaced_clean_file(tmp_path: Path) -> None:
+    # Replacing the inode with changed text reloads a clean buffer and clears redo.
+    original = "* Tasks\n** TODO t0001 one\n"
+    external = "* Tasks\n** TODO t0001 replaced\n"
+    org_file = write(tmp_path / "todo.org", original)
+    buf = taskui.OrgBuffer(org_file)
+    buf.apply_text(external, description="Temporary local edit")
+    assert buf.undo() == "Temporary local edit"
+    replacement = write(tmp_path / "replacement.org", external)
+    replacement.replace(org_file)
+
+    assert buf.check_external_change() is None
+    assert buf.saved_text == external
+    assert buf.read() == external
+    assert buf.dirty is False
+    assert buf.can_undo is False and buf.can_redo is False
+    assert buf.external_change is None
+
+
+def test_org_buffer_poll_reports_missing_and_unreadable_files(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Missing and unreadable disk states stay structured and block exact saves.
+    missing_file = write(tmp_path / "missing.org", "* Tasks\n")
+    missing = taskui.OrgBuffer(missing_file)
+    missing_file.unlink()
+
+    missing_change = missing.check_external_change()
+    assert missing_change is not None and missing_change.kind == "missing"
+    with pytest.raises(taskui.BufferChangedError, match="file is missing"):
+        missing.save()
+
+    unreadable_file = write(tmp_path / "unreadable.org", "* Tasks\n")
+    unreadable = taskui.OrgBuffer(unreadable_file)
+
+    def deny_read() -> str:
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(unreadable, "_read_disk_text", deny_read)
+    unreadable_change = unreadable.check_external_change(force=True)
+    assert unreadable_change is not None
+    assert unreadable_change.kind == "unreadable"
+    assert "permission denied" in (unreadable_change.detail or "")
+    with pytest.raises(taskui.BufferChangedError, match="file is unreadable"):
+        unreadable.save()
+
+
+def test_org_buffer_save_detects_changed_text_with_the_same_signature(
+    tmp_path: Path,
+) -> None:
+    # Save compares exact text even when the polling signature is unchanged.
+    original = "* Tasks\n** TODO t0001 one\n"
+    ours = "* Tasks\n** DONE t0001 one\n"
+    theirs = "* Tasks\n** TODO t0001 two\n"
+    assert len(original) == len(theirs)
+    org_file = write(tmp_path / "todo.org", original)
+    buf = taskui.OrgBuffer(org_file)
+    buf.apply_text(ours, description="Finish t0001")
+    baseline = org_file.stat()
+    org_file.write_text(theirs, encoding="utf-8")
+    os.utime(org_file, ns=(baseline.st_atime_ns, baseline.st_mtime_ns))
+    current = org_file.stat()
+    assert (
+        current.st_dev,
+        current.st_ino,
+        current.st_size,
+        current.st_mtime_ns,
+    ) == (
+        baseline.st_dev,
+        baseline.st_ino,
+        baseline.st_size,
+        baseline.st_mtime_ns,
+    )
+
+    assert buf.check_external_change() is None
+    with pytest.raises(taskui.BufferChangedError, match="changed externally"):
+        buf.save()
+    assert buf.external_change is not None
+    assert buf.external_change.text == theirs
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_menu_session_polls_from_the_render_cycle() -> None:
+    # A configured session invokes its lightweight poll hook before rendering.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import DummyOutput
+
+    polls = []
+    view = menu.MenuView([], lambda session, result: None)
+    with create_app_session(output=DummyOutput()):
+        session = menu.InlineMenuSession(view, on_poll=lambda active: polls.append(active))
+        session._before_render(session.application)
+
+    assert polls == [session]
+    assert session.application.refresh_interval == 0.5
 
 
 def test_org_buffer_undo_redo_tracks_logical_edits_and_autosave(tmp_path: Path) -> None:

@@ -38,7 +38,9 @@ the registry's `projects.org`. It starts in priority-then-name order and `s`
 switches between Priority and Alphabetical while keeping the highlight anchored
 to the same project. Shift-Up/Down changes the selected project's priority in a
 session-wide `projects.org` buffer; `C-/`, `C-r`, and `C-s` undo, redo, and save
-those edits, with visible dirty state and save/discard handling on exit.
+those edits, with visible dirty state and save/discard handling on exit. The
+project session also polls the index: clean buffers adopt external writes,
+while dirty buffers preserve both versions and block save rather than overwrite.
 
 The task selector has two modes, chosen automatically by
 `menu.interactive_select_available()`:

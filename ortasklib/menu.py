@@ -481,6 +481,8 @@ class InlineMenuSession:
         action_keys: Iterable[str] = (),
         height: int = DEFAULT_HEIGHT,
         final_message: str = "Session closed",
+        on_poll: Callable[["InlineMenuSession"], None] | None = None,
+        poll_interval: float = 0.5,
         input: Any = None,
         output: Any = None,
     ) -> None:
@@ -500,6 +502,7 @@ class InlineMenuSession:
         self._message_task: Any = None
         self.final_message = final_message
         self.error: str | None = None
+        self.on_poll = on_poll
 
         bindings = KeyBindings()
         menu_active = Condition(
@@ -778,6 +781,7 @@ class InlineMenuSession:
             full_screen=False,
             erase_when_done=True,
             mouse_support=False,
+            refresh_interval=poll_interval if on_poll is not None else None,
             terminal_size_polling_interval=0.5,
             before_render=self._before_render,
             input=input,
@@ -1054,6 +1058,8 @@ class InlineMenuSession:
             self.requested_height,
             rows - self.RESERVED_TERMINAL_ROWS,
         )
+        if self.on_poll is not None:
+            self.on_poll(self)
 
 
 def count_statuses(rows: list[MenuRow]) -> tuple[int, int, int]:

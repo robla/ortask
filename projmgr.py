@@ -359,6 +359,8 @@ class _ProjectBrowser:
         self.session: menu.InlineMenuSession | None = None
         self.index_buffer: taskui.OrgBuffer | None = None
         self.index_error: str | None = None
+        self._rendered_project_view: menu.MenuView | None = None
+        self._rendered_projects: list[manager.Project] = []
         try:
             projects = manager.discover_projects(self.workspace)
             index_path, _ = manager.require_registry_index(self.workspace, projects)
@@ -435,6 +437,20 @@ class _ProjectBrowser:
             return self.view()
         return self._recovery_view(recovered)
 
+    def _poll_index(self, session: menu.InlineMenuSession) -> None:
+        """Adopt clean index writes and expose dirty external changes."""
+        if self.index_buffer is None:
+            return
+        previous = self.index_buffer.saved_text
+        self.index_buffer.check_external_change()
+        if self.index_buffer.saved_text == previous:
+            return
+        if session.current_view is self._rendered_project_view:
+            index = self._rendered_project_view.selected_index
+            project = self._selected_project(self._rendered_projects, index)
+            self._replace_view(session, project, index)
+            session.set_transient_message("Reloaded external projects.org changes")
+
     def run(self) -> None:
         session = menu.InlineMenuSession(
             self._initial_view(),
@@ -443,6 +459,7 @@ class _ProjectBrowser:
                 *PROJECT_MENU_ACTIONS,
             ),
             final_message="No project changes",
+            on_poll=self._poll_index,
         )
         self.session = session
         session.run()
@@ -580,6 +597,8 @@ class _ProjectBrowser:
         view.on_back = self._handle_project_back
         if self.index_buffer is not None and self.index_buffer.dirty:
             view.title += " *"
+        self._rendered_project_view = view
+        self._rendered_projects = projects
         return view
 
     def _handle_project_back(self, session: menu.InlineMenuSession) -> bool:

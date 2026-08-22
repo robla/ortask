@@ -225,7 +225,8 @@ Shared rendering and bounded-interaction primitives for interactive tools:
 - `MenuView` / `TextInputView` / `InlineMenuSession` — a persistent, bounded
   20-row application shell with scrolling menus, focused single-line input,
   context-filtered bindings, contextual Help, view-stack transitions, resize
-  clamping, factual final outcomes, and external-command suspension
+  clamping, factual final outcomes, external-command suspension, and an
+  optional periodic polling callback
 - `prompt_text()` / `ContextCancelled` — prompt_toolkit Esc cancellation with
   plain `input()` fallback
 
@@ -235,7 +236,10 @@ what each action does, whether recovery data requires an initial choice view,
 whether Back should push its bounded save/discard view, and how accepted task
 text is validated and buffered.
 `projmgr._ProjectBrowser` supplies the project root, attaches task
-controllers beneath it, and restores stable project selection on return.
+controllers beneath it, and restores stable project selection on return. Its
+poll callback asks the generic `taskui.OrgBuffer` for external file changes;
+the buffer uses device/inode/size/mtime only as a hint, retains exact Base/Ours/
+Theirs text for dirty changes, and repeats the exact comparison before save.
 Numbered fallbacks retain their plain prompts by policy.
 
 `InlineMenuSession` initializes prompt_toolkit with `erase_when_done=True` so

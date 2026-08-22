@@ -9,7 +9,9 @@ This remains partly a forward specification. `t0035.1` parses priority,
 description, and the task-file mirror; `t0035.2` displays the first two with
 open-task count and adds priority/alphabetical sorting; `t0035.3` adds buffered
 priority changes from the project list. The `m` metadata workspace and Modified
-sorting are not implemented yet.
+sorting are not implemented yet. `t0037.1` polls for external index changes,
+adopts them when the project buffer is clean, and blocks rather than overwrites
+when it is dirty; section-level reconciliation remains pending.
 
 ## Project List
 
@@ -204,19 +206,25 @@ the normal auto-save path may copy the merged buffer to `#projects.org#` for
 crash recovery; that file is neither a merge input nor a staging file. The real
 `projects.org` changes only on explicit `C-s`.
 
-File metadata is only an early-warning optimization. The UI may poll device,
-inode, size, and nanosecond mtime during its existing refresh cycle, then read
-and compare exact text when that signature changes. `C-s` must always read and
-compare exact text again before its atomic write. A clean buffer adopts an
-external change as clean. A dirty buffer attempts reconciliation. Missing,
-unreadable, malformed, or conflicting input leaves the buffer, history,
-auto-save, and real file unchanged and puts the UI into a persistent conflict
-state.
+As of `t0037.1`, file metadata is only an early-warning optimization. The UI
+polls device, inode, size, and nanosecond mtime during its refresh cycle, then
+reads and compares exact text when that signature changes. `C-s` always reads
+and compares exact text again before its atomic write, including when the
+signature appears unchanged. A clean buffer adopts changed disk text as its new
+clean baseline and refreshes the project rows. A dirty buffer records a
+structured external state containing Theirs, preserves Base, Ours, history,
+and auto-save, displays a persistent alert, and blocks save. Missing and
+unreadable files also block save. Polling uses no watcher thread and never
+writes `projects.org`.
 
-The conflict state offers reload/discard, continue editing, and retry. It does
-not make force-overwrite a routine recovery action. `C-s` remains blocked until
-the user reloads, edits or undoes the overlap and retries, or reconciliation
-succeeds after another external change.
+`t0037.2` and `t0037.3` add reconciliation for a dirty buffer. Until then,
+retrying `C-s` repeats the exact check, Continue Editing preserves the local
+buffer, and Discard on exit leaves the external disk version untouched.
+
+The eventual conflict state offers reload/discard, continue editing, and retry.
+It does not make force-overwrite a routine recovery action. `C-s` remains
+blocked until the user reloads, edits or undoes the overlap and retries, or
+reconciliation succeeds after another external change.
 
 Two consequences, both decided:
 
@@ -249,7 +257,8 @@ people open in Emacs, so the cookie wins anyway.
 1. Parse project priority and description, then add priority/alphabetical sort
    (`t0035.1`–`t0035.2`, done).
 2. Add buffered priority changes from the project list (`t0035.3`, done).
-3. Add external-change detection, pure section merging, and buffer
-   reconciliation (`t0037`).
-4. Add the `m` metadata workspace and bounded save path.
-5. Add modified-time sorting and the task-file mirror diagnostics.
+3. Detect external index changes without weakening save safety (`t0037.1`,
+   done).
+4. Add pure section merging and open-buffer reconciliation (`t0037.2`–`.3`).
+5. Add the `m` metadata workspace and bounded save path.
+6. Add modified-time sorting and the task-file mirror diagnostics.

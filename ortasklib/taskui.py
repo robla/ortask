@@ -66,6 +66,36 @@ class BufferTransaction:
     description: str
 
 
+@dataclass(frozen=True)
+class DiskSignature:
+    """Cheap change hint for a file whose contents remain authoritative."""
+
+    device: int
+    inode: int
+    size: int
+    mtime_ns: int
+
+
+@dataclass(frozen=True)
+class ExternalFileChange:
+    """One disk state that cannot yet be absorbed into a dirty buffer."""
+
+    kind: str
+    path: Path
+    text: str | None = None
+    signature: DiskSignature | None = None
+    detail: str | None = None
+
+    @property
+    def summary(self) -> str:
+        if self.kind == "changed":
+            return "contents changed externally"
+        if self.kind == "missing":
+            return "file is missing"
+        suffix = f": {self.detail}" if self.detail else ""
+        return f"file is unreadable{suffix}"
+
+
 class BufferChangedError(OSError):
     """The real file no longer matches the buffer's saved preimage."""
 
@@ -100,14 +130,21 @@ class OrgBuffer:
         self.project = project
         self.registry = registry
         self.autosave_path = autosave_path_for(path)
-        self._saved_text = path.read_text(encoding="utf-8")
+        self._saved_text = self._read_disk_text()
         self._text = self._saved_text
+        self._disk_signature: DiskSignature | None = self._read_disk_signature()
+        self.external_change: ExternalFileChange | None = None
         self.dirty = False
         self._undo_stack: list[BufferTransaction] = []
         self._redo_stack: list[BufferTransaction] = []
 
     def read(self) -> str:
         return self._text
+
+    @property
+    def saved_text(self) -> str:
+        """Exact disk baseline used for stale checks and future reconciliation."""
+        return self._saved_text
 
     @property
     def can_undo(self) -> bool:
@@ -186,15 +223,102 @@ class OrgBuffer:
         else:
             self._remove_autosave()
 
+    def _read_disk_text(self) -> str:
+        return self.path.read_text(encoding="utf-8")
+
+    def _read_disk_signature(self) -> DiskSignature:
+        stat = self.path.stat()
+        return DiskSignature(
+            device=stat.st_dev,
+            inode=stat.st_ino,
+            size=stat.st_size,
+            mtime_ns=stat.st_mtime_ns,
+        )
+
+    def _remember_external_problem(
+        self,
+        kind: str,
+        exc: OSError | UnicodeError,
+        signature: DiskSignature | None = None,
+    ) -> ExternalFileChange:
+        change = ExternalFileChange(
+            kind=kind,
+            path=self.path,
+            signature=signature,
+            detail=str(exc),
+        )
+        self.external_change = change
+        return change
+
+    def _adopt_disk_text(self, text: str, signature: DiskSignature) -> None:
+        """Replace a clean buffer with a newly observed disk revision."""
+        self._saved_text = text
+        self._text = text
+        self._disk_signature = signature
+        self.external_change = None
+        self.dirty = False
+        self._clear_history()
+        self._remove_autosave()
+
+    def check_external_change(
+        self, *, force: bool = False
+    ) -> ExternalFileChange | None:
+        """Observe disk changes without overwriting local edits.
+
+        File metadata is only a polling hint. A changed hint triggers an exact
+        read; ``force`` always performs that read and is required before save.
+        Clean buffers adopt changed disk text. Dirty buffers retain Base/Ours
+        and expose Theirs through :attr:`external_change` for reconciliation.
+        """
+        try:
+            signature = self._read_disk_signature()
+        except FileNotFoundError as exc:
+            return self._remember_external_problem("missing", exc)
+        except OSError as exc:
+            return self._remember_external_problem("unreadable", exc)
+
+        pending = self.external_change
+        if not force:
+            if pending is not None and pending.signature == signature:
+                if self.dirty:
+                    return pending
+                if pending.kind == "changed" and pending.text is not None:
+                    self._adopt_disk_text(pending.text, signature)
+                    return None
+                return pending
+            if pending is None and signature == self._disk_signature:
+                return None
+
+        try:
+            disk_text = self._read_disk_text()
+        except (OSError, UnicodeError) as exc:
+            return self._remember_external_problem(
+                "unreadable", exc, signature
+            )
+
+        if disk_text == self._saved_text:
+            self._disk_signature = signature
+            self.external_change = None
+            return None
+        if not self.dirty:
+            self._adopt_disk_text(disk_text, signature)
+            return None
+
+        change = ExternalFileChange(
+            kind="changed",
+            path=self.path,
+            text=disk_text,
+            signature=signature,
+        )
+        self.external_change = change
+        return change
+
     def save(self) -> None:
         """Write only if the real file still matches the saved preimage."""
+        change = self.check_external_change(force=True)
+        if change is not None:
+            raise BufferChangedError(self.path, change.summary)
         previous = self._saved_text
-        try:
-            current = self.path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as exc:
-            raise BufferChangedError(self.path, str(exc)) from exc
-        if current != previous:
-            raise BufferChangedError(self.path)
         core.atomic_write(self.path, self._text)
         eventlog.record_task_edits(
             previous,
@@ -204,6 +328,12 @@ class OrgBuffer:
             registry=self.registry,
         )
         self._saved_text = self._text
+        try:
+            self._disk_signature = self._read_disk_signature()
+        except OSError:
+            # The write succeeded; force an exact read on the next observation.
+            self._disk_signature = None
+        self.external_change = None
         self.dirty = False
         self._clear_history()
         self._remove_autosave()
@@ -217,8 +347,10 @@ class OrgBuffer:
 
     def reload(self) -> None:
         """Re-read the real file (e.g. after an external editor) as clean."""
-        self._saved_text = self.path.read_text(encoding="utf-8")
+        self._saved_text = self._read_disk_text()
         self._text = self._saved_text
+        self._disk_signature = self._read_disk_signature()
+        self.external_change = None
         self.dirty = False
         self._clear_history()
         self._remove_autosave()
@@ -237,6 +369,12 @@ class OrgBuffer:
 def buffer_status(buf: OrgBuffer) -> str:
     """Shared header status for an interactive file-editing buffer."""
     count = buf.undo_count
+    if buf.external_change is not None:
+        alert = f"EXTERNAL CHANGE: {buf.external_change.summary}"
+        if buf.dirty:
+            noun = "edit" if count == 1 else "edits"
+            return f"{alert} · FILE MODIFIED: {count} {noun}"
+        return alert
     if buf.dirty:
         noun = "edit" if count == 1 else "edits"
         return f"FILE MODIFIED: {count} {noun}"
