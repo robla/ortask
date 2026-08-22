@@ -83,6 +83,17 @@ visibility through `all -> TODO -> DONE`, or start with:
 projmgr.py -i --todo-only
 ```
 
+The planned direction is to make `ptui` a project-steering dashboard rather
+than only a launcher. Optional metadata in `projects.org` will provide an Org
+priority and short description for each project. The default list order will
+be priority then project name, with alphabetical and task-file-modified views
+available without rewriting the index. Pressing `m` will open a buffered
+metadata workspace; Shift-Up/Down will provide a fast priority adjustment, and
+all saves will remain atomic bounded edits of the selected project section.
+Registry symlinks remain authoritative for project membership and task-file
+resolution. See [`docs/ptui.md`](ptui.md) for the full specification, metadata
+shape, sort semantics, safety rules, and delivery order.
+
 ## `add`
 
 `projmgr.py add` registers exactly one project by creating a registry
