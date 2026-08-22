@@ -1,12 +1,38 @@
-#+TITLE: status.py Design and README.org Format
+#+TITLE: ortask Design and Org Task Format -- Claude's Perspective
 #+DATE: 2026-04-08
+#+UPDATED: 2026-08-21
 #+AUTHOR: Claude (with Rob Lanphier)
+
+* Status
+
+Written 2026-04-08, when the tool was called =status.py= and read a
+=README.org=.  Both names changed; the design did not.  Annotated 2026-08-21 so
+it can be read as what it is -- the origin document -- without being mistaken
+for current reference.
+
+What shipped:
+
+- =status.py= became =ortask.py= (alias =ort=), and the default task file became
+  =task.org= / =tasks.org= rather than =README.org=.
+- The three-layer architecture below held, and then split across two packages.
+  The parser moved out of =ortasklib/core.py= into a standalone =orglib/=, a
+  peer package that imports nothing outside the standard library.  Callers
+  reach it through =orglib.parse(text)=.
+- A project layer appeared that this document did not anticipate at all:
+  =projmgr.py= (alias =pmgr=), a registry of projects and a private per-project
+  index at the registry root, =projects.org=.
+
+Current reference lives elsewhere and wins over anything here:
+=docs/architecture.md= for the package layout, =docs/format.md= for the Org
+conventions, =docs/ortask.md= for the local CLI, =docs/projmgr.md= and
+=docs/projects.md= for the project layer, =docs/orglib.md= for the parser
+boundary, and =docs/config.md= for configuration.
 
 * Overview
 
-This document describes the design for =status.py= and the org-mode
-task format used in =README.org=.  It incorporates feedback from the
-Codex and Gemini design docs in this directory.
+This document describes the design for the local task CLI and the org-mode task
+format it reads.  It incorporates feedback from the Codex and Gemini design docs
+in this directory.
 
 Goals:
 
@@ -85,6 +111,13 @@ The parser should be tolerant of headings without IDs (show them
 as-is) and should handle priorities, tags, and metadata lines without
 breaking title extraction.
 
+/2026-08-21:/ all three layers exist, split across two packages.  The parser is
+=orglib.syntax=, reached as =orglib.parse(text).tasks()=; query and mutate are
+=ortasklib.core= and =ortasklib.tasks=; the writer is still line patching plus
+atomic replace.  Layer 1 answering with source spans rather than only values --
+=orglib.parse(text).directories(project)= returns the span it read -- is what
+lets layer 3 rewrite one section of a shared file without touching the rest.
+
 ** Heading regex
 
 #+begin_example
@@ -94,9 +127,24 @@ breaking title extraction.
 This captures heading level, state, optional priority, task ID,
 title text, and optional tags.
 
+/2026-08-21:/ the shape is unchanged; two alternations grew.  =MOOT= joined the
+terminal states (=SUPERSEDED= is kept as a compatibility alias), and week IDs
+joined the ID pattern.  The live version is =orglib.syntax.HEADING_RE=:
+
+#+begin_example
+^(?P<stars>\*+)\s+(?P<state>TODO|DONE|MOOT|SUPERSEDED)\s+(?:\[#(?P<priority>[A-C])\]\s+)?(?P<id>t(?:\d{4}|w(?:\d{2}|\d{4})[Ww]\d{2})(?:\.\d+)*)\s+(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$
+#+end_example
+
 ** Subcommands
 
 Use =argparse= with subparsers.  Implementation order:
+
+/2026-08-21:/ what shipped is =add=, =apply=, =archive=, =done=, =help=,
+=list=, =open=, =repair=, and =show=, registered and documented
+alphabetically rather than by phase.  =context= was never built -- an LLM reads
+=list= and =show= directly.  =next= and =rename= were never needed, =sync=
+became =repair=, and =todo= became =open=.  =apply= and =archive= are the two
+verbs this document did not foresee.  See =docs/ortask.md=.
 
 *** Phase 1: read-only
 
@@ -147,7 +195,7 @@ The default org file should follow the shared discovery convention in
 matches should stop with a clear error rather than silently choosing
 alphabetically.
 
-When =status.py= edits the org file (per Codex recommendation):
+When =ortask.py= edits the org file (per Codex recommendation):
 
 - Prefer the task subtree under =* Tasks= when present
 - Change only the matched heading line (for =done=, =todo=, =rename=)
@@ -155,14 +203,27 @@ When =status.py= edits the org file (per Codex recommendation):
 - Preserve blank lines, body text, properties, and non-task headings
 - Write to a temporary file then atomically rename (per Gemini)
 
-** What status.py should NOT do
+** What ortask.py should NOT do
 
 - Replace Emacs for editing.  Bulk reorganization, refiling, and
   archiving should be done in Emacs.
-- Manage non-task content in README.org.
+- Manage non-task content in the task file.
 - Reformat the whole file on any edit.
 
+/2026-08-21:/ a fourth entry belongs on that list now that there are two
+commands: =ortask.py= owns Org task content and =projmgr.py= owns the registry.
+=projmgr.py= writes =ortask.ini=, the registry symlinks, its =--out= stack file,
+and the registry index =projects.org=; it does not edit a project's tasks.  The
+index is registry data that happens to be written in Org, which is why it is on
+the =projmgr.py= side of that line.
+
 * Testing
+
+/2026-08-21:/ =tests/test_ortask_suite.py= is that file, 180 tests, and it is
+the refactor gate: run it before and after any change.  Coverage grew past this
+list to XDG-isolated registry behavior, PTY coverage of the bounded inline
+session, and a subprocess test that imports =orglib= with =ortasklib= blocked,
+so the dependency cannot quietly reverse.  See =docs/testing.md=.
 
 Add a pytest test file covering (per Codex recommendation):
 
@@ -181,10 +242,26 @@ Add a pytest test file covering (per Codex recommendation):
 - Multi-file scanning across =orgs/= and =roles/= for a global agenda
 - Property-aware queries (=:COMPANY:=, =:URL:=)
 
+/2026-08-21:/ two of these resolved, in a form worth recording.  "=CANCELLED=
+keyword or archive file" became both: =MOOT= for a task that stopped mattering,
+and =ort archive= for moving finished ones out.  "Multi-file scanning" became
+=projmgr.py=, and the shape of the answer matters -- a registry of explicitly
+registered projects rather than a glob over directories, so nothing is scanned
+that the user did not name.  The other three are still open and still deferred.
+
+Declaring the keyword set in-file with =#+TODO:= is the one addition this list
+should have had: without it, =MOOT= is not a keyword to Emacs or to any other
+Org parser, just a heading whose text begins with "MOOT" (=t0023=).
+
 * Related design docs
 
-- [[file:codex-jobhunt-design.org][Codex design notes]] -- emphasizes
+Both links were stale -- the files were renamed from =*-jobhunt-design.org= to
+=*-ortask-design.org= when the project got its name (=docs/naming.md=):
+
+- [[file:codex-ortask-design.org][Codex design notes]] -- emphasizes
   conservative editing, line-number tracking, phased rollout, and testing
-- [[file:gemini-jobhunt-design.org][Gemini design notes]] -- emphasizes
+- [[file:gemini-ortask-design.org][Gemini design notes]] -- emphasizes
   LLM integration (=context= subcommand), robust regex with
   priority/tag capture, atomic file writes, and property awareness
+- [[file:orglib.md][orglib notes]] -- the parser boundary, a survey of external
+  Org libraries, and each model's assessment of whether to use one

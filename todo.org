@@ -166,16 +166,26 @@ is a hard error requiring manual resolution. Fixture tests cover dry-run with
 no mutation, whole-file validation before writing, preservation of accepted
 content, successful cleanup, interrupted cleanup, and conflict refusal.
 *** TODO t0026.3 Cut private-stack consumers over to projects.org
-After migration support exists, make =projects.org= the only private-stack
-source. =cdproj= and its picker/editor path must fail with a concise
-=run pmgr migrate= error when the index is absent or migration cleanup is
-incomplete; =set-dirs= inherits that gate. =pmgr doctor= remains available to
-diagnose the state and exits 2 for missing, malformed, duplicate, stale, or
-mixed index state. =list=, =add=, =rm=, and =init= do not require migration
-because they do not consume private directory settings. Only =pmgr migrate=
-may read =directories-private.org= after this cutover. Test absent-index and
-mixed-state errors, =doctor='s exit status, and that unrelated verbs remain
-available.
+The read path, which is the part that matters:
+=manager.directory_candidates()= still opens =<entry>/directories-private.org=
+and nothing else, so on a migrated registry every project's private stack
+resolves to nothing. Verified 2026-08-21 against the live registry, after
+=pmgr migrate=: =cdproj ortask= writes one line, the project root, where
+=projects.org= lists three directories. Point the =private= candidate at the
+index through =orglib.parse(text).directories(name)=. That restores the stacks;
+the rules in =docs/cdproj.md= do not change, only the location they are read
+from.
+
+The gates, once the index is the only source: =cdproj= and its picker/editor
+path fail with a concise =run pmgr migrate= error when the index is absent or
+cleanup is incomplete, and =set-dirs= (=t0031=) inherits that gate. =pmgr
+doctor= diagnoses the state and exits 2 for missing, malformed, duplicate,
+stale, or mixed index state. =list=, =add=, =rm=, and =init= keep working
+without migration, since they read no private directory settings. After this,
+only =pmgr migrate= may read =directories-private.org=.
+
+Test the restored stacks first, then absent-index and mixed-state errors,
+=doctor='s exit status, and that unrelated verbs stay available.
 ** TODO t0027 Make orglib independently testable and consumable
 Move its contract tests into a focused module that imports only =orglib= and
 can run without importing =ortasklib=. Define how another repository such as

@@ -18,27 +18,25 @@ Instructions:
 
 ## Claude
 
-**Updated: 2026-08-15**
+**Updated: 2026-08-21**
 
-**Overall: healthy.** The bounded-inline migration ChatGPT drove is real work,
-not plan-shaped prose. 84 tests pass in ~2s, including PTY coverage for
-long-list scrolling, live resize, termios restoration, and alternate-screen
-avoidance. Roadmap status claims match the code, and the buffered-edit safety
-contract (`OrgBuffer`, explicit-save-only) survived the rewrite intact.
+**Overall: healthy, with one live gap.** 180 tests pass in ~6s. The `orglib`
+split held: a subprocess test blocks `ortasklib` at the meta-path, so the
+dependency cannot quietly reverse, and `t0026.1` gave the index parser source
+spans rather than bare values — the right shape for rewriting one section of a
+shared file.
 
-Two things to fix before they calcify:
+The gap is that the registry migration has run ahead of its readers. The live
+registry has `projects.org` and no `directories-private.org` files, but
+`manager.directory_candidates()` still reads only the per-entry path, so every
+project's private stack now resolves to nothing. Verified: `cdproj ortask`
+writes one line, the project root, where the index lists three directories.
+`t0026.3` is what closes it, and it should land before anything else does.
 
-1. **Dead code.** `_run_selector`, `select_menu`, and `select_project_menu`
-   (~230 of `ortasklib/menu.py`'s 877 lines) now have zero production callers;
-   only tests reference them. Delete them and their tests together.
-2. **Stale agent instructions.** `CLAUDE.md` and `AGENTS.md` both still say no
-   test suite exists, while `CLAUDE.md`'s own Key files section calls
-   `tests/test_ortask_suite.py` the refactor gate. These files are what every
-   model reads first; wrong ones misdirect all of us.
-
-Watch: `menu.py` holds rendering, session lifecycle, and dashboard printing in
-one module where inedit splits the equivalent surface three ways. Split it
-locally before extracting anything into a shared library.
+Two smaller items, both stale claims rather than bugs: `repair` advertises
+"find and fix ID problems" and only reports (`ortask.py:241`), and
+`menu._run_selector` / `select_menu` / `select_project_menu` still have no
+production callers, as in my 2026-08-15 note.
 
 ## Gemini
 
