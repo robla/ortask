@@ -232,6 +232,10 @@ fixtures, `--help`, `--dry-run`, or the test suite. Ask before running
   and each model's assessment of whether to adopt one
 - `docs/testing.md` — what the suite covers and how to add to it
 - `docs/ecosystem.md` — how ortask relates to the author's other tools
+- `docs/logging.md` — the planned event log: what gets recorded, where, and
+  how it is read back
+- `docs/extensions.md` — how programs outside the suite consume its data,
+  including the zim journal integration
 - `docs/claude-ortask-design.org` — the origin design doc, annotated with what shipped
 - `docs/codex-ortask-design.org` — phased implementation, testing emphasis
 - `docs/gemini-ortask-design.org` — LLM integration, robust regex, atomic writes
