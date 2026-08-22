@@ -34,12 +34,13 @@ full-screen presentation are planned as `t0018`.
 ### Original Cause
 
 The original production selector was inline but not a persistent application.
-`ortasklib.menu._run_selector()` constructs a new
-`prompt_toolkit.Application`, calls `Application.run()`, and exits that
-application for every selection or action. Its original callers then looped and
-called `select_menu()` again. Opening a task created another selector, returning
-from that task created another task-list selector, and project navigation
-repeated the same pattern.
+`ortasklib.menu._run_selector()` constructed a new
+`prompt_toolkit.Application`, called `Application.run()`, and exited that
+application for every selection or action. Its callers then looped and called
+`select_menu()` again. Opening a task created another selector, returning from
+that task created another task-list selector, and project navigation repeated
+the same pattern. Those three functions were deleted in `t0011` once nothing
+production called them.
 
 The applications use `full_screen=False`, which correctly avoids the alternate
 screen, but leave `erase_when_done` at prompt_toolkit's `False` default. Each
@@ -149,8 +150,7 @@ See [nano's mark command](https://www.nano-editor.org/dist/v5/nano.html) and
 
 ### Application Shape
 
-The implementation now provides a session-oriented API alongside the one-shot
-selector:
+The implementation provides a session-oriented API:
 
 - `menu.InlineMenuSession` owns requested/effective height, the active view
   stack, transient messages, movement, Help, terminal resize, external-command
@@ -191,13 +191,10 @@ the cursor and next shell prompt end below the application.
 
 **Implemented as the fixed-height baseline.** `InlineMenuSession` supplies the
 20-row dynamic header/body/footer layout and resize clamping for local task
-sessions and the registry-scoped project/task stack. Compatibility one-shot
-selectors remain available but are no longer used by production interactive
-paths.
+sessions and the registry-scoped project/task stack.
 
-The existing `select_menu()` API remains for compatibility and focused legacy
-tests, but production interactive paths no longer use repeated one-shot
-applications. The obsolete API is now eligible for separate cleanup.
+The one-shot `select_menu()` API outlived its callers for a while and was
+deleted in `t0011`; no repeated one-shot applications remain.
 
 #### 3. Move contexts onto a view stack
 
@@ -277,11 +274,11 @@ A brief external read of `ortasklib/menu.py`, the task UI, and their git
 history against inedit's `_inedit/` split, for context ahead of any shared
 extraction:
 
-- **Compatibility selectors still coexist with the production stack.**
-  `_run_selector`, `select_menu`, and `select_project_menu` remain in `menu.py`
-  alongside `InlineMenuSession`/`MenuView`, but `projmgr.py -i` has now moved to
-  the persistent stack. Removing the unused compatibility path is separate
-  cleanup rather than a blocker for the bounded-session roadmap.
+- **Compatibility selectors coexisted with the production stack.**
+  `_run_selector`, `select_menu`, and `select_project_menu` stayed in `menu.py`
+  alongside `InlineMenuSession`/`MenuView` after `projmgr.py -i` moved to the
+  persistent stack. That cleanup was `t0011`, done separately from the
+  bounded-session work; `menu.py` lost 233 lines with it.
 - **One ortask module is doing what inedit splits three ways.** inedit
   separates presentation, application lifecycle, and terminal handling into
   distinct modules with an enforced acyclic dependency graph

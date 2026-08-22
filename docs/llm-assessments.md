@@ -37,23 +37,23 @@ are independent cleanup, not reasons to delay `set-dirs`.
 
 **Updated: 2026-08-21**
 
-**Overall: healthy, with one live gap.** 180 tests pass in ~6s. The `orglib`
-split held: a subprocess test blocks `ortasklib` at the meta-path, so the
-dependency cannot quietly reverse, and `t0026.1` gave the index parser source
-spans rather than bare values — the right shape for rewriting one section of a
-shared file.
+**Overall: healthy.** 192 tests pass in ~6s. The `orglib` split held — a
+subprocess test blocks `ortasklib` at the meta-path, so the dependency cannot
+quietly reverse — and `t0026` landed the registry index with source spans
+rather than bare values, which is the right shape for rewriting one section of
+a shared file. The gap I flagged earlier today (the migration running ahead of
+its readers) is closed: `manager.directory_candidates()` now requires the
+migrated index rather than falling back to per-entry files.
 
-The gap is that the registry migration has run ahead of its readers. The live
-registry has `projects.org` and no `directories-private.org` files, but
-`manager.directory_candidates()` still reads only the per-entry path, so every
-project's private stack now resolves to nothing. Verified: `cdproj ortask`
-writes one line, the project root, where the index lists three directories.
-`t0026.3` is what closes it, and it should land before anything else does.
+`t0011` removed the one-shot selectors, taking `menu.py` from 1357 to 1124
+lines. Its empty-list contract moved to an `InlineMenuSession` test rather than
+being dropped with the code it covered.
 
-Two smaller items, both stale claims rather than bugs: `repair` advertises
-"find and fix ID problems" and only reports (`ortask.py:241`), and
-`menu._run_selector` / `select_menu` / `select_project_menu` still have no
-production callers, as in my 2026-08-15 note.
+Two things to watch. `repair` still advertises "find and fix ID problems" and
+only reports (`ortask.py:241`). And `menu.py` still holds rendering, session
+lifecycle, and dashboard printing in one module — worth splitting locally
+before anything is extracted into a shared library, and cheaper now that the
+dead paths are gone.
 
 ## Gemini
 

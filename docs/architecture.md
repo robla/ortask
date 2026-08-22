@@ -184,8 +184,6 @@ Shared rendering and bounded-interaction primitives for interactive tools:
 - `count_statuses()` — open/done/total summary counts
 - `print_task_dashboard()` — Rich table rendering with a plain text fallback
 - `print_project_dashboard()` — numbered project-list rendering for `projmgr.py`
-- `select_menu()` / `select_project_menu()` — inline prompt_toolkit
-  one-shot highlight-bar selectors retained for compatibility
 - `MenuView` / `TextInputView` / `InlineMenuSession` — a persistent, bounded
   20-row application shell with scrolling menus, focused single-line input,
   context-filtered bindings, contextual Help, view-stack transitions, resize

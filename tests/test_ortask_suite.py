@@ -3557,54 +3557,6 @@ def test_interactive_select_unavailable_without_tty() -> None:
     assert menu.interactive_select_available() is False
 
 
-@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
-def test_select_menu_keybindings_headless() -> None:
-    # Drive select_menu through prompt_toolkit's pipe-input harness to lock down
-    # navigation, in-list action hotkeys, contextual help, and stack popping.
-    from prompt_toolkit.application import create_app_session
-    from prompt_toolkit.input import create_pipe_input
-    from prompt_toolkit.output import DummyOutput
-
-    rows = [
-        menu.MenuRow(1, "TODO", "t0001 first"),
-        menu.MenuRow(2, "TODO", "t0002 second"),
-        menu.MenuRow(3, "DONE", "t0003 third"),
-    ]
-    toggle = menu.MenuAction("toggle", "Shift+←/→", "Cycle task state")
-    raise_priority = menu.MenuAction("priority_up", "Shift+↑", "Raise priority")
-    lower_priority = menu.MenuAction("priority_down", "Shift+↓", "Lower priority")
-    actions = {
-        "e": menu.MenuAction("edit", "e", "Open in editor"),
-        "c-t": menu.MenuAction("filter", "C-t", "Cycle task filter"),
-        "s-left": toggle,
-        "s-right": toggle,
-        "s-up": raise_priority,
-        "s-down": lower_priority,
-    }
-
-    def run(keys: str) -> menu.MenuResult:
-        with create_pipe_input() as pin:
-            with create_app_session(input=pin, output=DummyOutput()):
-                pin.send_text(keys)
-                return menu.select_menu(rows, actions=actions)
-
-    assert run("\x1b[B\r") == menu.MenuResult("select", 1)   # Down, Enter
-    assert run("jj\r") == menu.MenuResult("select", 2)       # j, j, Enter
-    assert run("k\r") == menu.MenuResult("select", 2)        # Up wraps to last
-    assert run("\x14") == menu.MenuResult("filter", 0)       # Ctrl-T on row 0
-    assert run("j\x14") == menu.MenuResult("filter", 1)      # move then filter
-    assert run("\x1b[1;2C") == menu.MenuResult("toggle", 0)  # Shift-Right
-    assert run("\x1b[1;2D") == menu.MenuResult("toggle", 0)  # Shift-Left
-    assert run("\x1b[1;2A") == menu.MenuResult("priority_up", 0)  # Shift-Up
-    assert run("\x1b[1;2B") == menu.MenuResult("priority_down", 0)  # Shift-Down
-    assert run("\x07\x07j\r") == menu.MenuResult("select", 1)  # C-g toggles help
-    assert run("\x07e\x07e") == menu.MenuResult("edit", 0)  # actions pause in help
-    assert run("\x07qj\r") == menu.MenuResult("select", 1)  # q only closes help
-    assert run("\x07bj\r") == menu.MenuResult("select", 1)  # b only closes help
-    assert run("q") == menu.MenuResult("back", None)
-    assert run("b") == menu.MenuResult("back", None)
-
-
 @pytest.mark.skipif(menu.FormattedText is None, reason="prompt_toolkit not installed")
 def test_selector_help_uses_action_metadata_once() -> None:
     # Help should discover custom commands without listing aliases as duplicates.
@@ -4809,90 +4761,31 @@ def test_dirty_workspace_escape_can_discard_unapplied_edits(tmp_path: Path) -> N
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
-def test_select_menu_scrolls_to_selected_row(monkeypatch) -> None:
-    # Keep a selection below the first screen visible while header and hint stay fixed.
-    from prompt_toolkit.application import create_app_session
-    from prompt_toolkit.data_structures import Size
-    from prompt_toolkit.input import create_pipe_input
-    from prompt_toolkit.output import DummyOutput
-
-    class TinyOutput(DummyOutput):
-        def get_size(self) -> Size:
-            return Size(rows=10, columns=80)
-
-        def get_rows_below_cursor_position(self) -> int:
-            return 10
-
-    windows = []
-    real_window = menu.Window
-
-    def tracked_window(*args, **kwargs):
-        window = real_window(*args, **kwargs)
-        windows.append(window)
-        return window
-
-    monkeypatch.setattr(menu, "Window", tracked_window)
-    rows = [
-        menu.MenuRow(i + 1, "TODO", f"t{i + 1:04} row")
-        for i in range(20)
-    ]
-    with create_pipe_input() as pin:
-        with create_app_session(input=pin, output=TinyOutput()):
-            pin.send_text("\r")
-            result = menu.select_menu(
-                rows,
-                title="Tasks",
-                summary="Open: 20  Done: 0  Total: 20",
-                instruction="Enter select",
-                start_index=12,
-            )
-
-    body = next(window for window in windows if window.content.is_focusable())
-    assert result == menu.MenuResult("select", 12)
-    assert body.render_info.window_height == 5
-    assert body.vertical_scroll <= 12 < body.vertical_scroll + 5
-
-
-@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
-def test_select_project_menu_keybindings_headless() -> None:
-    # Project lists use the same highlight-bar navigation model as task lists.
+def test_inline_menu_session_empty_rows_allows_exit_and_actions() -> None:
+    # An empty list still honors stack-pop keys and action hotkeys, reporting
+    # index None rather than a row that is not there.
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
 
-    rows = [
-        menu.ProjectRow(1, "ortask", "~/src/ortask/todo.org"),
-        menu.ProjectRow(2, "elweek", "~/tmpsorta/electorama-weekly/TODO.org"),
-    ]
+    seen: list[menu.MenuResult] = []
 
     def run(keys: str) -> menu.MenuResult:
+        seen.clear()
+        view = menu.MenuView(
+            [],
+            lambda _session, result: seen.append(result),
+            actions={"e": menu.MenuAction("edit", "e", "Open in editor")},
+        )
         with create_pipe_input() as pin:
             with create_app_session(input=pin, output=DummyOutput()):
                 pin.send_text(keys)
-                return menu.select_project_menu(rows)
-
-    assert run("\x1b[B\r") == menu.MenuResult("select", 1)  # Down, Enter
-    assert run("k\r") == menu.MenuResult("select", 1)       # Up wraps to last
-    assert run("q") == menu.MenuResult("back", None)
-    assert run("b") == menu.MenuResult("back", None)
-
-
-@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
-def test_select_menu_empty_rows_allows_exit() -> None:
-    # An empty list still honors stack-pop keys and edit (edit yields index None).
-    from prompt_toolkit.application import create_app_session
-    from prompt_toolkit.input import create_pipe_input
-    from prompt_toolkit.output import DummyOutput
-
-    def run(keys: str) -> menu.MenuResult:
-        with create_pipe_input() as pin:
-            with create_app_session(input=pin, output=DummyOutput()):
-                pin.send_text(keys)
-                return menu.select_menu([], actions={"e": "edit"})
+                return menu.InlineMenuSession(view, action_keys=("e",)).run()
 
     assert run("q") == menu.MenuResult("back", None)
     assert run("b") == menu.MenuResult("back", None)
-    assert run("e") == menu.MenuResult("edit", None)
+    assert run("eq") == menu.MenuResult("back", None)
+    assert seen == [menu.MenuResult("edit", None)]
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
@@ -4926,7 +4819,6 @@ def test_project_menu_uses_one_application_for_nested_task_views(
 
     monkeypatch.setattr(menu, "interactive_select_available", lambda: True)
     monkeypatch.setattr(menu, "Application", tracked_application)
-    monkeypatch.setattr(menu, "select_project_menu", obsolete_path)
     monkeypatch.setattr(projmgr.taskui, "task_menu", obsolete_path)
 
     with create_pipe_input() as pin:

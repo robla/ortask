@@ -354,9 +354,8 @@ function unchanged.
   cannot answer the question differently.
 - `_CdprojSession.report()` — warnings then errors, on stderr, after any picker
   has exited.
-- `projmgr.cmd_cdproj` — views and output only. It runs on `InlineMenuSession`, not
-  the one-shot `select_project_menu`/`_run_selector` path that `t0011` exists to
-  delete, with a numbered fallback for pipes.
+- `projmgr.cmd_cdproj` — views and output only. It runs on
+  `InlineMenuSession`, with a numbered fallback for pipes.
 
 ## Saving the directory stack (`cdproj -s` / `pmgr set-dirs`)
 

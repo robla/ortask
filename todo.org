@@ -9,7 +9,7 @@ Implement the persistent 20-row inline application described in =docs/roadmap.md
 Retain at most one factual final frame, erase misleading failure output, and
 restore the terminal after signals, exceptions, and resize failures.
 **** TODO [#B] t0009.6.2 Harden signal, exception, and terminal-failure cleanup
-** TODO t0011 Remove obsolete one-shot interactive selector code
+** DONE t0011 Remove obsolete one-shot interactive selector code
 Delete =_run_selector=, =select_menu=, =select_project_menu=, and their
 compatibility-only tests after confirming no supported production path uses
 them. Keep the persistent =InlineMenuSession= path and non-TTY numbered menus.

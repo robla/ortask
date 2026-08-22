@@ -241,8 +241,7 @@ the same family of menus.
 
 `ortasklib.menu` now contains small task/project row dataclasses, shared
 dashboard/table renderers, prompt helpers that map `Esc` to
-`ContextCancelled`, compatibility one-shot selectors, and the bounded
-`MenuView`/`InlineMenuSession` stack. Keep the abstraction small: rendering,
+`ContextCancelled`, and the bounded `MenuView`/`InlineMenuSession` stack. Keep the abstraction small: rendering,
 choice collection, context transitions, and terminal lifecycle belong in the
 shared layer; task-specific actions stay in the calling tool.
 
@@ -299,10 +298,11 @@ watch.
 1. **Done.** The plain numbered menu remains the non-TTY / fallback / scriptable
    mode (`taskui._numbered_task_menu`), so every interactive selection still has
    a non-interactive equivalent and automation never blocks on a picker.
-2. **Done.** `ortasklib.menu.select_menu()` is a narrow abstraction over rows
-   that returns exactly one of: a selected row, an action token (`edit`,
-   `toggle`, …) bound to a row (`MenuResult`), or `back`. It renders and
-   collects choices only; it owns no task logic.
+2. **Done.** `ortasklib.menu.MenuView` is a narrow abstraction over rows that
+   returns exactly one of: a selected row, an action token (`edit`, `toggle`,
+   …) bound to a row (`MenuResult`), or `back`. It renders and collects choices
+   only; it owns no task logic. It replaced a one-shot `select_menu()` with the
+   same contract, deleted in `t0011`.
 3. **Done.** The selector is a non-full-screen `prompt_toolkit` application with
    keybindings for navigation (arrow keys / `j`/`k`), the `TODO`/`DONE` toggle
    ring (Shift-Left/Right), priority changes (Shift-Up/Down and `p`), task-state
