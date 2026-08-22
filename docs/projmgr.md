@@ -126,8 +126,9 @@ Behavior:
    print the choice — so running it from `~/src/ortask/docs` registers
    `~/src/ortask`. An explicit path is taken literally and walks nothing.
 3. Resolve the task file from `--file` or by the shared local task-file
-   discovery convention in `docs/format.md`. A project with no task file is
-   still registered.
+   discovery convention in `docs/format.md`. A missing or ambiguous task file
+   does not block registration; ambiguity produces a warning and `--file` can
+   resolve it later.
 4. Create `<registry>/<name>/`, where `name` is `--name` or the project
    directory basename.
 5. Create a project symlink named after the real project directory.
@@ -136,7 +137,7 @@ Behavior:
 An existing `<registry>/<name>/` is an error unless `--force` is given. `--force`
 repoints the known symlinks but leaves unrelated contents alone. Registration
 never fails for want of a task file: the project symlink alone is what makes a
-registry entry a project.
+registry entry a project. It also never guesses among ambiguous Org files.
 
 ## `cdproj`
 

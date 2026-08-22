@@ -1591,8 +1591,11 @@ def cmd_add(args: argparse.Namespace) -> int:
         try:
             found = core.discover_org_file(project_dir)
         except core.OrgFileDiscoveryError as exc:
-            print(f"add: {exc}", file=sys.stderr)
-            return 1
+            print(
+                f"warning: {exc}; adding project link only",
+                file=sys.stderr,
+            )
+            found = None
         if found is not None:
             if manager.has_task_section(found.read_text(encoding="utf-8")):
                 org_file = found.resolve()

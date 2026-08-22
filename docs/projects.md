@@ -106,6 +106,11 @@ Task-file resolution for a registered project:
 2. otherwise, `docs/format.md` discovery inside the real project directory;
 3. otherwise, none.
 
+Ambiguous discovery leaves the task file unset and adds a visible warning; it
+never chooses alphabetically. Use `pmgr add --force --file FILE` to record an
+explicit task-file link. A discovered generic Org file must contain a
+`* Tasks` section or it is not treated as the project's task file.
+
 A project record therefore carries a name, a project path, a task file *or*
 nothing, and an optional warning. Every project-level display must have
 something to show for each of those four, including the empty ones.
@@ -171,6 +176,8 @@ a task file is discovered, a symlink to it.
   discovering one, `--force` repoints links in an existing entry, and
   `--dry-run` prints the plan without touching the registry.
 - `add` never writes Org content, and never fails for want of a task file.
+- Ambiguous Org files produce a warning and a project-only registration; no
+  candidate is guessed. Use `--file` to choose one explicitly.
 
 Removal is `pmgr rm NAME`, which deletes the registry entry and nothing else.
 Because everything in an entry is normally a symlink, that destroys nothing; a

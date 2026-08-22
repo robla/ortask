@@ -287,6 +287,13 @@ def read_project_entry(entry: Path) -> Project | None:
     links = [p for p in children if p.is_symlink()]
     dir_links = [p for p in links if p.is_dir()]
     org_links = [p for p in links if p.is_file() and p.suffix == ".org"]
+    entry_org_files = [
+        p
+        for p in children
+        if p.is_file()
+        and p.suffix == ".org"
+        and p.name != DIRECTORIES_PRIVATE_NAME
+    ]
     # A dangling link is evidence of a broken project only if it aimed at what a
     # project link aims at. A registry's notes directory with one stale .md link
     # is not a broken project.
@@ -311,7 +318,31 @@ def read_project_entry(entry: Path) -> Project | None:
     else:
         return None
 
-    return Project(entry.name, entry, choose_org_file(entry), link, warning)
+    org_file: Path | None = None
+    if len(entry_org_files) == 1:
+        org_file = entry_org_files[0]
+    elif len(entry_org_files) > 1:
+        detail = "several task-file links: " + ", ".join(
+            path.name for path in entry_org_files
+        )
+        warning = f"{warning}; {detail}" if warning else detail
+    elif link is not None:
+        try:
+            candidate = core.discover_org_file(link.resolve())
+            if candidate is not None:
+                try:
+                    text = candidate.read_text(encoding="utf-8")
+                except (OSError, UnicodeError) as exc:
+                    detail = f"cannot read task file {friendly_path(candidate)}: {exc}"
+                    warning = f"{warning}; {detail}" if warning else detail
+                else:
+                    if has_task_section(text):
+                        org_file = candidate
+        except core.OrgFileDiscoveryError as exc:
+            detail = str(exc)
+            warning = f"{warning}; {detail}" if warning else detail
+
+    return Project(entry.name, entry, org_file, link, warning)
 
 
 def discover_projects(workspace: Path) -> list[Project]:

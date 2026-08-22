@@ -1963,6 +1963,63 @@ def test_projadd_links_project_only_when_no_task_file(
     assert not any(p.suffix == ".org" for p in subdir.iterdir())   # no task link
 
 
+def test_projadd_registers_project_when_task_discovery_is_ambiguous(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Ambiguous Org files must not block registration or be chosen arbitrarily.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+
+    project = tmp_path / "src" / "abiftool"
+    write(project / "CHANGELOG.org", "* Changelog\n")
+    write(project / "release-checklist.org", "* Release checklist\n")
+
+    assert projmgr.cmd_add(_add_args(project)) == 0
+    captured = capsys.readouterr()
+    assert "adding project link only" in captured.err
+    assert "use --file" in captured.err
+
+    entry = registry / "abiftool"
+    assert (entry / "abiftool").resolve() == project.resolve()
+    assert not any(path.suffix == ".org" for path in entry.iterdir())
+
+    registered = manager.discover_projects(registry)
+    assert len(registered) == 1
+    assert registered[0].org_file is None
+    assert "ambiguous task files" in (registered[0].warning or "")
+    assert "CHANGELOG.org" in (registered[0].warning or "")
+    assert "release-checklist.org" in (registered[0].warning or "")
+
+
+def test_projadd_explicit_file_resolves_ambiguous_discovery(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # --file must let callers register a chosen task file among generic Org files.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+
+    project = tmp_path / "src" / "mixed"
+    write(project / "CHANGELOG.org", "* Changelog\n")
+    tasks_file = write(
+        project / "release-checklist.org",
+        "* Tasks\n** TODO t0001 Cut release\n",
+    )
+
+    assert projmgr.cmd_add(
+        _add_args(project, file="release-checklist.org")
+    ) == 0
+    capsys.readouterr()
+
+    task_link = registry / "mixed" / "release-checklist.org"
+    assert task_link.is_symlink()
+    assert task_link.resolve() == tasks_file.resolve()
+    registered = manager.discover_projects(registry)
+    assert registered[0].org_file == task_link
+    assert registered[0].warning is None
+
+
 def test_manager_project_marker_ignores_registry_notes(tmp_path: Path) -> None:
     # A registry entry is a project because it points outward. The registry's own
     # notes directory holds Org files but links nowhere, so it is not a project.
