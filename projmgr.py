@@ -37,7 +37,18 @@ from ortasklib import core, log as eventlog, manager, menu, taskui
 # how each names itself and what its third column says.
 # ---------------------------------------------------------------------------
 
-PROJECT_MENU_INSTRUCTION = "↑↓/jk · ↵ open · C-g help · Esc/b/q exit"
+PROJECT_SORT_ACTION = menu.MenuAction(
+    "sort", "s", "Cycle project sorting: Priority and Alphabetical"
+)
+PROJECT_MENU_ACTIONS = {"s": PROJECT_SORT_ACTION}
+
+
+def _project_menu_instruction(sort_mode: str) -> str:
+    label = sort_mode.title()
+    return f"{label} sort · ↑↓/jk · ↵ open · s sort · C-g help · Esc/b/q exit"
+
+
+PROJECT_MENU_INSTRUCTION = _project_menu_instruction(manager.PROJECT_SORT_PRIORITY)
 
 
 def _project_note(project: manager.Project) -> str:
@@ -55,7 +66,10 @@ def _project_location(project: manager.Project) -> str:
     return f"{real}{_project_note(project)}"
 
 
-def _project_summary(project: manager.Project) -> str:
+def _project_summary(
+    project: manager.Project,
+    metadata: manager.ProjectMetadata | None = None,
+) -> str:
     """Where the highlighted project actually lives.
 
     A project menu must never make the reader guess at a location, so this
@@ -76,6 +90,8 @@ def _project_summary(project: manager.Project) -> str:
         parts.append(project.warning)
     else:
         parts.append("(no task file)")
+    if metadata is not None and metadata.warning:
+        parts.append(f"metadata: {metadata.warning}")
     return "  ·  ".join(parts)
 
 
@@ -101,6 +117,46 @@ def _project_tasks(project: manager.Project) -> str:
         1 for task in tasks if task.level == root_level and task.state == "TODO"
     )
     return f"{open_tasks} open"
+
+
+def _project_priority(metadata: manager.ProjectMetadata) -> str:
+    """Compact priority text for a navigator row; blank means deliberately unset."""
+    return metadata.priority.upper() if metadata.priority else " "
+
+
+def _project_metadata_note(metadata: manager.ProjectMetadata) -> str:
+    if metadata.warning:
+        return f"(metadata: {metadata.warning})"
+    return ""
+
+
+def _navigator_row(
+    project: manager.Project, metadata: manager.ProjectMetadata
+) -> str:
+    """Priority, name, workload, and description for one interactive row."""
+    prefix = (
+        f"[{_project_priority(metadata)}] {project.name:<12}  "
+        f"{_project_tasks(project):<14}"
+    )
+    suffix = "  ".join(
+        part
+        for part in (metadata.description or "", _project_metadata_note(metadata))
+        if part
+    )
+    return f"{prefix}  {suffix}".rstrip()
+
+
+def _navigator_dashboard_detail(
+    project: manager.Project, metadata: manager.ProjectMetadata
+) -> str:
+    """Fallback rows carry context that the highlight summary normally supplies."""
+    parts = [f"{_project_location(project)}  ({_project_tasks(project)})"]
+    if metadata.description:
+        parts.append(metadata.description)
+    note = _project_metadata_note(metadata)
+    if note:
+        parts.append(note)
+    return "  ".join(parts)
 
 
 def _project_stack(project: manager.Project) -> str:
@@ -145,6 +201,7 @@ class _ProjectListing:
     #: summary line has to appear in the row instead. ``detail_header`` names
     #: this column, not the picker's.
     dashboard_detail: Callable[[manager.Project], str] | None = None
+    metadata_rows: bool = False
 
     def dashboard(self) -> Callable[[manager.Project], str]:
         return self.dashboard_detail or self.detail
@@ -156,6 +213,7 @@ NAVIGATOR = _ProjectListing(
     "Location",
     _project_tasks,
     dashboard_detail=_project_location_and_tasks,
+    metadata_rows=True,
 )
 CDPROJ = _ProjectListing(
     "Change directory", "CD", "Directories", _project_stack
@@ -163,13 +221,23 @@ CDPROJ = _ProjectListing(
 
 
 def _project_rows(
-    projects: list[manager.Project], listing: _ProjectListing
+    projects: list[manager.Project],
+    listing: _ProjectListing,
+    metadata: dict[str, manager.ProjectMetadata] | None = None,
 ) -> list[menu.MenuRow]:
+    metadata = metadata or {}
     return [
         menu.MenuRow(
             index + 1,
             listing.label,
-            f"{project.name:<12}  {listing.detail(project)}",
+            (
+                _navigator_row(
+                    project,
+                    metadata.get(project.name, manager.ProjectMetadata()),
+                )
+                if listing.metadata_rows
+                else f"{project.name:<12}  {listing.detail(project)}"
+            ),
         )
         for index, project in enumerate(projects)
     ]
@@ -179,12 +247,26 @@ def _print_project_dashboard(
     projects: list[manager.Project],
     display_path: str,
     listing: _ProjectListing,
+    metadata: dict[str, manager.ProjectMetadata] | None = None,
 ) -> None:
-    detail = listing.dashboard()
-    rows = [
-        menu.ProjectRow(index + 1, project.name, detail(project))
-        for index, project in enumerate(projects)
-    ]
+    metadata = metadata or {}
+    if listing.metadata_rows:
+        rows = []
+        for index, project in enumerate(projects):
+            project_metadata = metadata.get(project.name, manager.ProjectMetadata())
+            rows.append(
+                menu.ProjectRow(
+                    index + 1,
+                    f"[{_project_priority(project_metadata)}] {project.name}",
+                    _navigator_dashboard_detail(project, project_metadata),
+                )
+            )
+    else:
+        detail = listing.dashboard()
+        rows = [
+            menu.ProjectRow(index + 1, project.name, detail(project))
+            for index, project in enumerate(projects)
+        ]
     menu.print_project_dashboard(
         listing.title, display_path, rows, listing.detail_header
     )
@@ -215,11 +297,12 @@ def _project_view(
     select_help: str,
     back_help: str | None = None,
     actions: dict | None = None,
+    metadata: dict[str, manager.ProjectMetadata] | None = None,
     selected_index: int = 0,
     on_resume=None,
 ) -> menu.MenuView:
     view = menu.MenuView(
-        rows=_project_rows(projects, listing),
+        rows=_project_rows(projects, listing, metadata),
         on_result=handle,
         title=listing.title,
         title_right=f"Registry: {display_path}",
@@ -236,7 +319,9 @@ def _project_view(
         index = view.selected_index
         if not 0 <= index < len(projects):
             return ""
-        return _project_summary(projects[index])
+        project = projects[index]
+        project_metadata = (metadata or {}).get(project.name)
+        return _project_summary(project, project_metadata)
 
     view.status_text = selected_summary
     return view
@@ -249,12 +334,16 @@ class _ProjectBrowser:
         self.workspace = workspace
         self.display_path = display_path
         self.include_done = include_done
+        self.sort_mode = manager.PROJECT_SORT_PRIORITY
         self.session: menu.InlineMenuSession | None = None
 
     def run(self) -> None:
         session = menu.InlineMenuSession(
             self.view(),
-            action_keys=taskui.InteractiveTaskController.action_keys(),
+            action_keys=(
+                *taskui.InteractiveTaskController.action_keys(),
+                *PROJECT_MENU_ACTIONS,
+            ),
             final_message="No task changes",
         )
         self.session = session
@@ -267,9 +356,24 @@ class _ProjectBrowser:
         selected_name: str | None = None,
         fallback_index: int = 0,
     ) -> menu.MenuView:
-        projects = manager.discover_projects(self.workspace)
+        discovered = manager.discover_projects(self.workspace)
+        metadata = manager.read_project_metadata(self.workspace, discovered)
+        projects = manager.sort_projects(discovered, metadata, self.sort_mode)
 
         def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+            if result.action == "sort":
+                selected = (
+                    projects[result.index].name
+                    if result.index is not None
+                    and 0 <= result.index < len(projects)
+                    else None
+                )
+                self.sort_mode = manager.next_project_sort_mode(self.sort_mode)
+                session.replace_view(
+                    self.view(selected, result.index if result.index is not None else 0)
+                )
+                session.set_transient_message(f"Sort: {self.sort_mode.title()}")
+                return
             if result.action != "select" or result.index is None:
                 return
             if not 0 <= result.index < len(projects):
@@ -304,8 +408,10 @@ class _ProjectBrowser:
             self.display_path,
             handle,
             listing=NAVIGATOR,
-            instruction=PROJECT_MENU_INSTRUCTION,
+            instruction=_project_menu_instruction(self.sort_mode),
             select_help="Open the highlighted project",
+            actions=PROJECT_MENU_ACTIONS,
+            metadata=metadata,
             selected_index=_anchor_index(projects, selected_name, fallback_index),
             on_resume=resume,
         )
@@ -317,13 +423,21 @@ def project_menu(workspace: Path, display_path: str, include_done: bool) -> int:
         _ProjectBrowser(workspace, display_path, include_done).run()
         return 0
 
+    sort_mode = manager.PROJECT_SORT_PRIORITY
     while True:
-        projects = manager.discover_projects(workspace)
-        _print_project_dashboard(projects, display_path, NAVIGATOR)
+        discovered = manager.discover_projects(workspace)
+        metadata = manager.read_project_metadata(workspace, discovered)
+        projects = manager.sort_projects(discovered, metadata, sort_mode)
+        _print_project_dashboard(projects, display_path, NAVIGATOR, metadata)
         try:
-            choice = menu.prompt_text("number, Esc/q=quit").strip().lower()
+            choice = menu.prompt_text(
+                f"{sort_mode.title()} sort; number, s=sort, Esc/q=quit"
+            ).strip().lower()
         except menu.ContextCancelled:
             return 0
+        if choice == "s":
+            sort_mode = manager.next_project_sort_mode(sort_mode)
+            continue
         if choice in {"b", "q", ""}:
             return 0
         if not choice.isdigit() or not 1 <= int(choice) <= len(projects):

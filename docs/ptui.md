@@ -3,19 +3,20 @@
 `ptui` is the interactive form of `projmgr.py -i`. Its purpose is not only to
 open a registered project, but to help the user decide which project deserves
 attention next. The registry remains the source of project membership;
-`projects.org` will supply optional presentation and prioritization metadata.
+`projects.org` supplies optional presentation and prioritization metadata.
 
-This is a forward specification. Priority, description, and the task-file
-mirror are parsed as of `t0035.1` — `orglib.parse(text).project(name)` and
-`manager.read_project_metadata()` — but the project list is still alphabetical
-and shows none of it, and nothing edits it yet.
+This remains partly a forward specification. Priority, description, and the
+task-file mirror are parsed as of `t0035.1`; `t0035.2` displays priority,
+description, and open-task count, defaults to priority-first ordering, and lets
+`s` switch to alphabetical ordering. Metadata editing and Modified sorting are
+not implemented yet.
 
 ## Project List
 
-The project list should retain the current bounded highlight-bar UI, location
-summary, open-task count, and task-file navigation. It should add priority and
-a short description without hiding the canonical project and task-file paths.
-A representative row is:
+The project list retains the bounded highlight-bar UI, location summary,
+open-task count, and task-file navigation. It adds priority and a short
+description without hiding the canonical project and task-file paths. A
+representative row is:
 
 ```text
 ▶  1  PROJ  [A] ortask     4 open  Org-backed task and project tools
@@ -31,21 +32,21 @@ The default order is **priority, then project name**:
 1. `A`, `B`, `C`, then projects with no priority.
 2. Case-insensitive project name within each priority group.
 
-The user can switch among these views without changing `projects.org`:
+The user switches among these views without changing `projects.org`:
 
 - **Priority**: the default order above.
 - **Alphabetical**: case-insensitive project name only.
 - **Modified**: canonical task-file modification time, newest first, then
   project name. Projects without a readable task file sort last.
 
-`s` should cycle the sort mode and report the active mode in the footer;
+`s` cycles the sort mode and reports the active mode in the footer;
 contextual Help should list the modes that exist. Modified time is deliberately
 a cheap, predictable proxy for activity: `ptui` must not recursively scan
 project trees or invoke Git to calculate it. The selected project remains
 anchored by name when the order changes.
 
-Priority and Alphabetical arrive in `t0035.2`, Modified in `t0035.5`, so Help
-lists what is actually available at each step rather than advertising a mode
+Priority and Alphabetical are implemented by `t0035.2`; Modified remains
+`t0035.5`. Help lists only the modes that exist rather than advertising one
 that is not there yet.
 
 ## Metadata in `projects.org`
@@ -247,7 +248,8 @@ people open in Emacs, so the cookie wins anyway.
 
 0. Strip the priority cookie when matching project headings (`t0036`, done).
    Nothing below could write a cookie safely until it landed.
-1. Parse project priority and description, then add priority/alphabetical sort.
+1. Parse project priority and description, then add priority/alphabetical sort
+   (`t0035.1`–`t0035.2`, done).
 2. Add buffered priority changes from the project list.
 3. Add external-change detection, pure section merging, and buffer
    reconciliation (`t0037`).

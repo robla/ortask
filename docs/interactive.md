@@ -33,6 +33,11 @@ changes live in `ortasklib/taskui.py`, shared with `ortask.py -i`. Local
 dashboard: an open/done/total summary over a status table of the resolved task
 file.
 
+The project navigator reads optional priority and description metadata from
+the registry's `projects.org`. It starts in priority-then-name order and `s`
+switches between Priority and Alphabetical while keeping the highlight anchored
+to the same project.
+
 The task selector has two modes, chosen automatically by
 `menu.interactive_select_available()`:
 

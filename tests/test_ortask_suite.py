@@ -2301,6 +2301,117 @@ def test_projmgr_project_menu_summary_follows_the_highlight(
     assert view.status_text() == ""
 
 
+def test_project_priority_and_alphabetical_sort_modes(tmp_path: Path) -> None:
+    # Priority mode orders A/B/C/custom/unset; alphabetical mode ignores metadata.
+    projects = [
+        manager.Project("zulu", tmp_path),
+        manager.Project("alpha", tmp_path),
+        manager.Project("custom", tmp_path),
+        manager.Project("bravo", tmp_path),
+    ]
+    metadata = {
+        "zulu": manager.ProjectMetadata(priority="C"),
+        "alpha": manager.ProjectMetadata(),
+        "custom": manager.ProjectMetadata(priority="1"),
+        "bravo": manager.ProjectMetadata(priority="a"),
+    }
+
+    priority = manager.sort_projects(
+        projects, metadata, manager.PROJECT_SORT_PRIORITY
+    )
+    alphabetical = manager.sort_projects(
+        projects, metadata, manager.PROJECT_SORT_ALPHABETICAL
+    )
+
+    assert [project.name for project in priority] == [
+        "bravo",
+        "zulu",
+        "custom",
+        "alpha",
+    ]
+    assert [project.name for project in alphabetical] == [
+        "alpha",
+        "bravo",
+        "custom",
+        "zulu",
+    ]
+    assert manager.next_project_sort_mode(manager.PROJECT_SORT_PRIORITY) == (
+        manager.PROJECT_SORT_ALPHABETICAL
+    )
+    assert manager.next_project_sort_mode(manager.PROJECT_SORT_ALPHABETICAL) == (
+        manager.PROJECT_SORT_PRIORITY
+    )
+    with pytest.raises(ValueError, match="unknown project sort mode"):
+        manager.sort_projects(projects, metadata, "recent")
+
+
+def test_project_browser_shows_metadata_and_anchors_sort_selection(
+    tmp_path: Path,
+) -> None:
+    # Navigator rows expose steering data and keep the same project selected.
+    registry = tmp_path / "registry"
+    for name, tasks in (
+        ("alpha", "** TODO t0001 One\n"),
+        ("bravo", "** TODO t0001 One\n** TODO t0002 Two\n"),
+        ("zulu", "** DONE t0001 Finished\n"),
+    ):
+        project = tmp_path / "src" / name
+        write(project / "tasks.org", f"* Tasks\n{tasks}")
+        register(registry, name, project)
+    (registry / manager.PROJECTS_INDEX_NAME).write_text(
+        manager.PROJECTS_INDEX_HEADER
+        + "* alpha\n"
+        + ":PROPERTIES:\n:DESCRIPTION: Unprioritized work\n:END:\n"
+        + "* [#B] bravo\n"
+        + ":PROPERTIES:\n:DESCRIPTION: Two open tasks\n"
+        + ":TASK_FILE: first.org\n:TASK_FILE: repeated.org\n:END:\n"
+        + "* [#A] zulu\n"
+        + ":PROPERTIES:\n:DESCRIPTION: Highest priority\n:END:\n",
+        encoding="utf-8",
+    )
+
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+    view = browser.view()
+
+    assert view.instruction.startswith("Priority sort")
+    assert view.actions["s"] == projmgr.PROJECT_SORT_ACTION
+    assert view.rows[0].text.startswith("[A] zulu")
+    assert "0 open" in view.rows[0].text
+    assert "Highest priority" in view.rows[0].text
+    assert view.rows[1].text.startswith("[B] bravo")
+    assert "2 open" in view.rows[1].text
+    assert "metadata: recorded more than once: TASK_FILE" in view.rows[1].text
+    assert view.rows[2].text.startswith("[ ] alpha")
+    view.selected_index = 1
+    assert view.status_text().endswith(
+        "metadata: recorded more than once: TASK_FILE"
+    )
+
+    class FakeSession:
+        def __init__(self, current_view) -> None:
+            self.current_view = current_view
+            self.message = ""
+
+        def replace_view(self, replacement) -> None:
+            self.current_view = replacement
+
+        def set_transient_message(self, message: str) -> None:
+            self.message = message
+
+    session = FakeSession(view)
+    view.on_result(session, menu.MenuResult("sort", 1))
+
+    assert browser.sort_mode == manager.PROJECT_SORT_ALPHABETICAL
+    assert session.message == "Sort: Alphabetical"
+    assert [row.text[4:].split()[0] for row in session.current_view.rows] == [
+        "alpha",
+        "bravo",
+        "zulu",
+    ]
+    assert session.current_view.selected_index == 1
+    assert session.current_view.rows[1].text.startswith("[B] bravo")
+
+
 def test_projmgr_navigator_dashboard_keeps_the_location(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:

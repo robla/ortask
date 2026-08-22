@@ -719,6 +719,63 @@ class ProjectMetadata:
     warning: str | None = None
 
 
+PROJECT_SORT_PRIORITY = "priority"
+PROJECT_SORT_ALPHABETICAL = "alphabetical"
+PROJECT_SORT_MODES = (PROJECT_SORT_PRIORITY, PROJECT_SORT_ALPHABETICAL)
+_PROJECT_PRIORITY_RANK = {"A": 0, "B": 1, "C": 2}
+
+
+def project_name_sort_key(project: Project) -> tuple[str, str]:
+    """Case-insensitive project ordering with deterministic case tie-breaking."""
+    return project.name.casefold(), project.name
+
+
+def project_priority_sort_key(
+    project: Project, metadata: ProjectMetadata
+) -> tuple[int, str, str]:
+    """Org priority first, then the normal project-name ordering.
+
+    ``ptui`` edits A through C. Other one-character Org priorities remain
+    visible and sort after C but before an unset priority rather than being
+    silently treated as absent.
+    """
+    priority = metadata.priority.upper() if metadata.priority else None
+    if priority in _PROJECT_PRIORITY_RANK:
+        rank = _PROJECT_PRIORITY_RANK[priority]
+    elif priority is not None:
+        rank = len(_PROJECT_PRIORITY_RANK)
+    else:
+        rank = len(_PROJECT_PRIORITY_RANK) + 1
+    return rank, *project_name_sort_key(project)
+
+
+def sort_projects(
+    projects: list[Project] | tuple[Project, ...],
+    metadata: dict[str, ProjectMetadata],
+    mode: str,
+) -> list[Project]:
+    """Return projects in one of the navigator's non-mutating display orders."""
+    if mode == PROJECT_SORT_PRIORITY:
+        return sorted(
+            projects,
+            key=lambda project: project_priority_sort_key(
+                project, metadata.get(project.name, ProjectMetadata())
+            ),
+        )
+    if mode == PROJECT_SORT_ALPHABETICAL:
+        return sorted(projects, key=project_name_sort_key)
+    raise ValueError(f"unknown project sort mode: {mode}")
+
+
+def next_project_sort_mode(mode: str) -> str:
+    """Cycle through the project sort modes currently implemented by ptui."""
+    try:
+        index = PROJECT_SORT_MODES.index(mode)
+    except ValueError as exc:
+        raise ValueError(f"unknown project sort mode: {mode}") from exc
+    return PROJECT_SORT_MODES[(index + 1) % len(PROJECT_SORT_MODES)]
+
+
 def _index_value(value: str | None) -> str | None:
     stripped = value.strip() if value else ""
     return stripped or None

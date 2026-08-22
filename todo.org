@@ -312,7 +312,7 @@ strips the cookie, a section this parser reads is a section
 =parse_project_directories= no longer finds. Document the drawer in
 =docs/config.md='s index shape notes, which currently describe only
 =** Directories= and say everything else under a project heading is free text.
-*** TODO [#A] t0035.2 Add priority-first project rows and sort controls
+*** DONE [#A] t0035.2 Add priority-first project rows and sort controls
 Show priority, description, and open-task count. Default to
 =priority -> alphabetical= order, let =s= switch between priority and
 alphabetical views, and keep the highlight anchored by project name. =s= cycles

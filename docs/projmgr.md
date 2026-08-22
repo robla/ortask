@@ -73,23 +73,23 @@ pmgr -i
 same highlight-bar selector as task lists when a TTY is available;
 non-interactive runs keep the numbered fallback. It is built from the same
 project list `cdproj` shows, but it identifies itself as `Project navigator`,
-labels its rows `PROJ`, and gives each project's open task count — see
-"Telling the two lists apart" below. Selecting a project opens that
-project's Org task file; a project with no task file says so and stays put. Task views
-show TODO and DONE rows by default; use `C-t` inside the task menu to cycle
-visibility through `all -> TODO -> DONE`, or start with:
+labels its rows `PROJ`, and shows priority, open-task count, and description.
+The highlighted row's canonical directory and task file remain in the summary
+line — see "Telling the two lists apart" below. Selecting a project opens that
+project's Org task file; a project with no task file says so and stays put. Task
+views show TODO and DONE rows by default; use `C-t` inside the task menu to
+cycle visibility through `all -> TODO -> DONE`, or start with:
 
 ```sh
 projmgr.py -i --todo-only
 ```
 
-The planned direction is to make `ptui` a project-steering dashboard rather
-than only a launcher. Optional metadata in `projects.org` will provide an Org
-priority and short description for each project. The default list order will
-be priority then project name, with alphabetical and task-file-modified views
-available without rewriting the index. Pressing `m` will open a buffered
-metadata workspace; Shift-Up/Down will provide a fast priority adjustment, and
-all saves will remain atomic bounded edits of the selected project section.
+`ptui` now uses optional Org priority and description metadata from
+`projects.org` as a project-steering dashboard. Its default order is priority
+then project name; press `s` to switch between Priority and Alphabetical without
+rewriting the index. Task-file-modified ordering, the buffered `m` metadata
+workspace, and Shift-Up/Down priority adjustment remain planned. All future
+saves must remain atomic bounded edits of the selected project section.
 Registry symlinks remain authoritative for project membership and task-file
 resolution. See [`docs/ptui.md`](ptui.md) for the full specification, metadata
 shape, sort semantics, safety rules, and delivery order.
@@ -388,14 +388,14 @@ something different in its third column:
 |----------------|---------------------|--------------------|
 | Title          | `Project navigator` | `Change directory` |
 | Row label      | `PROJ`              | `CD`               |
-| Third column   | open task count     | effective directory count and project location |
+| Row detail     | priority, open-task count, description | effective directory count and project location |
 
 ```text
 Project navigator                                  Registry: ~/tmpsorta/proj2026
 ~/src/elusync  ·  todo.org
 
-▶  1  PROJ    elusync       3 open
-   2  PROJ    elweek        1 open
+▶  1  PROJ    [A] elusync       3 open  Data synchronization tools
+   2  PROJ    [ ] elweek        1 open  Weekly Electorama production
 ```
 
 ```text
