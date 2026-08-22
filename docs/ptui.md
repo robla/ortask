@@ -133,19 +133,20 @@ dirty-state reporting, and save behavior cannot disagree.
 The two write mechanisms now share stale-source protection, while retaining
 different transaction scopes:
 
-| | `taskui.OrgBuffer` | `manager.plan_/apply_registry_directories_update` |
+| | `TextFileBuffer` via `taskui.OrgBuffer` | `manager.plan_/apply_registry_directories_update` |
 |---|---|---|
 | Buffering, undo/redo, dirty state | yes | no |
 | Auto-save sibling | yes (`#projects.org#`) | no |
 | Preimage check before writing | yes | yes |
 | Scope of the write | exact buffered file built from bounded edits | one bounded section |
 
-As of `t0035.3`, `ptui` holds one `OrgBuffer` over `projects.org` for the whole
-session. Priority operations replace only the matched heading line in that
-buffer; unrelated source remains byte-identical. `save()` rereads the file and
-requires it to match the saved baseline exactly before atomically writing the
-buffer. `manager.apply_registry_directories_update` retains its independent
-bounded rewrite and the same preimage rule.
+As of `t0035.3`, `ptui` holds one `taskui.OrgBuffer` adapter over
+`projects.org` for the whole session. As of `t0038.1`, its transactional state
+machine is the peer `textbuffer.TextFileBuffer`; the adapter supplies ortask's
+writer, auto-save naming, and activity observer. Priority operations replace
+only the matched heading line in that buffer; unrelated source remains
+byte-identical. `save()` rereads the file and requires it to match the saved
+baseline exactly before atomically writing the buffer.
 
 The case to design against is concrete: `ptui` open in one terminal with a
 dirty priority edit, `pmgr set-dirs` run in another, then `C-s`.
@@ -167,14 +168,15 @@ alert. Refusal remains correct for what a merge cannot handle.
 The merge has three exact-text inputs:
 
 - **Base** is the `projects.org` text read at the last load, save, or successful
-  reconciliation. In `OrgBuffer` this is the saved disk baseline.
+  reconciliation. In `TextFileBuffer` this is the saved disk baseline.
 - **Ours** is the current in-memory buffer, including unsaved `ptui` edits.
 - **Theirs** is a fresh read of `projects.org` after external change detection.
 
 The project-specific planner belongs in `ortasklib.manager`, using the source
-spans exposed by `orglib`; `OrgBuffer` owns only file observation, buffer state,
-undo, auto-save, and save orchestration. This keeps a future task-file merger
-possible without teaching the generic buffer about registry structure.
+spans exposed by `orglib`; `TextFileBuffer` owns only file observation, buffer
+state, undo, auto-save, and save orchestration. This keeps a future task-file
+merger possible without teaching the generic buffer about Org or registry
+structure.
 
 As of `t0037.2`, `manager.plan_project_index_merge()` implements the pure
 planner. It receives Base, Ours, and Theirs and returns an immutable
@@ -227,7 +229,8 @@ reconciliation succeeds after another external change.
 
 Two consequences, both decided:
 
-- **The auto-save sibling stays.** `OrgBuffer` writes `#projects.org#` into the
+- **The auto-save sibling stays.** The `OrgBuffer` adapter configures
+  `TextFileBuffer` to write `#projects.org#` into the
   registry root for crash recovery. It disturbs no discovery — its suffix is
   `.org#`, so neither `discover_projects` nor the single-generic-`.org`
   fallback sees it — and it is reserved in `docs/config.md` alongside `log/`,
@@ -260,5 +263,6 @@ people open in Emacs, so the cookie wins anyway.
    done).
 4. Add the pure project-section merge planner (`t0037.2`, done).
 5. Reconcile the open buffer and expose conflicts (`t0037.3`, done).
-6. Add the `m` metadata workspace and bounded save path.
-7. Add modified-time sorting and the task-file mirror diagnostics.
+6. Isolate the format-neutral transactional buffer (`t0038.1`, done).
+7. Add the `m` metadata workspace and bounded save path.
+8. Add modified-time sorting and the task-file mirror diagnostics.

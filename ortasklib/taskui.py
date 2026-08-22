@@ -15,6 +15,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from textbuffer import (
+    BufferChangedError,
+    BufferTransaction,
+    DiskSignature,
+    ExternalFileChange,
+    TextFileBuffer,
+)
+
 try:
     from prompt_toolkit.document import Document
     from prompt_toolkit.formatted_text import FormattedText
@@ -52,74 +60,17 @@ class MenuItem:
     line_num: int | None = None
 
 
-# Extraction seam (t0038.1): the file-buffer types below are text mechanics,
-# not Org or TUI policy. Keep new parsing, project rules, and view behavior out
-# so they can move behind injected write/save hooks without dragging taskui.
 def autosave_path_for(path: Path) -> Path:
     """Emacs-style auto-save sibling: ``todo.org`` -> ``#todo.org#``."""
     return path.parent / f"#{path.name}#"
 
 
-@dataclass(frozen=True)
-class BufferTransaction:
-    """One logical, reversible edit to an :class:`OrgBuffer`."""
-
-    before: str
-    after: str
-    description: str
-
-
-@dataclass(frozen=True)
-class DiskSignature:
-    """Cheap change hint for a file whose contents remain authoritative."""
-
-    device: int
-    inode: int
-    size: int
-    mtime_ns: int
-
-
-@dataclass(frozen=True)
-class ExternalFileChange:
-    """One disk state that cannot yet be absorbed into a dirty buffer."""
-
-    kind: str
-    path: Path
-    text: str | None = None
-    signature: DiskSignature | None = None
-    detail: str | None = None
-
-    @property
-    def summary(self) -> str:
-        if self.kind == "changed":
-            return "contents changed externally"
-        if self.kind == "missing":
-            return "file is missing"
-        suffix = f": {self.detail}" if self.detail else ""
-        return f"file is unreadable{suffix}"
-
-
-class BufferChangedError(OSError):
-    """The real file no longer matches the buffer's saved preimage."""
-
-    def __init__(self, path: Path, detail: str | None = None) -> None:
-        message = f"{path}: changed since the editing buffer was loaded"
-        if detail:
-            message += f" ({detail})"
-        super().__init__(message)
-        self.path = path
-
-
-class OrgBuffer:
+class OrgBuffer(TextFileBuffer):
     """In-memory editing buffer for one Org file, with Emacs-style auto-save.
 
-    Reads come from the in-memory text; :meth:`apply` updates it and mirrors the
-    new content to the auto-save sibling (``#name#``) for crash recovery. The
-    real file is written only by :meth:`save`. Each apply is one logical undo
-    transaction; save, discard, and reload clear history. :meth:`discard` drops
-    pending changes (and the auto-save file) without touching the real file.
-    This is the interactive editing model (t0006); the one-shot CLI still writes
-    immediately.
+    This compatibility adapter supplies Org line conversion, the Emacs-style
+    auto-save name, ortask's atomic writer, and best-effort activity logging to
+    the format-neutral :class:`textbuffer.TextFileBuffer` state machine.
     """
 
     def __init__(
@@ -129,37 +80,14 @@ class OrgBuffer:
         project: str | None = None,
         registry: Path | None = None,
     ) -> None:
-        self.path = path
         self.project = project
         self.registry = registry
-        self.autosave_path = autosave_path_for(path)
-        self._saved_text = self._read_disk_text()
-        self._text = self._saved_text
-        self._disk_signature: DiskSignature | None = self._read_disk_signature()
-        self.external_change: ExternalFileChange | None = None
-        self.dirty = False
-        self._undo_stack: list[BufferTransaction] = []
-        self._redo_stack: list[BufferTransaction] = []
-
-    def read(self) -> str:
-        return self._text
-
-    @property
-    def saved_text(self) -> str:
-        """Exact disk baseline used for stale checks and future reconciliation."""
-        return self._saved_text
-
-    @property
-    def can_undo(self) -> bool:
-        return bool(self._undo_stack)
-
-    @property
-    def can_redo(self) -> bool:
-        return bool(self._redo_stack)
-
-    @property
-    def undo_count(self) -> int:
-        return len(self._undo_stack)
+        super().__init__(
+            path,
+            autosave_path=autosave_path_for(path),
+            atomic_write=core.atomic_write,
+            on_save=self._record_save,
+        )
 
     def apply(
         self,
@@ -179,231 +107,17 @@ class OrgBuffer:
         *,
         description: str = "Edit Org file",
     ) -> bool:
-        """Record an exact-text logical edit and refresh the auto-save file."""
-        if text == self._text:
-            return False
-        transaction = BufferTransaction(self._text, text, description)
-        self._undo_stack.append(transaction)
-        self._redo_stack.clear()
-        self._set_text(text)
-        return True
+        """Keep the historical Org-specific default transaction label."""
+        return super().apply_text(text, description=description)
 
-    def recover(self, text: str) -> None:
-        """Adopt recovered auto-save ``text`` as the (dirty) buffer contents."""
-        self._clear_history()
-        if text != self._text:
-            transaction = BufferTransaction(
-                self._text,
-                text,
-                "Recover auto-save data",
-            )
-            self._undo_stack.append(transaction)
-            self._set_text(text)
-
-    def undo(self) -> str | None:
-        """Undo one logical edit and return its description."""
-        if not self._undo_stack:
-            return None
-        transaction = self._undo_stack.pop()
-        self._redo_stack.append(transaction)
-        self._set_text(transaction.before)
-        return transaction.description
-
-    def redo(self) -> str | None:
-        """Redo one logical edit and return its description."""
-        if not self._redo_stack:
-            return None
-        transaction = self._redo_stack.pop()
-        self._undo_stack.append(transaction)
-        self._set_text(transaction.after)
-        return transaction.description
-
-    def _set_text(self, text: str) -> None:
-        self._text = text
-        self.dirty = text != self._saved_text
-        if self.dirty:
-            core.atomic_write(self.autosave_path, text)
-        else:
-            self._remove_autosave()
-
-    def _read_disk_text(self) -> str:
-        return self.path.read_text(encoding="utf-8")
-
-    def _read_disk_signature(self) -> DiskSignature:
-        stat = self.path.stat()
-        return DiskSignature(
-            device=stat.st_dev,
-            inode=stat.st_ino,
-            size=stat.st_size,
-            mtime_ns=stat.st_mtime_ns,
-        )
-
-    def _remember_external_problem(
-        self,
-        kind: str,
-        exc: OSError | UnicodeError,
-        signature: DiskSignature | None = None,
-    ) -> ExternalFileChange:
-        change = ExternalFileChange(
-            kind=kind,
-            path=self.path,
-            signature=signature,
-            detail=str(exc),
-        )
-        self.external_change = change
-        return change
-
-    def _adopt_disk_text(self, text: str, signature: DiskSignature) -> None:
-        """Replace a clean buffer with a newly observed disk revision."""
-        self._saved_text = text
-        self._text = text
-        self._disk_signature = signature
-        self.external_change = None
-        self.dirty = False
-        self._clear_history()
-        self._remove_autosave()
-
-    def check_external_change(
-        self, *, force: bool = False
-    ) -> ExternalFileChange | None:
-        """Observe disk changes without overwriting local edits.
-
-        File metadata is only a polling hint. A changed hint triggers an exact
-        read; ``force`` always performs that read and is required before save.
-        Clean buffers adopt changed disk text. Dirty buffers retain Base/Ours
-        and expose Theirs through :attr:`external_change` for reconciliation.
-        """
-        try:
-            signature = self._read_disk_signature()
-        except FileNotFoundError as exc:
-            return self._remember_external_problem("missing", exc)
-        except OSError as exc:
-            return self._remember_external_problem("unreadable", exc)
-
-        pending = self.external_change
-        if not force:
-            if pending is not None and pending.signature == signature:
-                if self.dirty:
-                    return pending
-                if pending.kind == "changed" and pending.text is not None:
-                    self._adopt_disk_text(pending.text, signature)
-                    return None
-                return pending
-            if pending is None and signature == self._disk_signature:
-                return None
-
-        try:
-            disk_text = self._read_disk_text()
-        except (OSError, UnicodeError) as exc:
-            return self._remember_external_problem(
-                "unreadable", exc, signature
-            )
-
-        if disk_text == self._saved_text:
-            self._disk_signature = signature
-            self.external_change = None
-            return None
-        if not self.dirty:
-            self._adopt_disk_text(disk_text, signature)
-            return None
-
-        change = ExternalFileChange(
-            kind="changed",
-            path=self.path,
-            text=disk_text,
-            signature=signature,
-        )
-        self.external_change = change
-        return change
-
-    def rebase_external_change(
-        self,
-        change: ExternalFileChange,
-        merged_text: str,
-        *,
-        description: str = "Reapply edits after external changes",
-    ) -> bool:
-        """Adopt Theirs as Base and retain merged local work as one transaction.
-
-        This changes only the in-memory buffer and its auto-save sibling. The
-        caller must pass the exact pending observation it planned against, so a
-        superseded or non-content disk state cannot be rebased accidentally.
-        """
-        if change != self.external_change:
-            raise ValueError("external change is no longer current")
-        if change.kind != "changed" or change.text is None:
-            raise ValueError(f"cannot rebase external state: {change.kind}")
-        if change.signature is None:  # pragma: no cover - changed always has one
-            raise ValueError("cannot rebase an external change without a signature")
-
-        theirs = change.text
-        self._saved_text = theirs
-        self._text = theirs
-        self._disk_signature = change.signature
-        self.external_change = None
-        self.dirty = False
-        self._clear_history()
-        if merged_text == theirs:
-            self._remove_autosave()
-            return False
-
-        self._undo_stack.append(
-            BufferTransaction(theirs, merged_text, description)
-        )
-        self._set_text(merged_text)
-        return True
-
-    def save(self) -> None:
-        """Write only if the real file still matches the saved preimage."""
-        change = self.check_external_change(force=True)
-        if change is not None:
-            raise BufferChangedError(self.path, change.summary)
-        previous = self._saved_text
-        core.atomic_write(self.path, self._text)
+    def _record_save(self, previous: str, current: str, path: Path) -> None:
         eventlog.record_task_edits(
             previous,
-            self._text,
-            self.path,
+            current,
+            path,
             project=self.project,
             registry=self.registry,
         )
-        self._saved_text = self._text
-        try:
-            self._disk_signature = self._read_disk_signature()
-        except OSError:
-            # The write succeeded; force an exact read on the next observation.
-            self._disk_signature = None
-        self.external_change = None
-        self.dirty = False
-        self._clear_history()
-        self._remove_autosave()
-
-    def discard(self) -> None:
-        """Drop pending changes and the auto-save; leave the real file as-is."""
-        self._text = self._saved_text
-        self.dirty = False
-        self._clear_history()
-        self._remove_autosave()
-
-    def reload(self) -> None:
-        """Re-read the real file (e.g. after an external editor) as clean."""
-        self._saved_text = self._read_disk_text()
-        self._text = self._saved_text
-        self._disk_signature = self._read_disk_signature()
-        self.external_change = None
-        self.dirty = False
-        self._clear_history()
-        self._remove_autosave()
-
-    def _clear_history(self) -> None:
-        self._undo_stack.clear()
-        self._redo_stack.clear()
-
-    def _remove_autosave(self) -> None:
-        try:
-            self.autosave_path.unlink()
-        except FileNotFoundError:
-            pass
 
 
 def buffer_status(buf: OrgBuffer) -> str:

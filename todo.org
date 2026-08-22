@@ -339,7 +339,9 @@ directory-stack controls. Require an already migrated registry index. Decided
 it and =cdproj='s =e= — which opens the index in =$VISUAL= at the project's
 section (=docs/cdproj.md=) — are two entrances to one bounded region and must
 share =t0035.3='s transaction path, external editor included. Two independent
-writers for one section is the outcome to avoid.
+writers for one section is the outcome to avoid. Build on =t0038.1='s
+=taskui.OrgBuffer= adapter; do not create transaction or source-patching state
+inside the metadata view.
 *** TODO [#B] t0035.5 Add modified sorting and task-file mirror diagnostics
 Add newest-task-file-first sorting with unreadable or absent files last.
 Display disagreements between the non-normative =TASK_FILE= mirror and the
@@ -414,7 +416,7 @@ or TUI; project-index policy maps generic conflicts to registry concepts.
 This complements =t0020=: that task routes existing parsing calls, while this
 one prevents new parsing and reconciliation machinery from accumulating in the
 old package.
-*** TODO [#B] t0038.1 Isolate the format-neutral file buffer
+*** DONE [#B] t0038.1 Isolate the format-neutral file buffer
 Move =BufferTransaction=, =DiskSignature=, =ExternalFileChange=,
 =BufferChangedError=, exact-preimage checking, undo/redo, and rebasing out of
 =taskui.py= into a text-file buffer module. Make atomic writing, auto-save

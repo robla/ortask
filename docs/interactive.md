@@ -147,9 +147,10 @@ the triangle is part of the highlight bar when that task is selected.
 
 ### Editing buffer (auto-save and save-on-exit)
 
-Each file's task menu runs against a `taskui.OrgBuffer`, modeled on Emacs
-(t0006). Task-list edits are buffered, while an explicit task-workspace save
-writes the complete current buffer:
+Each file's task menu runs against a `taskui.OrgBuffer` compatibility adapter
+over the format-neutral `textbuffer.TextFileBuffer`, modeled on Emacs (t0006).
+Task-list edits are buffered, while an explicit task-workspace save writes the
+complete current buffer:
 
 - Each task-list state or priority action is one labeled `OrgBuffer`
   transaction. It updates the in-memory buffer and mirrors it to an **auto-save

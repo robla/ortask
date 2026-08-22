@@ -621,9 +621,10 @@ between the tools.
 
 Its contents also do not divide the way the filename suggests. About 105 lines
 (`InteractiveProjectController`, `project_menu`) are the project browser.
-Everything else — `OrgBuffer`, the task list, the issue workspace,
-`InteractiveTaskController` — is the `orti` surface, which has nothing to do
-with projects and is the subject of `t0016`.
+Everything else was the `orti` surface: the task list, issue workspace,
+`InteractiveTaskController`, and the former in-module `OrgBuffer`. The generic
+buffer state now lives in peer `textbuffer.py`; `taskui.OrgBuffer` is its thin
+Org/logging compatibility adapter.
 
 So:
 

@@ -1,9 +1,9 @@
 # Architecture
 
-This document describes the split between the user-facing scripts and the
-shared `ortasklib` package. The goal was to move reusable parsing, discovery,
-and project-management behavior out of the top-level scripts so features can be
-added without growing three coupled scripts.
+This document describes the split between the user-facing scripts,
+application-specific `ortasklib`, and the peer `orglib` and `textbuffer`
+boundaries. The goal is to add features without growing coupled scripts or one
+indivisible application package.
 
 **Status:** implemented. There are two scripts, neither importing the other;
 both import from `ortasklib`. The `docs/testing.md` suite runs unchanged as the
@@ -24,6 +24,7 @@ project browser folded into `projmgr.py`.
 orglib/
   __init__.py
   syntax.py
+textbuffer.py
 ortasklib/
   __init__.py
   core.py
@@ -36,23 +37,25 @@ ortask.py
 projmgr.py
 ```
 
-`ortasklib/` is the package name because a directory named `ortask/` would
-collide with the existing `ortask.py` executable module. If the scripts are
-later moved under `bin/` or renamed, the package can be renamed to `ortask/`.
+`textbuffer.py` is deliberately a peer module rather than another
+`ortasklib` concern. `ortasklib/` is the package name because a directory named
+`ortask/` would collide with the existing `ortask.py` executable module. If the
+scripts are later moved under `bin/` or renamed, the package can be renamed to
+`ortask/`.
 
 ## Dependency Graph
 
 ```text
-orglib  (stdlib only, depends on nothing)
-  ^
-  |
-core
-  ^ ^ ^
-  | | |
-tasks manager menu
-  ^     ^      ^
-  |     |      |
-  +--- taskui -+
+orglib (stdlib only)       textbuffer.py (stdlib + injected hooks)
+  ^                                      ^
+  |                                      |
+core                                     |
+  ^ ^ ^                                  |
+  | | |                                  |
+tasks manager menu                       |
+  ^     ^      ^                         |
+  |     |      |                         |
+  +--- taskui -+-------------------------+
         ^   ^
         |   |
  ortask.py  projmgr.py
@@ -61,7 +64,10 @@ tasks manager menu
 No script imports another script. `orglib` sits at the bottom and imports
 nothing at all — not `ortasklib`, not any third-party package. `core` depends
 only on `orglib`; `tasks` and `manager` depend on `core`; `taskui` composes
-`core`, `tasks`, `menu`, and the `Project` record from `manager`.
+`core`, `tasks`, `menu`, the `Project` record from `manager`, and the
+format-neutral buffer from `textbuffer.py`. `textbuffer.py` imports only the
+standard library; callers inject atomic writing, auto-save location, and save
+notification.
 
 `manager` and `projmgr.py` also import `orglib` directly, for the read paths
 already routed through the `Document` boundary. That is the direction new
@@ -137,6 +143,19 @@ package. The dependency runs `ortasklib` → `orglib` only, which is what allows
 different Org backend to be substituted later without `ortasklib` knowing.
 `tests/test_ortask_suite.py::test_orglib_imports_without_ortasklib` enforces the
 direction by importing `orglib` in a subprocess with `ortasklib` blocked.
+
+## `textbuffer.py`
+
+Format-neutral transactional editing for one UTF-8 file. `TextFileBuffer`
+owns exact-text dirty state, undo/redo, auto-save mirroring, external-change
+observation, rebasing, and final preimage checks. It knows nothing about Org,
+projects, activity logs, prompt_toolkit, or application menus.
+
+`taskui.OrgBuffer` remains the compatibility adapter used by `orti` and
+`ptui`. It supplies `core.atomic_write`, the Emacs-style `#name#` auto-save
+path, line-list conversion, and a post-save activity observer. Direct tests
+import `textbuffer` with `orglib`, `ortasklib`, and prompt_toolkit blocked so
+this boundary cannot silently collapse.
 
 ## `tasks.py`
 
@@ -240,9 +259,10 @@ whether Back should push its bounded save/discard view, and how accepted task
 text is validated and buffered.
 `projmgr._ProjectBrowser` supplies the project root, attaches task
 controllers beneath it, and restores stable project selection on return. Its
-poll callback asks the generic `taskui.OrgBuffer` for external file changes;
-the buffer uses device/inode/size/mtime only as a hint, retains exact Base/Ours/
-Theirs text for dirty changes, and repeats the exact comparison before save.
+poll callback asks the `taskui.OrgBuffer` adapter for external file changes;
+its `textbuffer.TextFileBuffer` base uses device/inode/size/mtime only as a
+hint, retains exact Base/Ours/Theirs text for dirty changes, and repeats the
+exact comparison before save.
 The browser passes those texts to `manager.plan_project_index_merge()`. On
 success, `OrgBuffer.rebase_external_change()` adopts Theirs as the saved
 baseline and retains the merge as one undoable, auto-saved transaction without
@@ -287,9 +307,8 @@ historical private aliases `_find_tasks_range`, `_build_org_heading`,
 
 - Split `menu.py`: it still holds rendering, session lifecycle, and plain-text
   dashboards in one module. See the Risks section of `docs/roadmap.md`.
-- Consider whether `taskui.py` should divide further now that it is a library
-  module rather than a script: the buffer, the task list, and the issue
-  workspace are three concerns in one file.
+- Consider whether `taskui.py` should divide the remaining task-list and issue
+  workspace concerns now that the file buffer has moved to `textbuffer.py`.
 - Consider repointing the test suite to import from `ortasklib` directly and
   retiring the `ortask.py` compatibility re-exports.
 
