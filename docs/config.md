@@ -2,11 +2,11 @@
 
 Everything the suite reads at startup, and where each piece of it lives.
 
-The organizing rule: **there is exactly one machine-global setting, and it is
-the location of the registry.** Everything else is a file in the tree, found by
-looking where you already are. That is deliberate. A tool whose behavior depends
-on hidden state is one you cannot reason about from a shell prompt, and the
-registry is the smallest possible seed from which the rest can be discovered.
+The organizing rule: **there is one machine-global location, the registry, plus
+one opt-in boolean for the derived activity log.** Everything else is a file in
+the tree, found by looking where you already are. A tool whose behavior depends
+on hidden state is hard to reason about from a shell prompt, so the registry
+remains the seed from which paths and project settings are discovered.
 
 See `docs/projects.md` for what a registry *is*, `docs/cdproj.md` for the
 directory stack, and `docs/format.md` for the Org conventions themselves.
@@ -16,6 +16,7 @@ directory stack, and `docs/format.md` for the Org conventions themselves.
 | Setting | Lives in | Read by | Shared or machine-local |
 |---|---|---|---|
 | Where the registry is | `~/.config/ortask/ortask.ini` | both tools | machine-local |
+| Whether event logging is enabled | `[log] enabled` in `ortask.ini` | write commands | machine-local |
 | Which projects exist | symlinks in registry subdirectories | `projmgr.py` | the registry's own repo, if it has one |
 | Which task file a project uses | the entry's `.org` symlink, else discovery | both tools | same |
 | A project's shared directory stack | `* Directories` in its task file | `projmgr.py cdproj` | the project's own repo |
@@ -29,11 +30,15 @@ be set from the upper ones.
 ## `ortask.ini`
 
 The only global configuration file. It honors `$XDG_CONFIG_HOME`, defaulting to
-`~/.config/ortask/ortask.ini`, and it currently holds exactly one option:
+`~/.config/ortask/ortask.ini`. The registry is required only when overriding
+the default; logging is an optional second section:
 
 ```ini
 [projects]
 registry = ~/Projects
+
+[log]
+enabled = true
 ```
 
 Resolution order for the registry is `--registry` on the command line, then
@@ -51,15 +56,19 @@ overwrite an existing value). Writing goes through the same atomic replace as
 Org edits, so an interrupted write cannot leave a half-file. Hand-editing is
 equally supported — it is an ini file, and nothing caches it.
 
-There is no other section and no other option. If a future setting has a
-sensible per-project answer, it belongs in Org where the user can see it;
-`ortask.ini` is for what must be known *before* any project can be found.
+Absent `[log] enabled` means false. The log location is not another setting: it
+is `<registry>/log`, with `ORTASK_LOG_DIR` available for tests and one-off
+overrides. `projmgr.py init` updates `[projects] registry` while preserving the
+`[log]` section. Future settings with sensible per-project answers still belong
+in Org where the user can see them.
 
 ## Environment variables
 
 | Variable | Effect |
 |---|---|
 | `ORTASK_FILE` | The task file `ortask.py` acts on. Beats the upward walk; loses to `--file`. |
+| `ORTASK_LOG` | `on` or `off`; overrides `[log] enabled`. |
+| `ORTASK_LOG_DIR` | Override `<registry>/log` for event reads and writes. |
 | `XDG_CONFIG_HOME` | Relocates `ortask.ini` (to `$XDG_CONFIG_HOME/ortask/`). |
 | `ORTASK_PROJMGR` | Path to `projmgr.py` for `misc/cdproj.func.sh` and the completion script, when it is not on `PATH`. Shell-side only; no Python reads it. |
 | `VISUAL`, `EDITOR` | Which editor `ortask.py open` launches, `VISUAL` first. |
@@ -302,6 +311,7 @@ is already complete and the command succeeds without changing it. Only
 ### Reserved names
 
 - `projects.org` at the registry root — the index.
+- `log/` at the registry root — monthly disposable JSON Lines activity files.
 - `*-private.org` — the superseded per-entry scheme (`docs/projects.md`).
   Retained as a reserved suffix so a converted registry can still exclude any
   such leftovers with one gitignore line.

@@ -231,7 +231,7 @@ scheme for both, whether the pair collapses into one verb with a
 subject, and what =repair= promises before =t0004= and =t0008= build
 on it. Blocks the question in =docs/logging.md= of whether their
 findings are logged.
-** TODO t0033 Implement the ortask event log
+** DONE t0033 Implement the ortask event log
 The event log specified in =docs/logging.md=: an append-only JSON Lines record
 of what the tools did, at =<registry>/log/YYYY-MM.jsonl= beside =projects.org=,
 read back through =ort log=. It is derived and disposable — nothing may read it
@@ -239,7 +239,7 @@ to decide a task's state. Two follow-ups are deliberately not subtasks here:
 per-project =:LOG:= control waits for the =projects.org= property drawer in
 =docs/ptui.md=, and merging Org's own =CLOSED:=/=:LOGBOOK:= timestamps so that
 edits made in Emacs are visible is a separate decision.
-*** TODO t0033.1 Add ortasklib/log.py and the append-only writer
+*** DONE t0033.1 Add ortasklib/log.py and the append-only writer
 New =ortasklib/log.py= exposing =record(event)= and a settable sink for tests,
 and nothing else. The path is =<registry>/log/YYYY-MM.jsonl= derived from
 =manager.resolve_registry()=; =[log] enabled= in =ortask.ini= gates it and an
@@ -251,7 +251,7 @@ caller and never create the registry. Tests: off by default, on via ini and via
 env, the field set from =docs/logging.md=, truncation at the cap, a missing
 registry logs nothing, a write failure leaves the exit code alone, and two
 processes appending concurrently produce two intact lines.
-*** TODO t0033.2 Emit events from the task and project write paths
+*** DONE t0033.2 Emit events from the task and project write paths
 Call =log.record()= from the points that commit a change: =cmd_add=,
 =cmd_done=, =cmd_open=, =cmd_archive=, =cmd_apply=, and =cmd_init= in
 =ortask.py=; =cmd_add=, =cmd_rm=, =cmd_set_dirs=, and =cmd_migrate= in
@@ -262,14 +262,14 @@ must not have logged. Tests: one event per verb carrying the documented fields,
 =archive= of three tasks emitting three events under one =session=,
 =list=/=show=/=doctor=/=repair= emitting nothing, and a discarded TUI edit
 emitting nothing.
-*** TODO t0033.3 Log cdproj as a deliberate project switch
+*** DONE t0033.3 Log cdproj as a deliberate project switch
 =pmgr cdproj= records the switch and the resolved stack; opening =ptui= and
 scrolling records nothing. The test is deliberate act versus looking around
 (=docs/logging.md=). All three routes into a stack — the picker, =cdproj
 PROJECT=, and the numbered fallback — already share =write_selection()=, so one
 call site covers them. Tests: each route logs exactly one event, cancelling the
 picker logs nothing, and browsing the navigator logs nothing.
-*** TODO t0033.4 Add the ort log and pmgr log readers
+*** DONE t0033.4 Add the ort log and pmgr log readers
 =ort log= and =pmgr log=, registered alphabetically across both parsers,
 dispatch tables, help, and =misc/ortask-completion.bash=. Flags per
 =docs/logging.md=: =--since=, =--until=, =--all= (=ort=), =--project= (=pmgr=),
@@ -281,7 +281,7 @@ json= must be a byte-identical passthrough of the matching lines, since that is
 the extension contract; no =zim= format belongs here. Tests: each =WHEN= form,
 the day boundary with and without =--day-start=, scoping for both tools,
 passthrough fidelity, and a range spanning two monthly files.
-*** TODO t0033.5 Reserve log/ in the registry and document the configuration
+*** DONE t0033.5 Reserve log/ in the registry and document the configuration
 =pmgr doctor= reports any unrecognized registry subdirectory as a note (=docs:
 not a project entry, ignored=); teach it that =log/= is expected and say
 nothing. Add =log/= to the reserved names in =docs/config.md= beside

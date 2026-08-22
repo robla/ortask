@@ -27,6 +27,7 @@ orglib/
 ortasklib/
   __init__.py
   core.py
+  log.py
   tasks.py
   manager.py
   menu.py
@@ -67,6 +68,10 @@ already routed through the `Document` boundary. That is the direction new
 callers should follow: reach for `orglib` rather than `core` when the need is
 parsing rather than files.
 
+`log` composes registry resolution from `manager`, task snapshots from
+`orglib`, and ID canonicalization from `core`. The scripts and `taskui` call it
+only after successful writes; no lower-level text mutation helper imports it.
+
 ## Script Responsibilities
 
 The top-level scripts are thin command/front-end layers. They own argument
@@ -74,13 +79,13 @@ parsing, user prompts, process exit codes, and human-readable output. Shared
 modules never call `sys.exit()` or parse CLI arguments.
 
 - `ortask.py` — local task commands (`add`, `apply`, `archive`, `done`, `init`,
-  `list`, `open`, `repair`, `show`). Each `cmd_*` reads or initializes the file,
+  `list`, `log`, `open`, `repair`, `show`). Each `cmd_*` reads or initializes the file,
   calls a `tasks`/`core` helper,
   translates the result (and `TaskNotFound`) into output and an exit code, and
   uses the shared atomic writers for replacements; `init` creates a missing
   path exclusively so it cannot overwrite a concurrent file.
 - `projmgr.py` — project-layer commands (`add`, `cdproj`, `doctor`, `init`,
-  `list`, `migrate`, `rm`, `set-dirs`) plus `-i`; `projadd` is a deprecated
+  `list`, `log`, `migrate`, `rm`, `set-dirs`) plus `-i`; `projadd` is a deprecated
   alias. `cmd_list` calls `manager.summarize_projects()` and formats the
   records. It owns the project list itself: `_project_rows`,
   `_project_location`, `_anchor_index`, and `_project_view` are shared by the
@@ -177,6 +182,23 @@ paths agree on the same project list.
 project when it points outward (a symlink to a directory, or failing that to an
 Org file). A task file is optional, and broken or ambiguous entries carry a
 `warning` rather than disappearing.
+
+## `log.py`
+
+Best-effort event logging and read-side activity queries:
+
+- schema-1 event construction with local offset timestamps and command sessions
+- opt-in `[log] enabled` plus environment overrides
+- one-call `O_APPEND` JSON Lines writes capped at 4096 bytes
+- registry project inference for local task files
+- `WHEN` parsing, half-open range filtering, project/file scoping, and limits
+- unchanged JSON passthrough plus plain and Org renderers
+- saved-buffer task diffs for TUI `edit` events
+
+The log is derived and disposable. Every exception in the write and TUI-diff
+paths is contained so logging cannot change a command's result. CLI adapters
+create events after their authoritative write succeeds; `tasks.py` remains
+side-effect free. See `docs/logging.md`.
 
 ## `menu.py`
 

@@ -8,6 +8,7 @@ Splits reusable behavior out of the top-level scripts:
                 line-level edit/validation helpers used by ``ortask.py``.
 - ``manager`` — project config/discovery and multi-project summaries used by
                 ``ortask.py`` and ``projmgr.py``.
+- ``log``     — disposable append-only activity events and read-side filters.
 - ``menu``    — dashboard row models, Rich/plain rendering helpers, and shared
                 prompt cancellation for interactive tools.
 

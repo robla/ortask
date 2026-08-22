@@ -55,6 +55,9 @@ Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
 # open the interactive project browser
 ./projmgr.py -i
 
+# show today's recorded activity (after opting in; see docs/logging.md)
+./ortask.py log --all --since today
+
 # check for ID problems (dry run)
 ./ortask.py repair --dry-run
 
@@ -122,4 +125,5 @@ Python 3.10+ (standard library only, no dependencies).
 - [[file:docs/adjacent-trackers.md][Adjacent trackers]] — survey of related tools
 - [[file:docs/naming.md][Naming analysis]] — how we picked the name
 - [[file:docs/interactive.md][Interactive workflow]] — local and project task menus
+- [[file:docs/logging.md][Activity logging]] — opt-in event writer and log readers
 - [[file:docs/ecosystem.md][Ortask ecosystem]] — shared direction for ortask, castabout, and related tools

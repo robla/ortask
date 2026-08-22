@@ -99,6 +99,14 @@ python3 -m pytest -q
 The first seven tests should pass before moving code out of `ortask.py`; the
 manager and smoke tests should pass before removing script-to-script imports.
 
+## Activity Log Gate
+
+`tests/test_logging.py` uses temporary registries and log directories to cover
+opt-in configuration, config preservation, UTF-8 truncation, concurrent
+appenders, every documented `WHEN` form, multi-month filtering, raw JSON
+passthrough, task/project write events, `cdproj`, and TUI save versus discard.
+No test enables logging against the configured user registry.
+
 ## Interactive PTY Gate
 
 Interactive rendering also has a POSIX PTY regression using only temporary Org

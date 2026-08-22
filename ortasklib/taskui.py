@@ -36,7 +36,7 @@ except ImportError:  # pragma: no cover - optional interactive dependency
     Window = None
     TextArea = None
 
-from . import core, menu, tasks
+from . import core, log as eventlog, menu, tasks
 from .manager import Project, canonical_org_file, friendly_path
 
 
@@ -78,8 +78,16 @@ class OrgBuffer:
     immediately.
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        project: str | None = None,
+        registry: Path | None = None,
+    ) -> None:
         self.path = path
+        self.project = project
+        self.registry = registry
         self.autosave_path = autosave_path_for(path)
         self._saved_text = path.read_text(encoding="utf-8")
         self._text = self._saved_text
@@ -158,7 +166,15 @@ class OrgBuffer:
 
     def save(self) -> None:
         """Atomically write the real file and clear the auto-save."""
+        previous = self._saved_text
         core.atomic_write(self.path, self._text)
+        eventlog.record_task_edits(
+            previous,
+            self._text,
+            self.path,
+            project=self.project,
+            registry=self.registry,
+        )
         self._saved_text = self._text
         self.dirty = False
         self._clear_history()
@@ -664,14 +680,24 @@ TASK_MENU_ACTIONS = {
     "c-r": _REDO_MENU_ACTION,
 }
 
-def task_menu(project: Project, include_done: bool, *, dashboard: bool = True) -> None:
+def task_menu(
+    project: Project,
+    include_done: bool,
+    *,
+    dashboard: bool = True,
+    registry: Path | None = None,
+) -> None:
     org_file = canonical_org_file(project)
     if org_file is None:
         # A registered project need not have a task file yet; see
         # ``docs/projects.md``. There is simply nothing to open.
         print(f"{project.name}: no task file")
         return
-    buf = OrgBuffer(org_file)
+    buf = OrgBuffer(
+        org_file,
+        project=project.name if registry is not None else None,
+        registry=registry,
+    )
     if menu.interactive_select_available():
         _interactive_task_menu(project, buf, include_done)
         return

@@ -15,6 +15,7 @@ ortask.py done <id> [--file FILE]
 ortask.py help
 ortask.py [--file FILE] init
 ortask.py list [--todo | --done | --all] [--root-only] [--items N] [--format FORMAT] [--file FILE]
+ortask.py [--file FILE] log [--since WHEN] [--until WHEN] [--all] [--limit N] [--day-start HH:MM] [--format FORMAT]
 ortask.py open <id> [--file FILE]
 ortask.py repair [--dry-run | --fix] [--file FILE]
 ortask.py show <id> [--file FILE]
@@ -175,6 +176,37 @@ Print tasks. With no flags, prints all tasks in indented plain text.
 **--format** *FORMAT*
 :   Output format: `plain` (default), `json`, or `org`.
 
+### log
+
+```
+ortask.py log --since today
+ortask.py log --since 2026-08-21 --until 2026-08-22 --format org
+ortask.py log --all --limit 20
+```
+
+Read the disposable activity log described in `docs/logging.md`. By default,
+events are scoped to the resolved task file's registered project; an
+unregistered file is matched by canonical path. `--all` reads every project
+and does not require a local task file. Empty or missing logs produce no output
+and exit successfully.
+
+**--since**, **--until** *WHEN*
+:   Inclusive start and exclusive end. `WHEN` accepts `today`, `yesterday`,
+    `week`, `NNd`, `NNh`, `YYYY-MM-DD`, or an ISO timestamp. `week` begins at
+    the current Monday workday boundary.
+
+**--all**
+:   Do not restrict events to the local task file or its registered project.
+
+**--limit** *N*
+:   Select the newest *N* matches, then print them chronologically.
+
+**--day-start** *HH:MM*
+:   Move named day boundaries and Org date grouping from midnight.
+
+**--format** *FORMAT*
+:   `plain` (default), unchanged source `json` lines, or grouped `org` output.
+
 ### open
 
 ```
@@ -227,7 +259,9 @@ deadlines, and any subtasks.
 
     Ambiguous tiers produce an error instead of silently choosing
     alphabetically. `init` is the exception to automatic discovery: absent an
-    explicit or environment override, it uses `./tasks.org` directly.
+    explicit or environment override, it uses `./tasks.org` directly. `log
+    --all` is the other exception and needs no task file because it reads the
+    registry-wide activity stream.
 
 **-i, --interactive**
 :   Open the shared `taskui` task menu for the resolved local Org file instead of

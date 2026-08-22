@@ -640,7 +640,7 @@ front-ends over `ortasklib/`, with no script importing another script.
 ### Verbs
 
 `projmgr.py` verbs, alphabetical as usual: `add`, `cdproj`, `doctor`, `help`,
-`init`, `list`, `migrate`, `rm`.
+`init`, `list`, `log`, `migrate`, `rm`.
 
 - `add` replaces `projadd`, and is specified in `docs/projects.md`. The prefix
   was only ever there to disambiguate from local task verbs in a tool that also

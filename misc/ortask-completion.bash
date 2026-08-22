@@ -24,9 +24,10 @@ _ortask_complete()
         cword=$COMP_CWORD
     fi
 
-    local subcommands="add apply archive done help init list open repair show"
+    local subcommands="add apply archive done help init list log open repair show"
     local global_opts="-i --interactive --file --help"
     local list_opts="--todo --done --all --root-only --items --format --file --help"
+    local log_opts="--since --until --all --limit --day-start --format --file --help"
     local add_opts="--parent --file --help"
     local repair_opts="--dry-run --file --help"
     local apply_opts="--template --week --date --dry-run --file --help"
@@ -45,7 +46,7 @@ _ortask_complete()
             COMPREPLY=( $(compgen -f -- "$cur") )
             return 0
             ;;
-        --items|--parent|--week|--date)
+        --items|--parent|--week|--date|--since|--until|--limit|--day-start)
             return 0
             ;;
     esac
@@ -55,7 +56,7 @@ _ortask_complete()
     local i
     for ((i = 1; i < cword; i++)); do
         case "${words[i]}" in
-            --file|--items|--parent|--format|--template|--week|--date)
+            --file|--items|--parent|--format|--template|--week|--date|--since|--until|--limit|--day-start)
                 ((i++))
                 ;;
             --help|--todo|--done|--all|--root-only|--dry-run)
@@ -91,6 +92,9 @@ _ortask_complete()
                 ;;
             list)
                 COMPREPLY=( $(compgen -W "$list_opts" -- "$cur") )
+                ;;
+            log)
+                COMPREPLY=( $(compgen -W "$log_opts" -- "$cur") )
                 ;;
             repair)
                 COMPREPLY=( $(compgen -W "$repair_opts" -- "$cur") )
@@ -144,20 +148,26 @@ _projmgr_complete()
     fi
 
     # projadd remains a deprecated alias for add; migrate is a distinct verb.
-    local subcommands="add cdproj doctor help init list migrate projadd rm set-dirs"
+    local subcommands="add cdproj doctor help init list log migrate projadd rm set-dirs"
     local global_opts="-i --interactive --registry --todo-only --help"
     local add_opts="--name --file --registry --force --dry-run --help"
     local doctor_opts="--registry --help"
     local init_opts="--registry --force --dry-run --help"
     local list_opts="--all --format --help"
+    local log_opts="--since --until --project --limit --day-start --format --registry --help"
     local migrate_opts="--registry --dry-run --help"
     local cdproj_opts="--out --registry --help"
     local rm_opts="--registry --force --dry-run --help"
     local set_dirs_opts="--project --stdin --missing --registry --dry-run --help"
 
+    local format_values="plain json org" word
+    for word in "${words[@]}"; do
+        [[ "$word" == "list" ]] && format_values="plain json names"
+    done
+
     case "$prev" in
         --format)
-            COMPREPLY=( $(compgen -W "plain json names" -- "$cur") )
+            COMPREPLY=( $(compgen -W "$format_values" -- "$cur") )
             return 0
             ;;
         --missing)
@@ -172,13 +182,16 @@ _projmgr_complete()
             COMPREPLY=( $(compgen -f -- "$cur") )
             return 0
             ;;
+        --since|--until|--limit|--day-start)
+            return 0
+            ;;
     esac
 
     command=""
     local i
     for ((i = 1; i < cword; i++)); do
         case "${words[i]}" in
-            --registry|--file|--name|--format|--project|--missing)
+            --registry|--file|--name|--format|--project|--missing|--since|--until|--limit|--day-start)
                 ((i++))
                 ;;
             -i|--interactive|--todo-only|--help|--all|--force|--dry-run|--stdin)
@@ -217,6 +230,9 @@ _projmgr_complete()
                 ;;
             list)
                 COMPREPLY=( $(compgen -W "$list_opts" -- "$cur") )
+                ;;
+            log)
+                COMPREPLY=( $(compgen -W "$log_opts" -- "$cur") )
                 ;;
             migrate)
                 COMPREPLY=( $(compgen -W "$migrate_opts" -- "$cur") )

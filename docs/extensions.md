@@ -1,6 +1,7 @@
 # Extensions
 
-**Status: design, not implemented.** No extension mechanism exists today.
+**Status: pull interface implemented, extensions deferred.** `ort log --format
+json` now provides the stable read contract; no extension program ships yet.
 
 An extension is a program that does something with ortask's data that ortask
 itself should not do — push a summary into a wiki, drive a status bar, file a
@@ -79,8 +80,9 @@ everything else alone. The zim section shows one way to mark it.
 Each extension owns its configuration and ortask never reads it.
 `$XDG_CONFIG_HOME/ortask/ext/<name>.ini` is the suggested location, but nothing
 enforces it, because nothing in ortask looks. This keeps the rule from
-`docs/config.md` intact: the suite has exactly one machine-global setting, and
-it is the registry location.
+`docs/config.md` intact: extension settings stay out of the suite's global
+configuration, which contains only the registry location and activity-log
+opt-in.
 
 **Per-project settings are different**, because there is already a good place
 for them: the registry index, `<registry>/projects.org`, which holds one

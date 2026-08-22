@@ -4,9 +4,10 @@
 `ortask.py` is the local, single-Org-file CLI; `projmgr.py` manages projects in
 a project registry. Shared code lives in `ortasklib/`: `core.py` provides
 discovery, `tasks.py` owns task queries and surgical edits,
-`manager.py` owns registry behavior, and `menu.py`/`taskui.py` implement the
+`manager.py` owns registry behavior, `log.py` owns disposable activity events,
+and `menu.py`/`taskui.py` implement the
 bounded TUI. `orglib/` is a standalone Org syntax package and must not import
-`ortasklib`. Tests are in `tests/test_ortask_suite.py`; specifications and design
+`ortasklib`. Tests are in `tests/`; specifications and design
 context are in `docs/`; shell integration is in `misc/`.
 
 ## Build, Test, and Development Commands

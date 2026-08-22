@@ -31,6 +31,7 @@ VCS_DIR_NAMES = (".git", ".hg", ".svn")
 DIRECTORIES_PRIVATE_NAME = "directories-private.org"
 PROJECTS_INDEX_NAME = "projects.org"
 PROJECTS_INDEX_HEADER = "#+TITLE: Projects\n\n"
+LOG_DIRECTORY_NAME = "log"
 _RESERVED_INDEX_HEADINGS = frozenset({"tasks", "template"})
 _ORG_KEYWORD_RE = re.compile(r"^[ \t]*#\+[A-Za-z][A-Za-z0-9_-]*(?:\[[^]]*\])?:")
 
@@ -151,6 +152,13 @@ def _read_ini_option(path: Path, section: str, option: str) -> str | None:
     return value or None
 
 
+def read_ortask_option(
+    section: str, option: str, path: Path | None = None
+) -> str | None:
+    """Return one optional value from the canonical suite configuration."""
+    return _read_ini_option(path or ortask_config_path(), section, option)
+
+
 def read_ortask_registry(path: Path | None = None) -> str | None:
     """Return ``ortask.ini``'s ``[projects] registry`` value."""
     return _read_ini_option(
@@ -161,9 +169,13 @@ def read_ortask_registry(path: Path | None = None) -> str | None:
 
 
 def write_ortask_registry(path: Path, registry_value: str) -> None:
-    """Atomically write ``[projects] registry = <value>`` to ``ortask.ini``."""
+    """Set the registry atomically while preserving unrelated config sections."""
     parser = configparser.ConfigParser()
-    parser[PROJECTS_SECTION] = {REGISTRY_OPTION: registry_value}
+    if path.exists():
+        parser.read(path, encoding="utf-8")
+    if not parser.has_section(PROJECTS_SECTION):
+        parser.add_section(PROJECTS_SECTION)
+    parser.set(PROJECTS_SECTION, REGISTRY_OPTION, registry_value)
     buffer = io.StringIO()
     parser.write(buffer)
     path.parent.mkdir(parents=True, exist_ok=True)

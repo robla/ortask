@@ -1,6 +1,7 @@
 # Logging
 
-**Status: design, not implemented.** Nothing in the suite writes a log today.
+**Status: implemented (`t0033`).** Logging is opt-in and remains disabled when
+`[log] enabled` is absent from `ortask.ini`.
 
 An event log records what the tools did: a task finished at 14:32, three tasks
 added, a directory stack saved, a project registered. It answers "what did I do
@@ -143,9 +144,8 @@ from putting it there rather than in a hidden state directory:
 
 - **The location needs no new setting.** It is derived from
   `manager.resolve_registry()`, which already answers `--registry`, then
-  `[projects] registry`, then `~/Projects`. `docs/config.md`'s rule that the
-  suite has exactly one machine-global setting stays true, and the log moves
-  with the registry when the registry moves.
+  `[projects] registry`, then `~/Projects`. The opt-in is a boolean rather than
+  another path to keep synchronized, and the log moves with the registry.
 - **It is visible.** A file under `~/.local/state` is one nobody looks at. A
   `log/` next to `projects.org` is somewhere a person will actually notice it,
   read it, and remember it exists — which matters for a file whose whole
@@ -237,12 +237,13 @@ The global switch is where this starts, not where it ends.
 
 ## Writing mechanics
 
-- Open with `O_APPEND` and write **one** `write()` per event. POSIX guarantees
-  that an append-mode write shorter than `PIPE_BUF` (4096 bytes) does not
-  interleave with another process's, so two `ort` invocations racing cannot
-  produce a corrupt line.
-- Therefore **cap the line at 4096 bytes**, truncating the longest field (the
-  title, in practice) with an explicit marker rather than dropping the event.
+- Open with `O_APPEND` and issue **one** `os.write()` per event. Append mode
+  makes selection of the end offset and the write one operation on supported
+  local POSIX filesystems; concurrent-process regression coverage guards the
+  Linux behavior this project relies on. `PIPE_BUF` applies to pipes, not
+  regular files, and is not the justification.
+- **Cap the line at 4096 bytes** as a conservative bound, truncating the title
+  with an explicit `...[truncated]` marker rather than dropping the event.
 - No atomic-replace. The temp-file-then-rename pattern the Org writers use is
   wrong here: it would silently discard a concurrent append.
 - No read-modify-write. Nothing in the writer ever reads the log.
@@ -253,8 +254,8 @@ The global switch is where this starts, not where it ends.
 
 ## Where the call goes
 
-A new `ortasklib/log.py` with a module-level `record(event)` and a settable
-sink for tests.
+`ortasklib/log.py` provides the module-level `record(event)`, event/time helpers,
+readers and renderers, and a settable sink for tests.
 
 It is called from the points that commit a change — the `cmd_*` functions in
 `ortask.py` and `projmgr.py`, and the TUI's save paths in `taskui.py` — and not
@@ -295,6 +296,19 @@ destination's extension, per `docs/extensions.md`; adding output formats to core
 for each consumer is how a small tool stops being one.
 
 Empty output is exit 0. A missing log directory is empty output, not an error.
+
+Ranges are half-open: `--since` is inclusive and `--until` is exclusive, so
+`--since 2026-08-21 --until 2026-08-22` means one workday. `week` starts at the
+most recent Monday workday boundary; `--day-start 04:00` moves every named date
+boundary and Org output grouping to 04:00. `--limit N` selects the newest N
+matches but prints them chronologically. Malformed lines are skipped because
+the log is derived; they never prevent access to intact events.
+
+`ort log` scopes by the resolved registry project. For an unregistered task
+file it scopes by canonical friendly file path instead, so unrelated events
+whose `project` is null are not combined. `ort log --all` requires no local task
+file. `pmgr log` reads the whole selected registry unless `--project` narrows
+it. JSON output writes each matching source line unchanged.
 
 ## The Emacs gap
 

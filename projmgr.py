@@ -25,7 +25,7 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 import orglib  # noqa: E402 — after the sys.path insert above
-from ortasklib import core, manager, menu, taskui
+from ortasklib import core, log as eventlog, manager, menu, taskui
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +284,11 @@ class _ProjectBrowser:
                 return
             controller = taskui.InteractiveTaskController(
                 project,
-                taskui.OrgBuffer(org_file),
+                taskui.OrgBuffer(
+                    org_file,
+                    project=project.name,
+                    registry=self.workspace,
+                ),
                 self.include_done,
             )
             controller.attach(session)
@@ -325,7 +329,9 @@ def project_menu(workspace: Path, display_path: str, include_done: bool) -> int:
         if not choice.isdigit() or not 1 <= int(choice) <= len(projects):
             print("invalid choice")
             continue
-        taskui.task_menu(projects[int(choice) - 1], include_done)
+        taskui.task_menu(
+            projects[int(choice) - 1], include_done, registry=workspace
+        )
 
 
 def cmd_interactive(args: argparse.Namespace) -> int:
@@ -374,6 +380,38 @@ def cmd_list(args: argparse.Namespace) -> int:
                 for t in p["tasks"]:
                     print(f"  [{t['state']}] {t['id']} {t['title']}")
 
+    return 0
+
+
+def cmd_log(args: argparse.Namespace) -> int:
+    """Read activity for one project or the complete registry."""
+    try:
+        day_start, since, until = eventlog.time_window(
+            args.since, args.until, args.day_start
+        )
+        registry, _ = manager.resolve_registry(args.registry)
+        events = eventlog.read_events(
+            registry=registry,
+            since=since,
+            until=until,
+            project=args.project,
+            limit=args.limit,
+        )
+    except ValueError as exc:
+        print(f"log: {exc}", file=sys.stderr)
+        return 1
+
+    if args.format == "json":
+        for event in events:
+            sys.stdout.write(event.raw)
+        return 0
+    output = (
+        eventlog.format_org(events, day_start=day_start)
+        if args.format == "org"
+        else eventlog.format_plain(events)
+    )
+    if output:
+        print(output)
     return 0
 
 
@@ -459,6 +497,20 @@ def cmd_add(args: argparse.Namespace) -> int:
     if org_link is not None:
         _replace_symlink(org_link, org_file)
 
+    eventlog.record(
+        eventlog.make_event(
+            "pmgr",
+            "add",
+            project=name,
+            detail={
+                "path": manager.friendly_path(project_dir),
+                "task_file": manager.friendly_path(org_file) if org_file else None,
+            },
+        ),
+        registry=registry,
+        source_file=org_file,
+    )
+
     print(f"added project '{name}' under {registry_display}")
     print(f"  {project_dir.name} -> {project_dir}")
     if org_link is not None:
@@ -525,6 +577,17 @@ def cmd_migrate(args: argparse.Namespace) -> int:
         _print_migration_errors(exc)
         return 1
 
+    changed = plan.writes_index or bool(plan.legacy_files)
+    if changed:
+        eventlog.record(
+            eventlog.make_event(
+                "pmgr",
+                "migrate",
+                detail={"entries": len(plan.legacy_files)},
+            ),
+            registry=registry,
+        )
+
     if plan.writes_index:
         print(f"wrote {manager.friendly_path(plan.index_path)}")
     elif not plan.legacy_files:
@@ -573,6 +636,10 @@ def cmd_rm(args: argparse.Namespace) -> int:
     for child in children:
         child.unlink()
     entry.rmdir()
+    eventlog.record(
+        eventlog.make_event("pmgr", "rm", project=args.name),
+        registry=registry,
+    )
     print(f"removed project '{args.name}' from {registry_display}")
     for child in real_files:
         print(f"  deleted {child.name}")
@@ -713,6 +780,23 @@ def cmd_set_dirs(args: argparse.Namespace) -> int:
         print(f"set-dirs: {exc}", file=sys.stderr)
         return 1
     action = "updated" if changed else "unchanged"
+    if changed:
+        final_paths = manager.proposed_registry_directories(
+            plan, keep_missing=keep_missing
+        )
+        eventlog.record(
+            eventlog.make_event(
+                "pmgr",
+                "set-dirs",
+                project=project.name,
+                detail={
+                    "directories": [
+                        manager.format_directory_path(path) for path in final_paths
+                    ]
+                },
+            ),
+            registry=registry,
+        )
     print(
         f"{project.name}: directories {action} in "
         f"{manager.friendly_path(plan.index_path)}"
@@ -739,6 +823,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     for child in sorted(registry.iterdir(), key=lambda p: p.name.lower()):
         if not child.is_dir() or child.name.startswith("."):
+            continue
+        if child.name == manager.LOG_DIRECTORY_NAME:
             continue
         project = manager.read_project_entry(child)
         if project is None:
@@ -882,7 +968,22 @@ class _CdprojSession:
             self.error = f"cdproj: {exc}"
             return "Could not resolve the directory stack", "index error"
         self.warnings.extend(warnings)
-        return self.write_stack(directories), label
+        message = self.write_stack(directories)
+        if self.status == 0:
+            eventlog.record(
+                eventlog.make_event(
+                    "pmgr",
+                    "cdproj",
+                    project=project.name,
+                    detail={
+                        "directories": [
+                            manager.friendly_path(path) for path in directories
+                        ]
+                    },
+                ),
+                registry=project.path.parent,
+            )
+        return message, label
 
     def report(self) -> None:
         """Warnings and errors reach stderr only once any picker has exited.
@@ -1169,6 +1270,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="output format: plain, json, or bare project names for completion",
     )
 
+    p_log = sub.add_parser("log", help="read the append-only activity log")
+    p_log.add_argument("--since", metavar="WHEN", default=None)
+    p_log.add_argument("--until", metavar="WHEN", default=None)
+    p_log.add_argument("--project", default=None,
+                       help="show events for one registry project")
+    p_log.add_argument("--limit", type=int, default=None,
+                       help="show only the newest N matching events")
+    p_log.add_argument("--day-start", default="00:00", metavar="HH:MM")
+    p_log.add_argument("--format", choices=["plain", "json", "org"], default="plain")
+    p_log.add_argument("--registry", default=argparse.SUPPRESS,
+                       help="registry whose log should be read")
+
     p_mig = sub.add_parser(
         "migrate",
         help="move legacy private directory files into projects.org",
@@ -1253,6 +1366,7 @@ def main() -> int:
         "doctor": cmd_doctor,
         "init": cmd_init,
         "list": cmd_list,
+        "log": cmd_log,
         "migrate": cmd_migrate,
         "projadd": cmd_add,         # deprecated alias
         "rm": cmd_rm,

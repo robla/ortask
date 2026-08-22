@@ -13,8 +13,8 @@ This command was named `orgmgr.py` (`orgm`) until 2026-08-19. `projadd`
 survives as a deprecated alias for `add`. `migrate` converts legacy private
 directory files into the registry index; it no longer dispatches to `init`.
 
-Current verb set: `add`, `cdproj`, `doctor`, `init`, `list`, `migrate`, `rm`,
-`set-dirs`.
+Current verb set: `add`, `cdproj`, `doctor`, `init`, `list`, `log`, `migrate`,
+`rm`, `set-dirs`.
 
 ## Registry Model
 
@@ -281,6 +281,25 @@ Task selection rules:
 - Warn per project, rather than crashing, for unreadable files, files with no
   parseable task headings, or duplicate task IDs.
 
+## `log`
+
+`projmgr.py log` reads the registry-wide disposable activity stream. It never
+uses events as project or task state.
+
+```sh
+projmgr.py log --since today
+projmgr.py log --project elweek --limit 20
+projmgr.py --registry ~/Projects log --format json
+```
+
+`--project NAME` narrows the default all-project view. `--since` and `--until`
+accept `today`, `yesterday`, `week`, `NNd`, `NNh`, a date, or an ISO timestamp;
+the end is exclusive. `--day-start HH:MM` shifts workday boundaries, and
+`--limit N` selects the newest matches while preserving chronological output.
+Formats are `plain`, byte-preserving `json`, and date-grouped `org`. A missing
+log directory or no matches is successful empty output. See `docs/logging.md`
+for configuration, event fields, and privacy considerations.
+
 ## `migrate`
 
 **Status: implemented (`t0026.2`).**
@@ -447,7 +466,7 @@ friction is answered by `add` instead.
 
 ## Safety
 
-`list` and `doctor` are read-only. `add` creates directories and symlinks only
+`list`, `log`, and `doctor` are read-only. `add` creates directories and symlinks only
 inside the registry; `rm` removes only a registry entry, and only its symlinks
 unless `--force` is given. `init` writes only `ortask.ini`. `migrate` atomically
 writes `projects.org` before removing validated legacy files. `set-dirs` edits

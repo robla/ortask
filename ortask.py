@@ -22,7 +22,8 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from ortasklib import tasks
+from ortasklib import log as eventlog
+from ortasklib import manager, tasks
 from ortasklib.core import (  # noqa: F401 — re-exported for tooling/tests
     TASKS_HEADING_RE,
     OrgFileDiscoveryError,
@@ -146,6 +147,15 @@ def cmd_add(args: argparse.Namespace) -> int:
         print(f"parent task not found: {exc}", file=sys.stderr)
         return 1
     _write_lines(args.file, new_lines)
+    eventlog.record(
+        eventlog.make_event(
+            "ort",
+            "add",
+            task={"id": new_id, "title": args.title},
+            detail={"parent": normalize_id(args.parent)} if args.parent else None,
+        ),
+        source_file=args.file,
+    )
     print(f"added {new_id} \"{args.title}\" to {args.file}")
     return 0
 
@@ -203,6 +213,10 @@ def cmd_init(args: argparse.Namespace) -> int:
             print(f"init: cannot create {path}: {exc}", file=sys.stderr)
             return 1
 
+    eventlog.record(
+        eventlog.make_event("ort", "init", detail={"created": True}),
+        source_file=path,
+    )
     print(f"initialized {path}")
     return 0
 
@@ -221,6 +235,9 @@ def cmd_archive(args: argparse.Namespace) -> int:
             if archive_path.exists()
             else ""
         )
+        source_items = {
+            canonical_id(item.id): item for item in parse_org(source_text)
+        }
         result = tasks.archive_tasks(
             source_text,
             archive_text,
@@ -246,6 +263,21 @@ def cmd_archive(args: argparse.Namespace) -> int:
         print(f"archive: {exc}", file=sys.stderr)
         return 1
 
+    session = eventlog.new_session()
+    events = []
+    for task_id in result.task_ids:
+        item = source_items.get(canonical_id(task_id))
+        events.append(
+            eventlog.make_event(
+                "ort",
+                "archive",
+                session=session,
+                task={"id": task_id, "title": item.text if item else ""},
+                detail={"archive": manager.friendly_path(archive_path)},
+            )
+        )
+    eventlog.record_many(events, source_file=source_path)
+
     noun = "subtree" if len(result.task_ids) == 1 else "subtrees"
     print(
         f"archived {len(result.task_ids)} {noun} "
@@ -261,6 +293,7 @@ def cmd_archive(args: argparse.Namespace) -> int:
 def _change_state(args: argparse.Namespace, target: str) -> int:
     args.id = normalize_id(args.id)
     text = args.file.read_text(encoding="utf-8")
+    item = find_by_id(parse_org(text), args.id)
     try:
         new_lines = tasks.change_state(text, args.id, target)
     except tasks.TaskNotFound:
@@ -268,6 +301,19 @@ def _change_state(args: argparse.Namespace, target: str) -> int:
         return 1
     if new_lines is not None:
         _write_lines(args.file, new_lines)
+        eventlog.record(
+            eventlog.make_event(
+                "ort",
+                "done" if target == "DONE" else "open",
+                task={
+                    "id": args.id,
+                    "title": item.text if item else "",
+                    "from": item.state if item else None,
+                    "to": target,
+                },
+            ),
+            source_file=args.file,
+        )
     return 0
 
 
@@ -323,6 +369,20 @@ def cmd_apply(args: argparse.Namespace) -> int:
         return 0
 
     _write_lines(args.file, new_lines)
+    session = eventlog.new_session()
+    generated = parse_org("* Tasks\n" + "\n".join(block) + "\n")
+    events = []
+    for item in generated:
+        events.append(
+            eventlog.make_event(
+                "ort",
+                "apply",
+                session=session,
+                task={"id": item.id, "title": item.text},
+                detail={"template": args.template, "week": week_id[2:]},
+            )
+        )
+    eventlog.record_many(events, source_file=args.file)
     print(f"applied template '{args.template}' as {week_id} "
           f"({len(block)} lines) to {args.file}")
     return 0
@@ -336,6 +396,50 @@ def cmd_interactive(args: argparse.Namespace) -> int:
     from ortasklib import taskui
 
     return taskui.local_file_menu(args.file, include_done=True)
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: log
+# ---------------------------------------------------------------------------
+
+def cmd_log(args: argparse.Namespace) -> int:
+    """Read task activity without consulting it as task state."""
+    try:
+        day_start, since, until = eventlog.time_window(
+            args.since, args.until, args.day_start
+        )
+        registry, _ = manager.resolve_registry()
+        project = None
+        file_filter = None
+        if not args.all:
+            canonical = args.file.expanduser().resolve()
+            project = eventlog.project_for_file(canonical, registry)
+            if project is None:
+                file_filter = manager.friendly_path(canonical)
+        events = eventlog.read_events(
+            registry=registry,
+            since=since,
+            until=until,
+            project=project,
+            file=file_filter,
+            limit=args.limit,
+        )
+    except ValueError as exc:
+        print(f"log: {exc}", file=sys.stderr)
+        return 1
+
+    if args.format == "json":
+        for event in events:
+            sys.stdout.write(event.raw)
+        return 0
+    output = (
+        eventlog.format_org(events, day_start=day_start)
+        if args.format == "org"
+        else eventlog.format_plain(events)
+    )
+    if output:
+        print(output)
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +503,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_list.add_argument("--items", type=int, default=None)
     p_list.add_argument("--format", choices=["plain", "json", "org"], default="plain")
 
+    p_log = sub.add_parser("log", help="read the append-only activity log")
+    p_log.add_argument("--since", metavar="WHEN", default=None)
+    p_log.add_argument("--until", metavar="WHEN", default=None)
+    p_log.add_argument("--all", action="store_true",
+                       help="include events from every registered project")
+    p_log.add_argument("--limit", type=int, default=None,
+                       help="show only the newest N matching events")
+    p_log.add_argument("--day-start", default="00:00", metavar="HH:MM")
+    p_log.add_argument("--format", choices=["plain", "json", "org"], default="plain")
+
     p_open = sub.add_parser("open", help="reopen a task (DONE -> TODO)")
     p_open.add_argument("id", metavar="ID")
 
@@ -436,7 +550,9 @@ def main() -> int:
                 print(exc, file=sys.stderr)
                 return 1
             if resolved is None:
-                if cmd == "add" and not args.interactive:
+                if cmd == "log" and args.all and not args.interactive:
+                    args.file = None
+                elif cmd == "add" and not args.interactive:
                     args.file = Path(DEFAULT_NEW_TASK_FILE)
                 else:
                     print("no org file found (create tasks.org or use --file)",
@@ -445,7 +561,7 @@ def main() -> int:
             else:
                 args.file = resolved
 
-    if cmd != "init" and not args.file.exists():
+    if cmd != "init" and args.file is not None and not args.file.exists():
         if (
             cmd == "add"
             and not args.interactive
@@ -475,6 +591,7 @@ def main() -> int:
         "done": cmd_done,
         "init": cmd_init,
         "list": cmd_list,
+        "log": cmd_log,
         "open": cmd_open,
         "repair": cmd_repair,
         "show": cmd_show,
