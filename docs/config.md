@@ -321,6 +321,9 @@ is already complete and the command succeeds without changing it. Only
 
 - `projects.org` at the registry root — the index.
 - `log/` at the registry root — monthly disposable JSON Lines activity files.
+- `#projects.org#` at the registry root — the Emacs-style auto-save sibling
+  `ptui` writes while it holds the index open (`docs/ptui.md`). Disposable, and
+  another line for a registry that ignores generated files.
 - `*-private.org` — the superseded per-entry scheme (`docs/projects.md`).
   Retained as a reserved suffix so a converted registry can still exclude any
   such leftovers with one gitignore line.

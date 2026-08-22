@@ -324,25 +324,24 @@ Use Shift-Up/Down to change priority through =unset -> C -> B -> A=. Route
 changes through one bounded =projects.org= transaction with visible dirty
 state, undo/redo, =C-s= save, and Save/Discard/Cancel on exit.
 
-Settle the write path before writing code; see "Write path" in =docs/ptui.md=.
-The two existing mechanisms each supply half of what that spec asks for.
-=taskui.OrgBuffer= gives buffering, undo/redo, autosave, and dirty state for
-any Org path, but =save()= rewrites the whole file with no check that it is
-still the file that was read. =manager.plan_registry_directories_update= and
-=apply_registry_directories_update= give the preimage check and the bounded
-rewrite, with no buffering. Neither alone satisfies =docs/ptui.md=, which
-requires both. Whichever way it resolves, a =projects.org= buffer held open
-across a =pmgr set-dirs= run in another terminal is the case to design for.
+Decided 2026-08-22 (see "Write path" in =docs/ptui.md=): =ptui= holds one
+=taskui.OrgBuffer= over =projects.org= open for the session, which is what
+makes undo across several edits work, and =save()= gains the preimage check
+that =manager.apply_registry_directories_update= already does — if the file
+changed since it was read, the save refuses with a recoverable error naming it,
+and never discards the other write. The auto-save sibling =#projects.org#=
+stays and is reserved in =docs/config.md=. Merging instead of refusing is
+=t0037=, not this task. Tests: a =pmgr set-dirs= run between read and =C-s=
+produces the error and leaves both the buffer and the file intact.
 *** TODO [#B] t0035.4 Build the project metadata workspace
 Make =m= open a compact editor for priority and description while showing the
 read-only project name, resolved task file, recorded task-file mirror, and
-directory-stack controls. Require an already migrated registry index. Decide
-what "directory-stack controls" means against the editor =cdproj= already has:
-=e= in the =cdproj= picker opens the index in =$VISUAL= at the project's
-section (=docs/cdproj.md=). Either the workspace shows the stack read-only and
-hands off to that path, or it edits the stack itself and the two editors need
-one shared transaction. Two independent editors for one section is the outcome
-to avoid.
+directory-stack controls. Require an already migrated registry index. Decided
+2026-08-22: the workspace edits the directory stack, not only displays it, so
+it and =cdproj='s =e= — which opens the index in =$VISUAL= at the project's
+section (=docs/cdproj.md=) — are two entrances to one bounded region and must
+share =t0035.3='s transaction path, external editor included. Two independent
+writers for one section is the outcome to avoid.
 *** TODO [#B] t0035.5 Add modified sorting and task-file mirror diagnostics
 Add newest-task-file-first sorting with unreadable or absent files last.
 Display disagreements between the non-normative =TASK_FILE= mirror and the
@@ -359,3 +358,29 @@ is reachable by hand-editing today, before any of =t0035= lands. Strip a leading
 =docs/config.md=, which documents tags only. Tests: =cdproj= resolves the same
 stack with and without a cookie, and =set-dirs= and =migrate= preserve a cookie
 and a property drawer on a section they rewrite. Blocks =t0035.1= and =t0035.3=.
+** TODO t0037 Handle concurrent edits to projects.org in ptui
+=t0035.3= makes a stale save refuse. Refusing is correct and unhelpful: two
+people — or one person in two terminals — editing different project sections of
+one file is not a conflict in any useful sense, and =pmgr set-dirs=,
+=pmgr migrate=, =cdproj='s external editor, and Emacs can all touch the index
+while =ptui= holds it. The goal is that the session absorbs those writes and
+says so, and only refuses what it genuinely cannot reconcile.
+*** TODO t0037.1 Alert on external index changes while a buffer is open
+Notice the change while editing rather than at =C-s=. Detect that
+=projects.org= moved under the open buffer — mtime and size, hashing only when
+those differ — and surface it in the bounded UI as a visible alert with the
+recovery actions: reload and lose the buffered edit, keep editing and accept
+that the save will refuse, or save over. Finding out at save time that ten
+minutes of edits cannot be written is the outcome this removes. Poll on the
+existing resize/refresh path rather than adding a watcher thread, and keep
+=orti='s task-file buffer in mind — the same alert belongs there, since the
+same thing can happen to a task file.
+*** TODO t0037.2 Automerge non-conflicting external index changes
+When the external write touched project sections the buffer did not, merge it
+in on the next auto-save and carry on, reporting what was absorbed. Merge at
+the granularity of a project section, using the source spans =t0035.1= already
+produces; two edits inside one section are a conflict, and a conflict alerts
+rather than guesses. Merge on auto-save rather than only at =C-s=, so the
+buffer stays close to the file instead of drifting for the length of a session.
+Tests: a =set-dirs= on another project is absorbed silently, an edit to the
+same section alerts, and a failed merge never writes a partial file.

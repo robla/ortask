@@ -123,11 +123,11 @@ changed source file stop the save with a recoverable error. Direct priority
 changes and metadata-workspace edits should share one transaction path so undo,
 dirty-state reporting, and save behavior cannot disagree.
 
-### The write path is an open decision
+### Write path
 
 Two mechanisms exist, and each supplies half of what the paragraph above asks
-for. Choosing between them is `t0035.3`'s first task, not an implementation
-detail to settle at the keyboard.
+for. The decisions below were settled 2026-08-22; the comparison is kept
+because the gap it names is what the work has to close.
 
 | | `taskui.OrgBuffer` | `manager.plan_/apply_registry_directories_update` |
 |---|---|---|
@@ -144,21 +144,45 @@ a `pmgr set-dirs` run from another terminal. The index path has the check and
 the bounded rewrite, and no buffering at all.
 
 The case to design against is concrete: `ptui` open in one terminal with a
-dirty priority edit, `pmgr set-dirs` run in another, then `C-s`. That must
-report a recoverable error rather than discard the other write.
+dirty priority edit, `pmgr set-dirs` run in another, then `C-s`.
 
-Two consequences to decide with it:
+**What happens then:** the save refuses, with a recoverable error naming the
+file that moved. It never discards the other write, and it never silently wins.
+So `OrgBuffer` is the base — `ptui` holds one `projects.org` buffer open, which
+is what makes undo across several edits work — and it gains the preimage check
+the index write path already has.
 
-- **The auto-save sibling.** If `OrgBuffer` is used, `#projects.org#` appears in
-  the registry root. It disturbs no discovery — its suffix is `.org#`, so
-  neither `discover_projects` nor the single-generic-`.org` fallback sees it —
-  but it is a stray file in a registry that may be under version control, and
-  it belongs in the reserved names in `docs/config.md` alongside `log/`.
-- **One editor for the section, or two.** `cdproj`'s picker already edits this
-  file: `e` opens the index in `$VISUAL` at the project's section
-  (`docs/cdproj.md`). If the metadata workspace also edits directories, the two
-  need one transaction path; otherwise the workspace shows the stack read-only
-  and hands off.
+Refusing is the floor rather than the goal. What the session should eventually
+do is merge: two people editing different project sections of one file is not a
+conflict in any meaningful sense, and the tool should say so by absorbing the
+other write instead of refusing. That is `t0037`, in two steps — notice the
+change and alert while the buffer is open, then merge what can be merged and
+alert only when it cannot. Refusal remains correct behavior for the case a
+merge cannot handle.
+
+Two consequences, both decided:
+
+- **The auto-save sibling stays.** `OrgBuffer` writes `#projects.org#` into the
+  registry root for crash recovery. It disturbs no discovery — its suffix is
+  `.org#`, so neither `discover_projects` nor the single-generic-`.org`
+  fallback sees it — and it is reserved in `docs/config.md` alongside `log/`,
+  so a registry under version control can ignore it in one line. Crash recovery
+  is worth more than a tidy `git status`.
+- **One editor for the section.** The metadata workspace edits directories as
+  well as priority and description, so it and `cdproj`'s `e` — which opens the
+  index in `$VISUAL` at the project's section (`docs/cdproj.md`) — are two ways
+  into one bounded region and must share one transaction path. The external
+  editor route reads and writes through the same preimage check rather than
+  around it.
+
+### Why the priority cookie and not a property
+
+`* [#A] ortask` is Org's own priority syntax, so Emacs sorts, filters, and
+cycles it without being taught anything, and a person reading the index sees a
+priority rather than a key-value pair. `:PRIORITY: A` in the drawer would have
+avoided `t0036` entirely, which is the honest argument against the cookie: every
+reader of the file has to strip it correctly, permanently. The file is one
+people open in Emacs, so the cookie wins anyway.
 
 ## Suggested Delivery Order
 
