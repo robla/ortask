@@ -12,6 +12,7 @@ from __future__ import annotations
 import configparser
 import io
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,6 +29,10 @@ VCS_DIR_NAMES = (".git", ".hg", ".svn")
 # A project's private directory stack lives in the registry rather than in the
 # project itself, so it is never part of the project's own repository.
 DIRECTORIES_PRIVATE_NAME = "directories-private.org"
+PROJECTS_INDEX_NAME = "projects.org"
+PROJECTS_INDEX_HEADER = "#+TITLE: Projects\n\n"
+_RESERVED_INDEX_HEADINGS = frozenset({"tasks", "template"})
+_ORG_KEYWORD_RE = re.compile(r"^[ \t]*#\+[A-Za-z][A-Za-z0-9_-]*(?:\[[^]]*\])?:")
 
 # Canonical suite config: ortask.ini records where the registry directory lives.
 ORTASK_INI_NAME = "ortask.ini"
@@ -51,6 +56,40 @@ class Project:
     org_file: Path | None = None
     link: Path | None = None
     warning: str | None = None
+
+
+class RegistryMigrationError(Exception):
+    """One or more conditions make registry migration unsafe."""
+
+    def __init__(self, messages: list[str] | tuple[str, ...] | str) -> None:
+        if isinstance(messages, str):
+            messages = [messages]
+        self.messages = tuple(messages)
+        super().__init__("\n".join(self.messages))
+
+
+@dataclass(frozen=True)
+class LegacyDirectoryFile:
+    """One validated legacy file and its deterministic index representation."""
+
+    project: str
+    path: Path
+    source_text: str
+    project_text: str
+
+
+@dataclass(frozen=True)
+class RegistryMigrationPlan:
+    """A fully validated registry-index write and cleanup plan."""
+
+    index_path: Path
+    index_text: str
+    previous_index_text: str | None
+    legacy_files: tuple[LegacyDirectoryFile, ...]
+
+    @property
+    def writes_index(self) -> bool:
+        return self.previous_index_text is None
 
 
 def canonical_org_file(project: Project) -> Path | None:
@@ -263,6 +302,263 @@ def discover_projects(workspace: Path) -> list[Project]:
         if project is not None:
             projects.append(project)
     return projects
+
+
+# ---------------------------------------------------------------------------
+# Registry index migration
+# ---------------------------------------------------------------------------
+
+def _path_exists(path: Path) -> bool:
+    """Include dangling symlinks when deciding whether a path occupies a name."""
+    return path.exists() or path.is_symlink()
+
+
+def _demote_org_headings(text: str) -> str:
+    """Add one star to every Org heading while preserving all other bytes."""
+    nested: list[str] = []
+    for raw_line in text.splitlines(keepends=True):
+        line = raw_line.rstrip("\r\n")
+        nested.append(
+            "*" + raw_line
+            if orglib.syntax.ANY_HEADING_RE.match(line)
+            else raw_line
+        )
+    return "".join(nested)
+
+
+def _legacy_project_text(project: str, source_text: str) -> str:
+    nested = _demote_org_headings(source_text)
+    result = f"* {project}\n{nested}"
+    if not result.endswith(("\n", "\r")):
+        result += "\n"
+    return result + "\n"
+
+
+def _legacy_validation_errors(path: Path, text: str) -> list[str]:
+    errors: list[str] = []
+    directory_lines = [
+        line_num
+        for line_num, line in enumerate(text.splitlines(), start=1)
+        if orglib.syntax.DIRECTORIES_HEADING_RE.match(line)
+    ]
+    if len(directory_lines) != 1:
+        where = (
+            f" at lines {', '.join(map(str, directory_lines))}"
+            if directory_lines
+            else ""
+        )
+        errors.append(
+            f"{path}: expected exactly one top-level '* Directories' heading"
+            f"{where}; found {len(directory_lines)}"
+        )
+
+    keyword_lines = [
+        line_num
+        for line_num, line in enumerate(text.splitlines(), start=1)
+        if _ORG_KEYWORD_RE.match(line)
+    ]
+    if keyword_lines:
+        errors.append(
+            f"{path}: Org keywords cannot be nested safely (lines "
+            f"{', '.join(map(str, keyword_lines))})"
+        )
+    return errors
+
+
+def _legacy_candidates(registry: Path) -> tuple[list[tuple[str, Path]], list[str]]:
+    candidates: list[tuple[str, Path]] = []
+    errors: list[str] = []
+    try:
+        children = sorted(registry.iterdir(), key=lambda path: path.name.casefold())
+    except OSError as exc:
+        raise RegistryMigrationError(f"cannot read registry {registry}: {exc}") from exc
+
+    for child in children:
+        if child.name.startswith(".") or not child.is_dir() or child.is_symlink():
+            continue
+        legacy_path = child / DIRECTORIES_PRIVATE_NAME
+        if not _path_exists(legacy_path):
+            continue
+        if read_project_entry(child) is None:
+            errors.append(
+                f"{legacy_path}: parent directory is not a registered project"
+            )
+            continue
+        candidates.append((child.name, legacy_path))
+    return candidates, errors
+
+
+def _duplicate_project_errors(names: list[str]) -> list[str]:
+    grouped: dict[str, list[str]] = {}
+    for name in names:
+        grouped.setdefault(name.casefold(), []).append(name)
+    return [
+        "registry project names collide case-insensitively: " + ", ".join(values)
+        for values in grouped.values()
+        if len(values) > 1
+    ]
+
+
+def _validate_index(text: str, projects: list[Project], path: Path) -> list[str]:
+    errors = _duplicate_project_errors([project.name for project in projects])
+    document = orglib.parse(text)
+    for project in projects:
+        if project.name.casefold() in _RESERVED_INDEX_HEADINGS:
+            errors.append(
+                f"{path}: project name {project.name!r} is reserved by the index"
+            )
+            continue
+        try:
+            document.directories(project.name)
+        except (orglib.OrgStructureError, ValueError) as exc:
+            errors.append(f"{path}: {exc}")
+    return errors
+
+
+def plan_registry_migration(registry: Path) -> RegistryMigrationPlan:
+    """Validate and plan migration from per-entry files to ``projects.org``.
+
+    No file is changed. All legacy inputs are read before any error is raised so
+    one invocation reports the complete validation set.
+    """
+    if not registry.is_dir():
+        raise RegistryMigrationError(f"project directory not found: {registry}")
+
+    candidates, errors = _legacy_candidates(registry)
+
+    legacy_files: list[LegacyDirectoryFile] = []
+    for project, path in candidates:
+        if project.casefold() in _RESERVED_INDEX_HEADINGS:
+            errors.append(
+                f"{path}: project name {project!r} is reserved by the index"
+            )
+        try:
+            source_text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            errors.append(f"cannot read {path}: {exc}")
+            continue
+        source_errors = _legacy_validation_errors(path, source_text)
+        errors.extend(source_errors)
+        if source_errors:
+            continue
+
+        project_text = _legacy_project_text(project, source_text)
+        lookup = orglib.parse(project_text).directories(project)
+        if not lookup.project_found or lookup.section is None:
+            errors.append(
+                f"{path}: project name {project!r} cannot form a safe Org heading"
+            )
+            continue
+        legacy_files.append(
+            LegacyDirectoryFile(project, path, source_text, project_text)
+        )
+
+    try:
+        projects = discover_projects(registry)
+    except OSError as exc:
+        errors.append(f"cannot enumerate projects in {registry}: {exc}")
+        projects = []
+
+    index_path = registry / PROJECTS_INDEX_NAME
+    previous_index_text: str | None = None
+    if _path_exists(index_path):
+        try:
+            previous_index_text = index_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            errors.append(f"cannot read {index_path}: {exc}")
+
+    validation_text = previous_index_text or PROJECTS_INDEX_HEADER
+    errors.extend(_validate_index(validation_text, projects, index_path))
+    if previous_index_text is not None:
+        document = orglib.parse(previous_index_text)
+        for legacy in legacy_files:
+            try:
+                lookup = document.directories(legacy.project)
+            except (orglib.OrgStructureError, ValueError):
+                continue  # _validate_index already reports the structural error.
+            actual = (
+                previous_index_text[lookup.project_span.start : lookup.project_span.end]
+                if lookup.project_span is not None
+                else None
+            )
+            if actual != legacy.project_text:
+                errors.append(
+                    f"{legacy.path}: does not exactly match project "
+                    f"{legacy.project!r} in {index_path}; resolve manually"
+                )
+
+    if errors:
+        raise RegistryMigrationError(errors)
+
+    ordered = tuple(
+        sorted(legacy_files, key=lambda legacy: legacy.project.casefold())
+    )
+    index_text = (
+        previous_index_text
+        if previous_index_text is not None
+        else PROJECTS_INDEX_HEADER + "".join(item.project_text for item in ordered)
+    )
+    return RegistryMigrationPlan(
+        index_path,
+        index_text,
+        previous_index_text,
+        ordered,
+    )
+
+
+def _assert_migration_preimages(plan: RegistryMigrationPlan) -> None:
+    errors: list[str] = []
+    index_exists = _path_exists(plan.index_path)
+    if plan.previous_index_text is None:
+        if index_exists:
+            errors.append(f"{plan.index_path}: appeared after migration was planned")
+    else:
+        try:
+            current_index = plan.index_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            errors.append(f"cannot re-read {plan.index_path}: {exc}")
+        else:
+            if current_index != plan.previous_index_text:
+                errors.append(f"{plan.index_path}: changed after migration was planned")
+
+    for legacy in plan.legacy_files:
+        try:
+            current = legacy.path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            errors.append(f"cannot re-read {legacy.path}: {exc}")
+        else:
+            if current != legacy.source_text:
+                errors.append(f"{legacy.path}: changed after migration was planned")
+    if errors:
+        raise RegistryMigrationError(errors)
+
+
+def apply_registry_migration(plan: RegistryMigrationPlan) -> None:
+    """Apply a validated plan; interrupted cleanup is safe to resume."""
+    _assert_migration_preimages(plan)
+    if plan.writes_index:
+        try:
+            plan.index_path.parent.mkdir(parents=True, exist_ok=True)
+            core.atomic_write(plan.index_path, plan.index_text)
+        except OSError as exc:
+            raise RegistryMigrationError(
+                f"cannot write {plan.index_path}: {exc}; no legacy files removed"
+            ) from exc
+
+    for legacy in plan.legacy_files:
+        try:
+            current = legacy.path.read_text(encoding="utf-8")
+            if current != legacy.source_text:
+                raise RegistryMigrationError(
+                    f"{legacy.path}: changed before cleanup; index retained, source not removed"
+                )
+            legacy.path.unlink()
+        except RegistryMigrationError:
+            raise
+        except (OSError, UnicodeError) as exc:
+            raise RegistryMigrationError(
+                f"cleanup incomplete at {legacy.path}: {exc}; rerun migration"
+            ) from exc
 
 
 def project_root_for(start: Path) -> Path:

@@ -1217,6 +1217,7 @@ def test_bash_completion_for_ortask_and_alias() -> None:
         ("_projmgr_complete", "COMP_WORDS=(pmgr --in); COMP_CWORD=1", "--interactive"),
         ("_projmgr_complete", "COMP_WORDS=(pmgr li); COMP_CWORD=1", "list"),
         ("_projmgr_complete", "COMP_WORDS=(projmgr.py list --fo); COMP_CWORD=2", "--format"),
+        ("_projmgr_complete", "COMP_WORDS=(pmgr migrate --dr); COMP_CWORD=2", "--dry-run"),
     ]
 
     for function, setup, expected in cases:
@@ -1358,7 +1359,7 @@ def _add_args(path: Path | None, **kw) -> argparse.Namespace:
     return argparse.Namespace(**base)
 
 
-def test_migrate_records_registry(
+def test_init_records_registry(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     # init records [projects] registry without consulting projtui.ini.
@@ -1374,6 +1375,228 @@ def test_migrate_records_registry(
     assert manager.read_ortask_registry() == str(workspace.resolve())
     resolved, _ = manager.resolve_registry()              # now follows ortask.ini
     assert resolved == workspace.resolve()
+
+
+def _migration_project(registry: Path, tmp_path: Path, name: str) -> Path:
+    project = tmp_path / "src" / name
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Keep working\n")
+    return register(registry, name, project)
+
+
+def _migrate_args(registry: Path, *, dry_run: bool = False) -> argparse.Namespace:
+    return argparse.Namespace(registry=str(registry), dry_run=dry_run)
+
+
+def test_projmgr_migrate_dry_run_changes_nothing(tmp_path: Path, capsys) -> None:
+    # Dry-run prints the complete proposed index and removal list without writes.
+    registry = tmp_path / "projects"
+    entry = _migration_project(registry, tmp_path, "ortask")
+    source = (
+        "# Keep this comment.\n"
+        "* Directories\n"
+        "** file:~/src/ortask\n"
+        "* Notes\n"
+        "Keep this prose.\n"
+    )
+    legacy = entry / manager.DIRECTORIES_PRIVATE_NAME
+    legacy.write_text(source, encoding="utf-8")
+
+    assert projmgr.cmd_migrate(_migrate_args(registry, dry_run=True)) == 0
+
+    out = capsys.readouterr().out
+    assert "[dry-run] proposed" in out
+    assert "* ortask\n# Keep this comment.\n** Directories\n" in out
+    assert "*** file:~/src/ortask\n** Notes\nKeep this prose.\n" in out
+    assert str(legacy) in out
+    assert legacy.read_text(encoding="utf-8") == source
+    assert not (registry / manager.PROJECTS_INDEX_NAME).exists()
+
+
+def test_projmgr_migrate_preserves_content_and_removes_sources(
+    tmp_path: Path, capsys
+) -> None:
+    # Migration wraps files in sorted project headings and only demotes headings.
+    registry = tmp_path / "projects"
+    zeta_entry = _migration_project(registry, tmp_path, "zeta")
+    alpha_entry = _migration_project(registry, tmp_path, "Alpha")
+    zeta_source = "* Directories\n** file:/zeta\n"
+    alpha_source = (
+        "Alpha prose.\n"
+        "* Directories\n"
+        "   - ~/alpha\n"
+        "* Notes\n"
+        "  Formatting stays."
+    )
+    zeta_legacy = zeta_entry / manager.DIRECTORIES_PRIVATE_NAME
+    alpha_legacy = alpha_entry / manager.DIRECTORIES_PRIVATE_NAME
+    zeta_legacy.write_text(zeta_source, encoding="utf-8")
+    alpha_legacy.write_text(alpha_source, encoding="utf-8")
+
+    assert projmgr.cmd_migrate(_migrate_args(registry)) == 0
+
+    index = registry / manager.PROJECTS_INDEX_NAME
+    assert index.read_text(encoding="utf-8") == (
+        "#+TITLE: Projects\n"
+        "\n"
+        "* Alpha\n"
+        "Alpha prose.\n"
+        "** Directories\n"
+        "   - ~/alpha\n"
+        "** Notes\n"
+        "  Formatting stays.\n"
+        "\n"
+        "* zeta\n"
+        "** Directories\n"
+        "*** file:/zeta\n"
+        "\n"
+    )
+    assert not alpha_legacy.exists()
+    assert not zeta_legacy.exists()
+    document = orglib.parse(index.read_text(encoding="utf-8"))
+    alpha_section = document.directories("alpha").section
+    zeta_section = document.directories("zeta").section
+    assert alpha_section is not None and alpha_section.entries == ("~/alpha",)
+    assert zeta_section is not None and zeta_section.entries == ("/zeta",)
+    assert "migration complete" in capsys.readouterr().out
+
+
+def test_projmgr_migrate_validates_every_source_before_writing(
+    tmp_path: Path, capsys
+) -> None:
+    # Multiple malformed legacy files are all reported and none is modified.
+    registry = tmp_path / "projects"
+    keyword_entry = _migration_project(registry, tmp_path, "keyword")
+    duplicate_entry = _migration_project(registry, tmp_path, "duplicate")
+    keyword = keyword_entry / manager.DIRECTORIES_PRIVATE_NAME
+    duplicate = duplicate_entry / manager.DIRECTORIES_PRIVATE_NAME
+    keyword_text = "#+TITLE: Unsafe here\n* Directories\n"
+    duplicate_text = "* Directories\n* Directories\n"
+    keyword.write_text(keyword_text, encoding="utf-8")
+    duplicate.write_text(duplicate_text, encoding="utf-8")
+
+    assert projmgr.cmd_migrate(_migrate_args(registry)) == 1
+
+    err = capsys.readouterr().err
+    assert str(keyword) in err and "Org keywords" in err
+    assert str(duplicate) in err and "found 2" in err
+    assert keyword.read_text(encoding="utf-8") == keyword_text
+    assert duplicate.read_text(encoding="utf-8") == duplicate_text
+    assert not (registry / manager.PROJECTS_INDEX_NAME).exists()
+
+
+def test_projmgr_migrate_creates_marker_and_is_idempotent(
+    tmp_path: Path, capsys
+) -> None:
+    # A registry with no legacy files still gets a marker; rerunning is a no-op.
+    registry = tmp_path / "projects"
+    _migration_project(registry, tmp_path, "bare")
+    args = _migrate_args(registry)
+
+    assert projmgr.cmd_migrate(args) == 0
+    index = registry / manager.PROJECTS_INDEX_NAME
+    assert index.read_text(encoding="utf-8") == manager.PROJECTS_INDEX_HEADER
+    capsys.readouterr()
+
+    assert projmgr.cmd_migrate(args) == 0
+    assert "registry already migrated" in capsys.readouterr().out
+    assert index.read_text(encoding="utf-8") == manager.PROJECTS_INDEX_HEADER
+
+
+def test_projmgr_migrate_cli_dispatches_to_migration(tmp_path: Path) -> None:
+    # The public verb creates the index rather than retaining its old init alias.
+    registry = tmp_path / "projects"
+    registry.mkdir()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "projmgr.py"),
+            "migrate",
+            "--registry",
+            str(registry),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (registry / manager.PROJECTS_INDEX_NAME).read_text(encoding="utf-8") == (
+        manager.PROJECTS_INDEX_HEADER
+    )
+    assert "migration complete" in result.stdout
+
+
+def test_projmgr_migrate_resumes_interrupted_cleanup(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # A cleanup failure leaves a complete index that a later run can verify.
+    registry = tmp_path / "projects"
+    alpha_entry = _migration_project(registry, tmp_path, "alpha")
+    beta_entry = _migration_project(registry, tmp_path, "beta")
+    alpha = alpha_entry / manager.DIRECTORIES_PRIVATE_NAME
+    beta = beta_entry / manager.DIRECTORIES_PRIVATE_NAME
+    alpha.write_text("* Directories\n** file:/alpha\n", encoding="utf-8")
+    beta.write_text("* Directories\n** file:/beta\n", encoding="utf-8")
+
+    real_unlink = Path.unlink
+    failed = False
+
+    def fail_beta_once(path: Path, *args, **kwargs) -> None:
+        nonlocal failed
+        if path == beta and not failed:
+            failed = True
+            raise OSError("simulated cleanup failure")
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_beta_once)
+    assert projmgr.cmd_migrate(_migrate_args(registry)) == 1
+    assert not alpha.exists()
+    assert beta.exists()
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original_index = index.read_text(encoding="utf-8")
+    assert "cleanup incomplete" in capsys.readouterr().err
+
+    monkeypatch.setattr(Path, "unlink", real_unlink)
+    assert projmgr.cmd_migrate(_migrate_args(registry)) == 0
+    assert not beta.exists()
+    assert index.read_text(encoding="utf-8") == original_index
+    assert "resumed migration" in capsys.readouterr().out
+
+
+def test_projmgr_migrate_refuses_conflicting_existing_index(
+    tmp_path: Path, capsys
+) -> None:
+    # A leftover is removed only when its generated project subtree matches.
+    registry = tmp_path / "projects"
+    entry = _migration_project(registry, tmp_path, "ortask")
+    legacy = entry / manager.DIRECTORIES_PRIVATE_NAME
+    legacy.write_text("* Directories\n** file:~/src/ortask\n", encoding="utf-8")
+    plan = manager.plan_registry_migration(registry)
+    conflicting = plan.index_text.replace("~/src/ortask", "~/src/changed")
+    core.atomic_write(plan.index_path, conflicting)
+
+    assert projmgr.cmd_migrate(_migrate_args(registry)) == 1
+
+    assert "does not exactly match" in capsys.readouterr().err
+    assert legacy.exists()
+    assert plan.index_path.read_text(encoding="utf-8") == conflicting
+
+
+def test_registry_migration_rechecks_preimages_before_writing(tmp_path: Path) -> None:
+    # Inputs changed after planning abort before projects.org can be created.
+    registry = tmp_path / "projects"
+    entry = _migration_project(registry, tmp_path, "ortask")
+    legacy = entry / manager.DIRECTORIES_PRIVATE_NAME
+    legacy.write_text("* Directories\n** file:/one\n", encoding="utf-8")
+    plan = manager.plan_registry_migration(registry)
+    legacy.write_text("* Directories\n** file:/two\n", encoding="utf-8")
+
+    with pytest.raises(manager.RegistryMigrationError, match="changed after"):
+        manager.apply_registry_migration(plan)
+    assert not plan.index_path.exists()
+    assert legacy.read_text(encoding="utf-8") == "* Directories\n** file:/two\n"
 
 
 def test_projadd_creates_symlink_subdir(tmp_path: Path, monkeypatch, capsys) -> None:

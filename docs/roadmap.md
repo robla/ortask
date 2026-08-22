@@ -642,8 +642,8 @@ front-ends over `ortasklib/`, with no script importing another script.
 
 ### Verbs
 
-`projmgr.py` verbs, alphabetical as usual: `add`, `cdproj`, `doctor`, `help`, `init`,
-`list`, `rm`.
+`projmgr.py` verbs, alphabetical as usual: `add`, `cdproj`, `doctor`, `help`,
+`init`, `list`, `migrate`, `rm`.
 
 - `add` replaces `projadd`, and is specified in `docs/projects.md`. The prefix
   was only ever there to disambiguate from local task verbs in a tool that also
@@ -652,9 +652,9 @@ front-ends over `ortasklib/`, with no script importing another script.
 - `init` replaces `migrate`, which no longer migrates anything — it has only
   written the registry path into `ortask.ini` since `projtui.ini` was removed.
   Low priority, but a verb whose name describes a job it no longer does is the
-  kind of drift this section exists to clear. That completed rename frees
-  `migrate` for the real per-entry-to-`projects.org` conversion in `t0026`;
-  after that work it is a distinct verb, not an `init` alias.
+  kind of drift this section exists to clear. That completed rename freed
+  `migrate` for the real per-entry-to-`projects.org` conversion implemented in
+  `t0026.2`; it is now a distinct verb, not an `init` alias.
 - `cdproj` moves here from `orgmgr.py` unchanged in behavior (originally named `pcd`).
   It was always a project-layer command; it landed in `orgmgr.py` because that was
   where the registry lived.
@@ -697,8 +697,8 @@ All six steps are complete (`t0019.1`–`t0019.6`):
 5. Converged the `cdproj` picker and the `ptui` project list onto one row and view
    builder.
 6. Renamed `migrate` to `init`; added `rm` and `doctor`. `migrate` and `projadd`
-   initially remained as deprecated aliases. The registry-index plan now
-   reclaims `migrate`; only `projadd` remains an alias after `t0026`.
+   initially remained as deprecated aliases. `t0026.2` reclaimed `migrate` for
+   the registry-index conversion, so only `projadd` remains an alias.
 
 ### Still open
 
@@ -710,9 +710,9 @@ All six steps are complete (`t0019.1`–`t0019.6`):
 - `add` does not offer to create a task file for a project that has none, and
   `cdproj` still has no way to append the current directory to a project's stack
   (`docs/cdproj.md`).
-- `t0026` must replace the deprecated `migrate` alias with an actual,
-  resumable registry-index migration before private-stack consumers cut over.
-  The remaining `projadd` alias can eventually go.
+- `t0026.3` must cut private-stack consumers over to the index now that the
+  resumable `migrate` command exists. The remaining `projadd` alias can
+  eventually go.
 
 ### Completion Criteria
 
@@ -742,10 +742,10 @@ models or silently discard text from a legacy private file.
    a project's top-level subtree and unique direct-child `Directories` region
    with exact source spans. This is an incremental slice of `t0020`, not a
    dependency on finishing every parser migration.
-2. **`t0026.2`: implement `pmgr migrate`.** Reclaim the name from its temporary
-   `init` alias, validate all old files, write the complete index atomically,
-   and remove only legacy files represented exactly in the index. Support
-   dry-run and safe cleanup after interruption.
+2. **`t0026.2`: implement `pmgr migrate` (done).** The command reclaims the name
+   from its temporary `init` alias, validates all old files, writes the complete
+   index atomically, and removes only legacy files represented exactly in the
+   index. It supports dry-run and safe cleanup after interruption.
 3. **`t0026.3`: enforce the cutover.** Make `projects.org` the migration marker
    and sole private-stack source. Private-stack consumers error before migration
    or during mixed-state cleanup; `doctor` diagnoses those states. Unrelated

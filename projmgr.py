@@ -487,6 +487,53 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_migration_errors(error: manager.RegistryMigrationError) -> None:
+    for message in error.messages:
+        print(f"migrate: {message}", file=sys.stderr)
+
+
+def cmd_migrate(args: argparse.Namespace) -> int:
+    """Move legacy per-entry directory files into the registry index."""
+    registry, registry_display = manager.resolve_registry(args.registry)
+    try:
+        plan = manager.plan_registry_migration(registry)
+    except manager.RegistryMigrationError as exc:
+        _print_migration_errors(exc)
+        return 1
+
+    if args.dry_run:
+        print(f"Registry: {registry_display}")
+        print(f"[dry-run] proposed {manager.friendly_path(plan.index_path)}:")
+        print(plan.index_text, end="" if plan.index_text.endswith("\n") else "\n")
+        if plan.legacy_files:
+            print("[dry-run] would remove:")
+            for legacy in plan.legacy_files:
+                print(f"  {manager.friendly_path(legacy.path)}")
+        elif plan.writes_index:
+            print("[dry-run] no legacy private files; would create migration marker")
+        else:
+            print("[dry-run] registry is already migrated; no changes")
+        return 0
+
+    try:
+        manager.apply_registry_migration(plan)
+    except manager.RegistryMigrationError as exc:
+        _print_migration_errors(exc)
+        return 1
+
+    if plan.writes_index:
+        print(f"wrote {manager.friendly_path(plan.index_path)}")
+    elif not plan.legacy_files:
+        print(f"registry already migrated: {manager.friendly_path(plan.index_path)}")
+        return 0
+    else:
+        print(f"resumed migration from {manager.friendly_path(plan.index_path)}")
+    for legacy in plan.legacy_files:
+        print(f"  removed {manager.friendly_path(legacy.path)}")
+    print("migration complete")
+    return 0
+
+
 def cmd_rm(args: argparse.Namespace) -> int:
     """Remove one project's registry entry. The real project is never touched."""
     registry, registry_display = manager.resolve_registry(args.registry)
@@ -951,14 +998,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_mig = sub.add_parser(
         "migrate",
-        help="deprecated alias for init",
+        help="move legacy private directory files into projects.org",
     )
     p_mig.add_argument("--registry", default=argparse.SUPPRESS,
-                       help="registry directory to record")
-    p_mig.add_argument("--force", action="store_true",
-                       help="use the default even if ortask.ini already has one")
+                       help="registry directory to migrate")
     p_mig.add_argument("--dry-run", action="store_true",
-                       help="show what would be written and removed")
+                       help="show the proposed index and removals")
 
     p_projadd = sub.add_parser(
         "projadd",
@@ -1005,7 +1050,7 @@ def main() -> int:
         "doctor": cmd_doctor,
         "init": cmd_init,
         "list": cmd_list,
-        "migrate": cmd_init,        # deprecated alias
+        "migrate": cmd_migrate,
         "projadd": cmd_add,         # deprecated alias
         "rm": cmd_rm,
     }

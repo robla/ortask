@@ -77,9 +77,10 @@ never part of the project's own repository and needs no per-project
 `.gitignore` entry. Both locations use the same entry format and the same
 parser.
 
-**Status (2026-08-21): the private list is moving.** Today it is one file per
-registry entry, `<registry>/<project>/directories-private.org`. Task `t0026`
-adds `pmgr migrate` and cuts over to one index at
+**Status (2026-08-21): migration is available; consumer cutover is pending.**
+Today `cdproj` still reads one file per registry entry,
+`<registry>/<project>/directories-private.org`. Task `t0026.2` added `pmgr
+migrate`; `t0026.3` cuts consumers over to one index at
 `<registry>/projects.org`, with a `Directories` section under the top-level
 heading named for the registry entry:
 

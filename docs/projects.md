@@ -138,10 +138,11 @@ and stops holding the settings. The `*-private.org` suffix stays reserved, both
 for files left behind by the migration and for anything later that needs to be
 per-entry.
 
-`pmgr migrate` performs the one-time conversion. The index's existence is the
-migration marker; after the cutover, private-stack consumers never combine or
-fall back between the two layouts. They report `run pmgr migrate` when the
-index is absent, and treat an old private file beside it as incomplete cleanup.
+`pmgr migrate` now performs the one-time conversion. The index's existence is
+the migration marker; after the `t0026.3` cutover, private-stack consumers never
+combine or fall back between the two layouts. They report `run pmgr migrate`
+when the index is absent, and treat an old private file beside it as incomplete
+cleanup.
 Commands unrelated to private directory settings, including `list`, `add`,
 `rm`, and `init`, remain usable before migration. `pmgr doctor` is the
 read-only diagnostic for either state.

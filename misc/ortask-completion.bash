@@ -143,13 +143,14 @@ _projmgr_complete()
         cword=$COMP_CWORD
     fi
 
-    # migrate and projadd remain as deprecated aliases for init and add.
+    # projadd remains a deprecated alias for add; migrate is a distinct verb.
     local subcommands="add cdproj doctor help init list migrate projadd rm"
     local global_opts="-i --interactive --registry --todo-only --help"
     local add_opts="--name --file --registry --force --dry-run --help"
     local doctor_opts="--registry --help"
     local init_opts="--registry --force --dry-run --help"
     local list_opts="--all --format --help"
+    local migrate_opts="--registry --dry-run --help"
     local cdproj_opts="--out --registry --help"
     local rm_opts="--registry --force --dry-run --help"
 
@@ -196,17 +197,20 @@ _projmgr_complete()
             add|projadd)
                 COMPREPLY=( $(compgen -W "$add_opts" -- "$cur") )
                 ;;
+            cdproj)
+                COMPREPLY=( $(compgen -W "$cdproj_opts" -- "$cur") )
+                ;;
             doctor)
                 COMPREPLY=( $(compgen -W "$doctor_opts" -- "$cur") )
                 ;;
-            init|migrate)
+            init)
                 COMPREPLY=( $(compgen -W "$init_opts" -- "$cur") )
                 ;;
             list)
                 COMPREPLY=( $(compgen -W "$list_opts" -- "$cur") )
                 ;;
-            cdproj)
-                COMPREPLY=( $(compgen -W "$cdproj_opts" -- "$cur") )
+            migrate)
+                COMPREPLY=( $(compgen -W "$migrate_opts" -- "$cur") )
                 ;;
             rm)
                 COMPREPLY=( $(compgen -W "$rm_opts" -- "$cur") )

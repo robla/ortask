@@ -195,4 +195,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-08-21 Fri 16:53 PDT]: integrated =pmgr migrate= into the =t0026= to =t0031= plan, making =projects.org= the explicit migration marker, specifying a validated and resumable no-fallback cutover, and settling =set-dirs --project= plus zero-input errors.
 ** Codex [2026-08-21 Fri 17:35 PDT]: implemented =t0026.1= with source-backed =orglib.Document.directories(project)= lookups, explicit missing/empty states, duplicate-heading errors, exact project and section spans, and focused parser contract tests while leaving legacy consumers unchanged.
 ** Gemini [2026-08-21 Fri 17:42 PDT]: rewrote =docs/gemini-ortask-design.org= to match the current multi-tool architecture and recommend replacing the "doctor" verb with "check"/"audit", and updated Gemini's assessment in =docs/llm-assessments.md=.
-
+** Codex [2026-08-21 Fri 17:49 PDT]: implemented =t0026.2= by reclaiming =pmgr migrate= from =init=, adding validated dry-run and atomic index creation, exact resumable cleanup, shell completion, fixture coverage, and migration-status documentation while leaving consumer cutover to =t0026.3=.

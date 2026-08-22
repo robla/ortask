@@ -10,12 +10,11 @@ The intended aliases are `pmgr` for the command and `ptui` for its interactive
 form, `projmgr.py -i`. `pmgr` with no subcommand shows help, as `ort` does.
 
 This command was named `orgmgr.py` (`orgm`) until 2026-08-19. `projadd`
-survives as a deprecated alias for `add`. Until `t0026` lands, `migrate` still
-dispatches to `init`; the cutover reclaims it for migration to the registry
-index.
+survives as a deprecated alias for `add`. `migrate` converts legacy private
+directory files into the registry index; it no longer dispatches to `init`.
 
-Planned verb set: `add`, `cdproj`, `doctor`, `init`, `list`, `migrate`, `rm`,
-`set-dirs`. `migrate` and `set-dirs` are specified by `t0026` and `t0031`.
+Current verb set: `add`, `cdproj`, `doctor`, `init`, `list`, `migrate`, `rm`.
+`set-dirs` is planned in `t0031`.
 
 ## Registry Model
 
@@ -205,7 +204,7 @@ Behavior:
 
 This was called `migrate` until 2026-08-19, when it had not migrated anything
 for two months — `projtui.ini` and the `projdir` key were removed long before.
-Task `t0026` reclaims that name for a real data migration; it does not change
+Task `t0026.2` reclaimed that name for a real data migration; it did not change
 `init`.
 
 ## `list`
@@ -273,8 +272,7 @@ Task selection rules:
 
 ## `migrate`
 
-**Status: specified, not implemented (`t0026.2`). Until then, this name remains
-a deprecated alias for `init`.**
+**Status: implemented (`t0026.2`).**
 
 `projmgr.py migrate [--dry-run]` converts per-entry
 `directories-private.org` files into `<registry>/projects.org`. The index's
@@ -287,9 +285,10 @@ projmgr.py migrate
 
 Migration validates every legacy file first, nests each accepted document
 under its project heading without discarding prose or comments, writes the
-complete index atomically, and only then removes the old files. An empty
-set of legacy private files still produces an empty index marker. `--dry-run`
-prints the proposed index and removal plan.
+complete index atomically, and only then removes the old files. It
+conservatively rejects Org keyword lines whose scope cannot be preserved by
+nesting. An empty set of legacy private files still produces an empty index
+marker. `--dry-run` prints the proposed index and removal plan.
 
 The command is resumable across interruption between the index write and old
 file cleanup: it removes a leftover only when that file agrees with the
@@ -423,9 +422,6 @@ in the middle of the prompt.
 ## Deprecated aliases
 
 `projadd` still dispatches to `add`; new documentation should use `add`.
-`migrate` currently dispatches to `init`, but that compatibility ends when
-`t0026` gives `migrate` its registry-index meaning. It must not remain an alias
-after the cutover.
 
 ## Not planned
 

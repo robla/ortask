@@ -126,10 +126,10 @@ require the registry to be a repository.
 
 ## The registry index file
 
-**Status: decided, not yet implemented (`t0026`).** The sections above describe
-today's behavior. The cutover below supersedes the per-entry
-`directories-private.org` scheme; there is deliberately no long-lived fallback
-between the two models.
+**Status: migration implemented (`t0026.2`); consumer cutover pending
+(`t0026.3`).** The sections above describe today's consumer behavior. The
+cutover below supersedes the per-entry `directories-private.org` scheme; there
+is deliberately no long-lived fallback between the two models.
 
 Private per-project config moves out of one file per registry entry
 (`<entry>/directories-private.org`) and into **one Org file at the registry
@@ -227,8 +227,8 @@ its top-level behavior for project task files, while
 heading and then its unique direct-child `** Directories`. The public
 `orglib.parse(text).directories(project)` result distinguishes a missing
 project, a missing section, and an empty section, and carries exact source spans
-for both the project and directory subtrees. Migration and consumers are still
-pending in `t0026.2` and `t0026.3`.
+for both the project and directory subtrees. `t0026.2` uses those spans for
+migration validation; the consumer cutover remains in `t0026.3`.
 
 Three consequences worth deciding deliberately:
 
@@ -280,9 +280,9 @@ performs these phases in order:
 
 1. Read and validate every `<entry>/directories-private.org` before changing
    anything. Require exactly one top-level `* Directories` subtree. Reject
-   duplicate project names and content that cannot be nested safely, such as a
-   file-wide keyword whose meaning would escape the project subtree; name every
-   offending file.
+   duplicate project names and content that cannot be nested safely. The first
+   implementation conservatively rejects every `#+KEYWORD:` line because its
+   scope may escape the project subtree; name every offending file.
 2. Build one project section per legacy file. Wrap the legacy document in a
    top-level project heading and demote each of its headings one level, so its
    comments, prose, entry spelling, and unrelated subtrees survive. The old

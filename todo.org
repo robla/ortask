@@ -153,7 +153,7 @@ not =core=. This incrementally completes the directory-parsing slice of
 =t0020= without waiting for every parse call site to move. Test direct-child
 selection, ignored deeper headings, missing-versus-empty results, duplicate
 errors, and exact source spans.
-*** TODO t0026.2 Implement pmgr migrate
+*** DONE t0026.2 Implement pmgr migrate
 Reclaim =migrate= from its deprecated =init= alias. =pmgr migrate [--dry-run]=
 validates every legacy private file before writing, creates =projects.org=
 atomically, then removes the migrated files. Preserve each accepted legacy

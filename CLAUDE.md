@@ -29,10 +29,10 @@ All scripts are stdlib-only (Python 3.10+, no external dependencies).
   registry`. Verbs: `add` (register the project you are in), `cdproj` (write
   a project's directory stack; see `docs/cdproj.md`), `doctor` (report
   broken/ambiguous/unreadable entries), `init` (record the registry in
-  `~/.config/ortask/ortask.ini`), `list` (read-only task overview), and `rm` (remove one
-  registry entry). `projadd` remains a deprecated alias for `add`; `migrate`
-  currently aliases `init`, but `t0026` reclaims it for migration to the
-  registry-root `projects.org` index. Project-level writes are limited to
+  `~/.config/ortask/ortask.ini`), `list` (read-only task overview), `migrate`
+  (convert legacy private directory files to the registry-root `projects.org`
+  index), and `rm` (remove one registry entry). `projadd` remains a deprecated
+  alias for `add`. Project-level writes are limited to
   config, the registry, and explicit output files; `ortask.py` owns local task
   editing. The intended aliases are `pmgr`
   and, for `-i`, `ptui`. Specs: `docs/projmgr.md` for the command,

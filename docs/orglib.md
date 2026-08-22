@@ -159,7 +159,7 @@ subtree, one heading subtree, a task body, or eventually a whole document.
 The registry-index read side in `t0026.1` is the first incremental use of this
 model. `orglib.parse(text).directories(project)` locates one top-level project
 subtree and its unique direct-child `Directories` region, retaining source
-offsets and distinguishing missing from empty. `pmgr migrate` will use those
+offsets and distinguishing missing from empty. `pmgr migrate` uses those
 boundaries to validate the new index; `pmgr set-dirs` later replaces only that
 bounded region. This moves the directory-parsing slice of `t0020` without
 making `t0026` wait for the complete generic region API in `t0028`.
