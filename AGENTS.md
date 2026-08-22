@@ -1,40 +1,54 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-`ortask.py` is the only executable source file. It currently holds the CLI, parser, data model, and rendering logic. `README.org` is the default input file and main quick start. Use `docs/ortask.md` as the desired CLI contract and `docs/*.org` for design rationale. Put new tests under `tests/`.
+`ortask.py` is the local, single-Org-file CLI; `projmgr.py` manages projects in
+a project registry. Shared code lives in `ortasklib/`: `core.py` provides
+discovery, `tasks.py` owns task queries and surgical edits,
+`manager.py` owns registry behavior, and `menu.py`/`taskui.py` implement the
+bounded TUI. `orglib/` is a standalone Org syntax package and must not import
+`ortasklib`. Tests are in `tests/test_ortask_suite.py`; specifications and design
+context are in `docs/`; shell integration is in `misc/`.
 
 ## Build, Test, and Development Commands
-Use the script directly:
+There is no build step. Use Python 3.10+ directly:
 
-- `./ortask.py` lists TODO items from `README.org`.
-- `./ortask.py --items 5` limits output for quick checks.
-- `./ortask.py --file path/to/file.org` runs against another Org file.
-- `python3 -m py_compile ortask.py` performs a fast syntax check.
-- `python3 -m pytest -q` is the expected test command once a test suite exists.
+- `./ortask.py --help` lists local task commands.
+- `./ortask.py --file /tmp/sample.org list` exercises a fixture.
+- `./projmgr.py --help` lists registry and project commands.
+- `python3 -m py_compile ortask.py projmgr.py ortasklib/*.py orglib/*.py` checks syntax.
+- `python3 -m pytest -q` runs the regression suite.
 
-The repository is stdlib-only; there is no build step or dependency install.
+Core CLI behavior is stdlib-only. `prompt_toolkit` enables the full interactive
+UI, Rich improves numbered tables, and `pytest` is required for tests; TUI code
+must retain fallback behavior when optional packages are absent.
 
-Do not run newly created or modified commands against real repository files if the command can mutate data unless the user explicitly asks for that run. Implementing a command is not permission to execute it on the user's files. Use `--help`, syntax checks, tests with temporary fixtures, or documented dry runs for verification. Ask first before running commands such as `./ortask.py add`, `./ortask.py archive`, `./ortask.py done`, `./ortask.py repair`, or any sorter/rewrite command on real data.
+## Org Files, Style, and Naming
+Unless `--file` or `ORTASK_FILE` overrides discovery, it walks upward for
+`tasks.org`, `task.org`, exactly one `*.task.org`, then compatibility names
+`TODO.org`, `TODO*.org`, and `todo.org`. As a final current-directory fallback,
+exactly one generic `*.org` is accepted; ambiguity is an error.
 
-## Current State & Contribution Priorities
-This repo is specification-first: the docs describe an Org-heading task manager, while `ortask.py` still parses the older checkbox format and supports only listing plus `--items`. Treat `README.org` as the main fixture, and treat the design docs as guidance rather than executable truth.
+Use 4-space indentation, type hints, explicit functions, and dataclasses
+where useful. Use `snake_case` names and `UPPER_SNAKE_CASE`
+constants. Register subcommands alphabetically across parsers, dispatch,
+completion, help, and command references. Keep `orglib` generic; ortask policy
+belongs in `ortasklib`. Preserve Org source formatting with bounded line edits
+and atomic writes rather than whole-file reserialization.
 
-When extending the tool, work in this order:
+## Testing and Data Safety
+Add focused pytest coverage with temporary Org and registry fixtures. Start each
+test with a short comment explaining its contract. Cover semantic results and
+source preservation, especially surrounding prose, headings, drawers, and
+unrelated registry sections.
 
-- update parsing to support `TODO`/`DONE` headings with stable IDs like `T0001`
-- keep checkbox compatibility if it stays cheap
-- add `argparse` subparsers with `list` as the default behavior
-- implement read-only features before write commands
-- defer repair/sync-style commands until parse and write paths are tested
+Never run a mutating command against real repository files or the configured
+registry merely to verify an implementation. Use temporary fixtures, `--help`,
+syntax checks, tests, or documented dry runs. Ask before commands such as
+`ortask.py add`, `archive`, `done`, or `repair` on real data.
 
-## Coding Style & Naming Conventions
-Follow existing Python style: 4-space indentation, type hints, `dataclass` models where helpful, and small functions with explicit names. Prefer `snake_case` for functions and variables, `UPPER_SNAKE_CASE` for module constants, and short imperative subcommand names such as `list` or `done`. Register subcommands alphabetically and keep dispatch tables, shell completion lists, help output, and command-reference sections in the same order. Keep a parser/query-writer split and prefer minimal line-level rewrites over reserializing the whole file.
-
-## Testing Guidelines
-There is no committed test suite yet. New behavior should include `pytest` tests with small fixture Org documents that cover parsing, item limits, ID handling, and round-trip edits. Name tests by behavior, for example `test_limit_items_rejects_negative_values`. Prioritize mixed old/new heading parsing, ID allocation, and edits that preserve surrounding prose, drawers, blank lines, and non-task sections. Until CI exists, include the exact manual commands you ran in the change description.
-
-## LLM Work Log
-When making any user-requested repository change, update `docs/llm-log.org` in the same turn with one concise entry describing the substantive change. Use the model name actually doing the work, the local timestamp, and the existing single-line Org entry format. Do not log pure investigation or no-op commands.
-
-## Commit & Pull Request Guidelines
-Current history uses short, imperative commit subjects. Keep that pattern: `Add TODO heading parser` is better than `changes`. Pull requests should summarize user-visible behavior, note any README or docs updates, and include before/after CLI examples when output changes. Link related issues when available, and call out any gaps such as untested file-write paths.
+## Agent Logs, Commits, and Reviews
+For every user-requested repository change, append one concise, timestamped
+entry to `docs/llm-log.org` using the actual model name and existing Org format.
+Do not log investigation-only turns. Keep commit subjects short and imperative;
+include the task ID when applicable. Pull requests should describe visible
+behavior, tests run, documentation changes, and any untested write paths.

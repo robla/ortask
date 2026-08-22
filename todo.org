@@ -14,9 +14,12 @@ Delete =_run_selector=, =select_menu=, =select_project_menu=, and their
 compatibility-only tests after confirming no supported production path uses
 them. Keep the persistent =InlineMenuSession= path and non-TTY numbered menus.
 ** TODO t0012 Refresh agent instructions for the implemented repository
-Update =AGENTS.md= and =CLAUDE.md= to describe the current scripts,
-=ortasklib/= package, prompt_toolkit dependency, pytest suite, task-file
-resolution, and supported commands; check =GEMINI.md= for the same drift.
+Keep each agent's repository guidance aligned with the implemented scripts,
+package boundaries, optional TUI dependencies, pytest suite, task-file
+resolution, supported commands, and data-safety rules.
+*** DONE t0012.1 Refresh AGENTS.md
+*** TODO t0012.2 Have Claude refresh CLAUDE.md
+*** TODO t0012.3 Have Gemini refresh GEMINI.md
 ** TODO t0013 Assess interactive performance and responsiveness
 Measure input-to-repaint latency for navigation, view transitions, filtering,
 large task files, and terminal resize. Add focused regression measurements for
