@@ -364,27 +364,46 @@ people — or one person in two terminals — editing different project sections
 one file is not a conflict in any useful sense, and =pmgr set-dirs=,
 =pmgr migrate=, =cdproj='s external editor, and Emacs can all touch the index
 while =ptui= holds it. The goal is that the session absorbs those writes and
-says so, and only refuses what it genuinely cannot reconcile.
-*** TODO t0037.1 Alert on external index changes while a buffer is open
-Notice the change while editing rather than at =C-s=. Detect that
-=projects.org= moved under the open buffer — mtime and size, hashing only when
-those differ — and surface it in the bounded UI as a visible alert with the
-recovery actions: reload and lose the buffered edit, keep editing and accept
-that the save will refuse, or save over. Finding out at save time that ten
-minutes of edits cannot be written is the outcome this removes. Poll on the
-existing resize/refresh path rather than adding a watcher thread, and keep
-=orti='s task-file buffer in mind — the same alert belongs there, since the
-same thing can happen to a task file.
-*** TODO t0037.2 Automerge non-conflicting external index changes
-When the external write touched project sections the buffer did not, merge it
-into the buffer and carry on, reporting what was absorbed. The merge is an
-in-memory operation: it updates the buffer and may refresh the auto-save
-sibling =#projects.org#=, and it never writes =projects.org=, which still
-changes only when the user saves. Merge when the change is detected, ahead of
-any save, so =C-s= either writes a buffer that already contains the other write
-or refuses with =t0037.1='s alert. Merge at the granularity of a project
-section, using the source spans =t0035.1= produces; two edits inside one
-section are a conflict, and a conflict alerts rather than guesses. Tests: a
-=set-dirs= on another project is absorbed with =projects.org= untouched until
-save, an edit to the same section alerts, and a failed merge leaves both the
-buffer and the file unchanged.
+says so, and only refuses what it genuinely cannot reconcile. Implement after
+=t0035.1= supplies project spans and =t0035.3= supplies the preimage-safe
+=OrgBuffer= save path. Integrate only =ptui=/=projects.org= here, but keep the
+buffer seam reusable for a later =orti= task-file reconciler. The complete
+state and merge contract is in =docs/ptui.md=.
+*** TODO t0037.1 Detect external changes without weakening save safety
+Give =OrgBuffer= a remembered disk signature for inexpensive UI polling. Use
+device/inode, size, and nanosecond mtime only as a change hint; after a hint,
+read the file and compare exact text with the saved baseline. Always repeat the
+exact comparison at =C-s= even when polling saw nothing. A clean buffer adopts
+changed disk text as its new clean baseline. A dirty buffer reports a structured
+external-change state for reconciliation. Missing or unreadable files block
+save. Poll from the existing prompt-toolkit refresh path without a watcher
+thread. Do not offer routine force-overwrite: the alert permits reload/discard,
+continue editing, and retry. Tests cover changed, touched-but-identical,
+replaced, deleted, and unreadable files plus a same-stat save-time change.
+*** TODO t0037.2 Add a pure project-section three-way merge planner
+Add a no-I/O =ortasklib.manager= helper taking Base (last disk text), Ours
+(buffer text), and Theirs (current disk text). Use =t0035.1='s unique normalized
+project names and exact source spans. Build on Theirs so external preamble,
+ordering, additions, deletions, and untouched sections survive. Replay each
+locally changed existing section only when Theirs still equals Base; accept an
+identical Ours/Theirs result; report a structured conflict when both changed
+one section differently, when a locally changed section was deleted, or when a
+local edit falls outside an addressable project section. Apply replacements
+back-to-front and validate the merged document. Tests cover disjoint edits,
+identical edits, same-section conflicts, external add/delete/reorder, source
+fidelity, malformed input, and a guarantee that the helper performs no writes.
+*** TODO t0037.3 Reconcile the open ptui buffer and expose conflicts
+On detection and immediately before =C-s=, call the planner in memory. A
+successful dirty merge makes Theirs the new saved baseline and the merged text
+the dirty buffer; collapse local undo to one rebased transaction and clear redo
+so undo/discard preserve the absorbed external edit. Refresh =#projects.org#=
+only afterward as ordinary crash recovery; it is never a merge input or staging
+file. Leave the real index, buffer, history, and auto-save unchanged on
+conflict, show a persistent alert naming the project sections, and refuse
+=C-s= until reload, undo/edit plus retry, or another successful reconciliation.
+After reconciliation, =C-s= performs one final exact preimage check and the
+existing atomic write. Event logging compares the rebased disk baseline with
+the saved merge so it does not attribute external edits to =ptui=. Tests cover
+clean adoption, dirty merge, undo, discard, conflict recovery, a second change
+before save, auto-save contents, event attribution, and no =projects.org= write
+before explicit save.

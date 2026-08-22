@@ -154,15 +154,68 @@ the index write path already has.
 Refusing is the floor rather than the goal. What the session should eventually
 do is merge: two people editing different project sections of one file is not a
 conflict in any meaningful sense, and the tool should say so by absorbing the
-other write instead of refusing. That is `t0037`, in two steps — notice the
-change and alert while the buffer is open, then merge what can be merged and
-alert only when it cannot.
+other write instead of refusing. That is `t0037`, in three stages: detect the
+change, plan a pure section-level merge, then reconcile the open buffer and
+alert only when reconciliation cannot succeed.
 
 **Merging is an in-memory operation.** It updates the buffer, and may refresh
 the auto-save sibling; it never writes `projects.org`, which still changes only
 when the user saves. Merge on detection, ahead of any save, so `C-s` either
 writes a buffer that already contains the other write or refuses with the
 alert. Refusal remains correct for what a merge cannot handle.
+
+### In-memory reconciliation contract
+
+The merge has three exact-text inputs:
+
+- **Base** is the `projects.org` text read at the last load, save, or successful
+  reconciliation. In `OrgBuffer` this is the saved disk baseline.
+- **Ours** is the current in-memory buffer, including unsaved `ptui` edits.
+- **Theirs** is a fresh read of `projects.org` after external change detection.
+
+The project-specific planner belongs in `ortasklib.manager`, using the source
+spans exposed by `orglib`; `OrgBuffer` owns only file observation, buffer state,
+undo, auto-save, and save orchestration. This keeps a future task-file merger
+possible without teaching the generic buffer about registry structure.
+
+The planner is pure: it receives Base, Ours, and Theirs and returns either
+merged text plus the absorbed project names, or structured conflicts. It does
+not read or write files. Theirs is the output canvas. For every project section
+changed in Ours, replay the complete raw section when that section in Theirs is
+still byte-for-byte Base. If Ours and Theirs made the same change, accept it. If
+both changed the same section differently, report a conflict rather than
+attempting a field-level merge. This first version also conflicts on local
+changes outside a uniquely addressed existing project section. Starting from
+Theirs preserves external changes to the preamble, project order, untouched
+sections, and externally added or deleted projects.
+
+After a successful dirty merge, Theirs becomes the new disk baseline and the
+merged text remains the dirty buffer. This rebase is essential: `discard` must
+return to Theirs, a later save must not reject the already absorbed write, and
+the activity log must not claim that `ptui` made the external change. Snapshot
+undo entries based on the old file are unsafe after rebasing, so the first
+implementation collapses the local work into one transaction from Theirs to
+the merged text and clears redo. Undo then removes the local work without
+removing the external work.
+
+The merge calculation and decision happen entirely in memory. Once accepted,
+the normal auto-save path may copy the merged buffer to `#projects.org#` for
+crash recovery; that file is neither a merge input nor a staging file. The real
+`projects.org` changes only on explicit `C-s`.
+
+File metadata is only an early-warning optimization. The UI may poll device,
+inode, size, and nanosecond mtime during its existing refresh cycle, then read
+and compare exact text when that signature changes. `C-s` must always read and
+compare exact text again before its atomic write. A clean buffer adopts an
+external change as clean. A dirty buffer attempts reconciliation. Missing,
+unreadable, malformed, or conflicting input leaves the buffer, history,
+auto-save, and real file unchanged and puts the UI into a persistent conflict
+state.
+
+The conflict state offers reload/discard, continue editing, and retry. It does
+not make force-overwrite a routine recovery action. `C-s` remains blocked until
+the user reloads, edits or undoes the overlap and retries, or reconciliation
+succeeds after another external change.
 
 Two consequences, both decided:
 
@@ -194,5 +247,7 @@ people open in Emacs, so the cookie wins anyway.
    Nothing below could write a cookie safely until it landed.
 1. Parse project priority and description, then add priority/alphabetical sort.
 2. Add buffered priority changes from the project list.
-3. Add the `m` metadata workspace and bounded save path.
-4. Add modified-time sorting and the task-file mirror diagnostics.
+3. Add external-change detection, pure section merging, and buffer
+   reconciliation (`t0037`).
+4. Add the `m` metadata workspace and bounded save path.
+5. Add modified-time sorting and the task-file mirror diagnostics.
