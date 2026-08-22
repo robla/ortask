@@ -1140,6 +1140,7 @@ def test_cli_subcommands_are_registered_alphabetically() -> None:
             "archive",
             "done",
             "help",
+            "init",
             "list",
             "open",
             "repair",
@@ -1213,6 +1214,7 @@ def test_bash_completion_for_ortask_and_alias() -> None:
         ("_ortask_complete", "COMP_WORDS=(ort --in); COMP_CWORD=1", "--interactive"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py app); COMP_CWORD=1", "apply"),
         ("_ortask_complete", "COMP_WORDS=(ort ar); COMP_CWORD=1", "archive"),
+        ("_ortask_complete", "COMP_WORDS=(ort in); COMP_CWORD=1", "init"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py list --fo); COMP_CWORD=2", "--format"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py apply --te); COMP_CWORD=2", "--template"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py apply --template w); COMP_CWORD=3", "weekly"),
@@ -1351,6 +1353,7 @@ def test_bash_completion_lists_subcommands_alphabetically() -> None:
                 "archive",
                 "done",
                 "help",
+                "init",
                 "list",
                 "open",
                 "repair",
@@ -1445,6 +1448,80 @@ def test_cli_add_creates_tasks_org_when_no_task_file_exists(tmp_path: Path) -> N
         "* Tasks",
         "** TODO t0001 First task",
     ]
+
+
+def test_cli_init_creates_local_tasks_org_without_parent_discovery(
+    tmp_path: Path,
+) -> None:
+    # init establishes a new local task boundary even when an ancestor has one.
+    parent_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 Parent\n")
+    child = tmp_path / "bashfuncs2023"
+    child.mkdir()
+    env = {key: value for key, value in os.environ.items() if key != "ORTASK_FILE"}
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "ortask.py"), "init"],
+        cwd=child,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "initialized tasks.org\n"
+    assert result.stderr == ""
+    assert (child / "tasks.org").read_text(encoding="utf-8") == "* Tasks\n"
+    assert parent_file.read_text(encoding="utf-8") == (
+        "* Tasks\n** TODO t0001 Parent\n"
+    )
+
+
+def test_cli_init_honors_explicit_and_environment_task_files(tmp_path: Path) -> None:
+    # Explicit and environment overrides may select another dedicated filename.
+    explicit = tmp_path / "bashfuncs.task.org"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "ortask.py"),
+            "--file",
+            str(explicit),
+            "init",
+        ],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert explicit.read_text(encoding="utf-8") == "* Tasks\n"
+
+    configured = tmp_path / "configured.task.org"
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "ortask.py"), "init"],
+        cwd=tmp_path,
+        env={**os.environ, "ORTASK_FILE": str(configured)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert configured.read_text(encoding="utf-8") == "* Tasks\n"
+
+
+def test_cli_init_only_replaces_empty_dedicated_files(tmp_path: Path) -> None:
+    # init may fill an empty task file but must preserve nonempty or generic files.
+    empty = write(tmp_path / "task.org", "  \n")
+    assert ortask.cmd_init(argparse.Namespace(file=empty)) == 0
+    assert empty.read_text(encoding="utf-8") == "* Tasks\n"
+
+    existing = write(tmp_path / "tasks.org", "* Notes\nKeep me.\n")
+    assert ortask.cmd_init(argparse.Namespace(file=existing)) == 1
+    assert existing.read_text(encoding="utf-8") == "* Notes\nKeep me.\n"
+
+    generic = tmp_path / "notes.org"
+    assert ortask.cmd_init(argparse.Namespace(file=generic)) == 1
+    assert not generic.exists()
 
 
 # --- projmgr registry model: the project marker, init, add, rm, doctor -------

@@ -47,6 +47,8 @@ existing parent and verify it gets the next dotted child ID, is inserted after
 the parent’s existing descendants, and preserves unrelated prose.
 Also verify that `ortask.py add` creates `tasks.org` only when no task file is
 discovered, and does not append `* Tasks` to arbitrary existing Org prose.
+Verify separately that `ortask.py init` bypasses upward discovery, initializes
+missing or empty dedicated task files, and preserves nonempty files exactly.
 
 ## 6. Toggle Task State In Place
 

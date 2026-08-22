@@ -24,6 +24,9 @@ Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
 # list all tasks
 ./ortask.py list
 
+# create an empty task file in the current directory
+./ortask.py init
+
 # list only open tasks
 ./ortask.py list --state todo
 
@@ -64,6 +67,8 @@ By default, =ortask.py= walks upward from the current directory looking for
 such as =TODO.org= and =todo.org=. Use =--file= or the =ORTASK_FILE= env var to
 override. Ambiguous matches stop with an error instead of guessing. If =ort add=
 finds no task file, it creates =tasks.org= in the current directory.
+=ort init= also creates =./tasks.org=, but without walking upward or adding a
+first task; use =--file NAME.task.org= to choose another dedicated filename.
 
 * Shell aliases and functions
 

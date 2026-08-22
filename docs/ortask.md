@@ -13,6 +13,7 @@ ortask.py apply [--template NAME] [--week WEEK] [--date YYYY-MM-DD] [--dry-run] 
 ortask.py archive [<id>] [--file FILE]
 ortask.py done <id> [--file FILE]
 ortask.py help
+ortask.py [--file FILE] init
 ortask.py list [--todo | --done | --all] [--root-only] [--items N] [--format FORMAT] [--file FILE]
 ortask.py open <id> [--file FILE]
 ortask.py repair [--dry-run | --fix] [--file FILE]
@@ -129,6 +130,27 @@ line is modified; all other file content is preserved.
 Print the top-level command help. Bare `ortask.py` still defaults to `list`;
 use `ortask.py help` or `ortask.py --help` to display the command inventory.
 
+### init
+
+```
+ortask.py init
+ortask.py --file bashfuncs.task.org init
+```
+
+Create an empty dedicated task file containing exactly:
+
+```org
+* Tasks
+```
+
+Without an override, `init` always targets `./tasks.org`; it does not walk
+upward or select a generic Org file. `--file` and `ORTASK_FILE` may choose
+`tasks.org`, `task.org`, `TODO.org`, `todo.org`, or a name ending in
+`*.task.org`. The parent directory must already exist. A missing file is
+created exclusively, an empty existing file is initialized, and a nonempty
+file is refused without modification. Use `add` instead when the first task is
+already known.
+
 ### list
 
 Print tasks. With no flags, prints all tasks in indented plain text.
@@ -204,7 +226,8 @@ deadlines, and any subtasks.
     6. Exactly one generic `*.org` in the original current directory only
 
     Ambiguous tiers produce an error instead of silently choosing
-    alphabetically.
+    alphabetically. `init` is the exception to automatic discovery: absent an
+    explicit or environment override, it uses `./tasks.org` directly.
 
 **-i, --interactive**
 :   Open the shared `taskui` task menu for the resolved local Org file instead of
@@ -280,7 +303,8 @@ filtering with `--state` or `--root-only`).
 
 ## FILE MODIFICATION
 
-Write operations (`add`, `apply`, `archive`, `done`, `open`, `repair --fix`)
+Write operations (`add`, `apply`, `archive`, `done`, `init`, `open`,
+`repair --fix`)
 follow these rules:
 
 - Edits touch only selected task headings, inserted task headings, or the
@@ -289,11 +313,14 @@ follow these rules:
 - For state changes, only the matched heading line is rewritten.
 - For `add`, the new heading is appended at the end of the task subtree
   (or after the last sibling under the parent for subtasks).
+- For `init`, a missing file is created exclusively; only an existing empty
+  dedicated task file may be replaced.
 - For `archive`, complete subtrees move to the adjacent `.org_archive` file;
   both replacements are atomic and the archive write is rolled back if the
   source replacement fails.
 - For `repair --fix`, only lines with detected problems are rewritten.
-- Writes go to a temporary file first, then atomically replace the original.
+- Existing-file replacements go to a temporary file first, then atomically
+  replace the original.
 
 ## EXIT STATUS
 

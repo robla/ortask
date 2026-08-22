@@ -73,13 +73,16 @@ The top-level scripts are thin command/front-end layers. They own argument
 parsing, user prompts, process exit codes, and human-readable output. Shared
 modules never call `sys.exit()` or parse CLI arguments.
 
-- `ortask.py` — local task commands (`list`, `show`, `add`, `done`, `open`,
-  `repair`). Each `cmd_*` reads the file, calls a `tasks`/`core` helper,
+- `ortask.py` — local task commands (`add`, `apply`, `archive`, `done`, `init`,
+  `list`, `open`, `repair`, `show`). Each `cmd_*` reads or initializes the file,
+  calls a `tasks`/`core` helper,
   translates the result (and `TaskNotFound`) into output and an exit code, and
-  writes via `core.write_lines`.
-- `projmgr.py` — project-layer commands (`add`, `cdproj`, `doctor`, `init`, `list`,
-  `rm`) plus `-i`. `cmd_list` calls `manager.summarize_projects()` and formats
-  the records. It owns the project list itself: `_project_rows`,
+  uses the shared atomic writers for replacements; `init` creates a missing
+  path exclusively so it cannot overwrite a concurrent file.
+- `projmgr.py` — project-layer commands (`add`, `cdproj`, `doctor`, `init`,
+  `list`, `migrate`, `rm`, `set-dirs`) plus `-i`; `projadd` is a deprecated
+  alias. `cmd_list` calls `manager.summarize_projects()` and formats the
+  records. It owns the project list itself: `_project_rows`,
   `_project_location`, `_anchor_index`, and `_project_view` are shared by the
   navigator (`_ProjectBrowser`), `cdproj` (`_CdprojSession`), and both numbered
   fallbacks, so only what `Enter` does differs between them.

@@ -207,3 +207,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Gemini [2026-08-21 Fri 22:48 PDT]: refreshed =GEMINI.md= for the current repository architecture, resolution ladder, and subcommands; closed =t0012.3= and =t0012=.
 
 ** Claude [2026-08-21 Fri 23:00 PDT]: closed =t0011= by deleting =_run_selector=, =select_menu=, and =select_project_menu= (=menu.py= 1357 → 1124 lines) plus their three compatibility tests, moved the empty-list contract onto an =InlineMenuSession= test, and updated =docs/architecture.md=, =docs/interactive.md=, =docs/roadmap.md=, =docs/cdproj.md=, and Claude's assessment.
+** Codex [2026-08-21 Fri 23:08 PDT]: added =ort init= to create a local empty =tasks.org= without upward discovery, with dedicated-name validation, explicit/environment overrides, exclusive missing-file creation, nonempty-file refusal, alphabetical help/completion, documentation, and fixture coverage.

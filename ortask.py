@@ -13,6 +13,7 @@ ID, and edit logic lives in ``ortasklib.core`` and ``ortasklib.tasks``.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -146,6 +147,63 @@ def cmd_add(args: argparse.Namespace) -> int:
         return 1
     _write_lines(args.file, new_lines)
     print(f"added {new_id} \"{args.title}\" to {args.file}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: init
+# ---------------------------------------------------------------------------
+
+def cmd_init(args: argparse.Namespace) -> int:
+    path = args.file.expanduser()
+    if not _is_dedicated_task_file(path):
+        print(
+            f"init: not a dedicated task-file name: {path.name}",
+            file=sys.stderr,
+        )
+        return 1
+    if not path.parent.is_dir():
+        print(f"init: parent directory not found: {path.parent}", file=sys.stderr)
+        return 1
+
+    if path.exists():
+        if not path.is_file():
+            print(f"init: not a file: {path}", file=sys.stderr)
+            return 1
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            print(f"init: cannot read {path}: {exc}", file=sys.stderr)
+            return 1
+        if text.strip():
+            print(f"init: refusing to overwrite nonempty file: {path}", file=sys.stderr)
+            return 1
+        try:
+            _write_lines(path, ["* Tasks"])
+        except OSError as exc:
+            print(f"init: cannot write {path}: {exc}", file=sys.stderr)
+            return 1
+    else:
+        created = False
+        try:
+            # Exclusive creation preserves the refusal-to-overwrite contract if
+            # another process creates the path after the existence check.
+            with path.open("x", encoding="utf-8") as handle:
+                created = True
+                handle.write("* Tasks\n")
+        except FileExistsError:
+            print(
+                f"init: refusing to overwrite existing file: {path}",
+                file=sys.stderr,
+            )
+            return 1
+        except OSError as exc:
+            if created:
+                path.unlink(missing_ok=True)
+            print(f"init: cannot create {path}: {exc}", file=sys.stderr)
+            return 1
+
+    print(f"initialized {path}")
     return 0
 
 
@@ -325,6 +383,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("help", help="show this help message")
 
+    sub.add_parser("init", help="create an empty dedicated task file")
+
     # list remains the default when no subcommand is supplied.
     p_list = sub.add_parser("list", help="print tasks")
     state_group = p_list.add_mutually_exclusive_group()
@@ -361,23 +421,31 @@ def main() -> int:
 
     cmd = args.command or "list"
 
-    if args.file is None:
-        try:
-            resolved = resolve_org_file()
-        except OrgFileDiscoveryError as exc:
-            print(exc, file=sys.stderr)
-            return 1
-        if resolved is None:
-            if cmd == "add" and not args.interactive:
-                args.file = Path(DEFAULT_NEW_TASK_FILE)
-            else:
-                print("no org file found (create tasks.org or use --file)",
-                      file=sys.stderr)
-                return 1
-        else:
-            args.file = resolved
+    if cmd == "init" and args.interactive:
+        print("init: --interactive is not supported", file=sys.stderr)
+        return 1
 
-    if not args.file.exists():
+    if args.file is None:
+        if cmd == "init":
+            configured = os.environ.get("ORTASK_FILE")
+            args.file = Path(configured) if configured else Path(DEFAULT_NEW_TASK_FILE)
+        else:
+            try:
+                resolved = resolve_org_file()
+            except OrgFileDiscoveryError as exc:
+                print(exc, file=sys.stderr)
+                return 1
+            if resolved is None:
+                if cmd == "add" and not args.interactive:
+                    args.file = Path(DEFAULT_NEW_TASK_FILE)
+                else:
+                    print("no org file found (create tasks.org or use --file)",
+                          file=sys.stderr)
+                    return 1
+            else:
+                args.file = resolved
+
+    if cmd != "init" and not args.file.exists():
         if (
             cmd == "add"
             and not args.interactive
@@ -405,6 +473,7 @@ def main() -> int:
         "apply": cmd_apply,
         "archive": cmd_archive,
         "done": cmd_done,
+        "init": cmd_init,
         "list": cmd_list,
         "open": cmd_open,
         "repair": cmd_repair,
