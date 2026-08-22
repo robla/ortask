@@ -4294,6 +4294,7 @@ def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) 
     view = controller._focus_view(parent)
 
     assert isinstance(view, menu.WorkspaceView)
+    assert view.title_right == f"File: {org_file.resolve()}"
     assert [control.text for control in view.focus_targets[2:4]] == [
         "Parent",
         "Body line",
@@ -5015,6 +5016,7 @@ def test_interactive_task_tree_starts_collapsed_with_disclosure_cues(
 
     assert [row.text for row in view.rows] == ["t0001 Parent", "t0002 Leaf"]
     assert [row.disclosure for row in view.rows] == ["▸", " "]
+    assert view.title_right == f"File: {org_file.resolve()}"
     assert view.summary == "Open: 3  Done: 1  Total: 4"
     rendered = "".join(part[1] for part in menu._render_menu_rows(view.rows, 0))
     assert "▶" in rendered

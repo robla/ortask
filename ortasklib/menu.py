@@ -171,6 +171,7 @@ class WorkspaceView:
     focus_targets: list[Any]
     on_save: Callable[["InlineMenuSession"], None]
     title: str = ""
+    title_right: str = ""
     summary: str = ""
     instruction: str = "Tab fields · Ctrl-S save · Esc back · C-g help"
     help_entries: list[tuple[str, str]] = field(default_factory=list)

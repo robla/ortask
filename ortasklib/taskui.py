@@ -37,7 +37,7 @@ except ImportError:  # pragma: no cover - optional interactive dependency
     TextArea = None
 
 from . import core, menu, tasks
-from .manager import Project, canonical_org_file
+from .manager import Project, canonical_org_file, friendly_path
 
 
 DETAIL_LINE_LIMIT = 20
@@ -923,6 +923,9 @@ class InteractiveTaskController:
             return "FILE CLEAN · Redo available"
         return ""
 
+    def _file_context(self) -> str:
+        return f"File: {friendly_path(self.buf.path.resolve())}"
+
     def initial_view(self) -> menu.MenuView:
         recovered = _recovery_text(self.buf)
         if recovered is None:
@@ -968,6 +971,7 @@ class InteractiveTaskController:
             rows=rows,
             on_result=handle,
             title=f"Unsaved changes found for {name}",
+            title_right=self._file_context(),
             summary=f"Recovery file: {auto}",
             instruction="↑↓/jk · ↵ choose · Esc/b/q keep for later",
             select_help="Choose how to handle the recovery data",
@@ -1065,6 +1069,7 @@ class InteractiveTaskController:
             rows=rows,
             on_result=handle,
             title=f"{self.project.name} tasks",
+            title_right=self._file_context(),
             summary=f"Open: {todo}  Done: {done}  Total: {total}",
             instruction=_task_menu_instruction(self.filter_mode),
             actions=TASK_MENU_ACTIONS,
@@ -1111,6 +1116,7 @@ class InteractiveTaskController:
             rows=rows,
             on_result=handle,
             title=f"Save changes to {name}?",
+            title_right=self._file_context(),
             summary="The Org file has buffered edits",
             instruction="↑↓/jk · ↵ choose · Esc/b/q continue editing",
             select_help="Choose how to resolve the buffered edits",
@@ -1277,6 +1283,7 @@ class InteractiveTaskController:
                 rows=rows,
                 on_result=handle_heading,
                 title="Org heading",
+                title_right=self._file_context(),
                 summary=item.label,
                 instruction="↵/e editor · C-g help · Esc/b/q back",
                 actions={"e": _EDIT_MENU_ACTION},
@@ -1624,6 +1631,7 @@ class InteractiveTaskController:
                 rows=rows,
                 on_result=handle_resolution,
                 title=f"Unsaved task edits: {task_id}",
+                title_right=self._file_context(),
                 summary=summary,
                 instruction=(
                     "↑↓/jk · ↵ choose · Esc/b/q continue editing"
@@ -1762,6 +1770,7 @@ class InteractiveTaskController:
             focus_targets=focus_targets,
             on_save=save_workspace,
             title=f"Edit {task_id}",
+            title_right=self._file_context(),
             summary=summary(subtask_count),
             instruction=(
                 "Tab/S-Tab fields · ↑/↓ subtasks · Enter open · "
@@ -1837,6 +1846,7 @@ class InteractiveTaskController:
             rows=rows,
             on_result=handle,
             title=f"Set priority for {item.task.id}",
+            title_right=self._file_context(),
             summary=f"Current priority: {current or 'none'}",
             instruction="↑↓/jk · ↵ set · C-g help · Esc/b/q cancel",
             select_help="Set the highlighted priority",
