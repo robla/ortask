@@ -27,6 +27,9 @@ on it, not the other way round; ``ortasklib.core`` re-exports the names in
 
 from __future__ import annotations
 
+# Boundary guard (t0038): generic Org regions and pure region merging may live
+# here. File watching, auto-save, undo history, atomic I/O, and TUI policy may
+# not; orglib remains text-in/text-out and independent of ortasklib.
 from . import syntax
 from .syntax import (
     DirectoriesSection,

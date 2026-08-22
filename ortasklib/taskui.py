@@ -52,6 +52,9 @@ class MenuItem:
     line_num: int | None = None
 
 
+# Extraction seam (t0038.1): the file-buffer types below are text mechanics,
+# not Org or TUI policy. Keep new parsing, project rules, and view behavior out
+# so they can move behind injected write/save hooks without dragging taskui.
 def autosave_path_for(path: Path) -> Path:
     """Emacs-style auto-save sibling: ``todo.org`` -> ``#todo.org#``."""
     return path.parent / f"#{path.name}#"

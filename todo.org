@@ -405,3 +405,41 @@ the saved merge so it does not attribute external edits to =ptui=. Tests cover
 clean adoption, dirty merge, undo, discard, conflict recovery, a second change
 before save, auto-save contents, event attribution, and no =projects.org= write
 before explicit save.
+** TODO [#B] t0038 Extract reusable reconciliation layers
+Use =t0037= as the concrete extraction case rather than adding more generic
+buffer and merge behavior to =ortasklib.taskui= or =ortasklib.manager=. Keep
+the dependency direction explicit: a format-neutral file buffer may consume a
+pure merge result; =orglib= knows Org text and source regions but no filesystem
+or TUI; project-index policy maps generic conflicts to registry concepts.
+This complements =t0020=: that task routes existing parsing calls, while this
+one prevents new parsing and reconciliation machinery from accumulating in the
+old package.
+*** TODO [#B] t0038.1 Isolate the format-neutral file buffer
+Move =BufferTransaction=, =DiskSignature=, =ExternalFileChange=,
+=BufferChangedError=, exact-preimage checking, undo/redo, and rebasing out of
+=taskui.py= into a text-file buffer module. Make atomic writing, auto-save
+naming, and post-save notification explicit hooks so the core has no Org,
+event-log, project, menu, or =prompt_toolkit= dependency. Preserve every
+=OrgBuffer= safety and recovery test; keep a compatibility adapter while
+callers move. Start inside this repository rather than publishing a package.
+*** TODO [#B] t0038.2 Generalize keyed Org-region merging
+After =t0028= defines source-backed regions and =t0029= defines conformance,
+extract the no-I/O keyed-region mechanics from
+=manager.plan_project_index_merge()= into =orglib=. Define backend-neutral
+region merge plans, exact replacements, and structured overlap/structure
+conflicts. Keep Base/Ours/Theirs text inputs, back-to-front application, and
+merged-document validation. Do not move registry heading names, reserved
+sections, or permitted project edits into the generic engine.
+*** TODO [#C] t0038.3 Thin the project-index reconciliation adapter
+Give project-index policy a focused module that selects project regions,
+classifies allowed local changes, maps generic conflicts to project names, and
+supplies =ptui= messages. Leave =projmgr._ProjectBrowser= responsible only for
+poll timing and Reload/Retry/Continue view transitions. Do not put parser or
+patch logic in the browser while =t0035.4= adds metadata editing.
+*** TODO [#C] t0038.4 Evaluate a standalone Emacs-style buffer library
+Only after =t0038.1= has a second credible consumer, compare keeping the module
+in-tree with publishing a small library for transactional text buffers,
+external-change detection, auto-save, exact-preimage saves, and rebasing.
+Require no Org or =prompt_toolkit= dependency and document how save observers
+and merge callbacks integrate. A single ortask consumer is not enough reason
+to create or version another package.

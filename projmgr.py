@@ -417,6 +417,9 @@ class _ProjectBrowser:
             return self.index_buffer.external_change.summary
         return "projects.org cannot be saved"
 
+    # Composition boundary (t0038.3): this browser coordinates observation,
+    # project-index policy, and conflict views. Parsing and patch algorithms do
+    # not belong here; add them to the lower layer and consume their results.
     def _reconcile_index(self, *, force: bool) -> tuple[bool, str | None]:
         """Reconcile one observed index revision entirely in memory."""
         if self.index_buffer is None:
