@@ -380,7 +380,7 @@ save. Poll from the existing prompt-toolkit refresh path without a watcher
 thread. Do not offer routine force-overwrite: the alert permits reload/discard,
 continue editing, and retry. Tests cover changed, touched-but-identical,
 replaced, deleted, and unreadable files plus a same-stat save-time change.
-*** TODO t0037.2 Add a pure project-section three-way merge planner
+*** DONE t0037.2 Add a pure project-section three-way merge planner
 Add a no-I/O =ortasklib.manager= helper taking Base (last disk text), Ours
 (buffer text), and Theirs (current disk text). Use =t0035.1='s unique normalized
 project names and exact source spans. Build on Theirs so external preamble,

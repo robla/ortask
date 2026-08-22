@@ -953,6 +953,337 @@ def read_project_metadata(
     return project_metadata_from_text(text, projects)
 
 
+@dataclass(frozen=True)
+class ProjectIndexMergeConflict:
+    """One reason a Base/Ours/Theirs project-index merge is unsafe."""
+
+    kind: str
+    detail: str
+    project: str | None = None
+    source: str | None = None
+
+
+@dataclass(frozen=True)
+class ProjectIndexMergePlan:
+    """Pure result of planning a project-section three-way merge."""
+
+    merged_text: str | None
+    replayed_projects: tuple[str, ...] = ()
+    absorbed_projects: tuple[str, ...] = ()
+    conflicts: tuple[ProjectIndexMergeConflict, ...] = ()
+
+    @property
+    def can_merge(self) -> bool:
+        return self.merged_text is not None and not self.conflicts
+
+
+@dataclass(frozen=True)
+class _ProjectMergeSection:
+    name: str
+    key: str
+    text: str
+    start: int
+    end: int
+    line: int
+
+
+@dataclass(frozen=True)
+class _ProjectMergeRevision:
+    text: str
+    preamble: str
+    sections: tuple[_ProjectMergeSection, ...]
+
+    @property
+    def by_key(self) -> dict[str, _ProjectMergeSection]:
+        return {section.key: section for section in self.sections}
+
+    @property
+    def order(self) -> tuple[str, ...]:
+        return tuple(section.key for section in self.sections)
+
+
+def _project_merge_revision(
+    text: str, source: str
+) -> tuple[_ProjectMergeRevision | None, tuple[ProjectIndexMergeConflict, ...]]:
+    """Parse one merge input and reject ambiguous normalized section names."""
+    try:
+        document = orglib.parse(text)
+        parsed = document.projects()
+    except (orglib.OrgStructureError, ValueError) as exc:
+        return None, (
+            ProjectIndexMergeConflict("invalid_input", str(exc), source=source),
+        )
+
+    sections: list[_ProjectMergeSection] = []
+    seen: dict[str, _ProjectMergeSection] = {}
+    conflicts: list[ProjectIndexMergeConflict] = []
+    for section in parsed:
+        name = section.name.strip()
+        key = name.casefold()
+        heading = text[section.heading_span.start:section.heading_span.end]
+        heading_match = orglib.syntax.ANY_HEADING_RE.match(heading.rstrip("\r\n"))
+        heading_title = (
+            orglib.syntax.TRAILING_TAGS_RE.sub("", heading_match.group("title"))
+            .strip()
+            if heading_match is not None
+            else ""
+        )
+        current = _ProjectMergeSection(
+            name=name,
+            key=key,
+            text=text[section.span.start:section.span.end],
+            start=section.span.start,
+            end=section.span.end,
+            line=section.span.start_line + 1,
+        )
+        if heading_title.startswith("[#") and not orglib.syntax.LEADING_PRIORITY_RE.match(
+            heading_title
+        ):
+            conflicts.append(
+                ProjectIndexMergeConflict(
+                    "invalid_input",
+                    f"malformed priority cookie at line {current.line}",
+                    project=name,
+                    source=source,
+                )
+            )
+        elif not key:
+            conflicts.append(
+                ProjectIndexMergeConflict(
+                    "invalid_input",
+                    f"blank top-level heading at line {section.span.start_line + 1}",
+                    source=source,
+                )
+            )
+        elif key in seen:
+            first = seen[key]
+            conflicts.append(
+                ProjectIndexMergeConflict(
+                    "invalid_input",
+                    f"duplicate normalized project heading {name!r} at lines "
+                    f"{first.line} and {current.line}",
+                    project=name,
+                    source=source,
+                )
+            )
+        else:
+            seen[key] = current
+        sections.append(current)
+
+    if conflicts:
+        return None, tuple(conflicts)
+    for section in sections:
+        if section.key in _RESERVED_INDEX_HEADINGS:
+            continue
+        try:
+            document.directories(section.name)
+        except (orglib.OrgStructureError, ValueError) as exc:
+            conflicts.append(
+                ProjectIndexMergeConflict(
+                    "invalid_input",
+                    str(exc),
+                    project=section.name,
+                    source=source,
+                )
+            )
+    if conflicts:
+        return None, tuple(conflicts)
+    preamble_end = sections[0].start if sections else len(text)
+    return _ProjectMergeRevision(text, text[:preamble_end], tuple(sections)), ()
+
+
+def _local_project_structure_conflicts(
+    base: _ProjectMergeRevision,
+    ours: _ProjectMergeRevision,
+) -> tuple[ProjectIndexMergeConflict, ...]:
+    """Reject local changes that are not edits to an existing project subtree."""
+    conflicts: list[ProjectIndexMergeConflict] = []
+    if ours.preamble != base.preamble:
+        conflicts.append(
+            ProjectIndexMergeConflict(
+                "local_outside_project",
+                "local changes before the first project heading are not mergeable",
+                source="ours",
+            )
+        )
+
+    base_by_key = base.by_key
+    ours_by_key = ours.by_key
+    for key in ours_by_key.keys() - base_by_key.keys():
+        project = ours_by_key[key].name
+        conflicts.append(
+            ProjectIndexMergeConflict(
+                "local_project_added",
+                f"locally added project section {project!r} is not addressable in Base",
+                project=project,
+                source="ours",
+            )
+        )
+    for key in base_by_key.keys() - ours_by_key.keys():
+        project = base_by_key[key].name
+        conflicts.append(
+            ProjectIndexMergeConflict(
+                "local_project_deleted",
+                f"locally deleted project section {project!r} cannot be replayed",
+                project=project,
+                source="ours",
+            )
+        )
+    if set(base.order) == set(ours.order) and base.order != ours.order:
+        conflicts.append(
+            ProjectIndexMergeConflict(
+                "local_project_reordered",
+                "local project-section reordering cannot be replayed safely",
+                source="ours",
+            )
+        )
+
+    for key in set(base_by_key) & set(ours_by_key) & _RESERVED_INDEX_HEADINGS:
+        if base_by_key[key].text != ours_by_key[key].text:
+            project = base_by_key[key].name
+            conflicts.append(
+                ProjectIndexMergeConflict(
+                    "local_outside_project",
+                    f"local changes to reserved section {project!r} are not mergeable",
+                    project=project,
+                    source="ours",
+                )
+            )
+    return tuple(conflicts)
+
+
+def _externally_changed_projects(
+    base: _ProjectMergeRevision,
+    theirs: _ProjectMergeRevision,
+) -> tuple[str, ...]:
+    """Project names whose external section contents, presence, or order changed."""
+    base_by_key = base.by_key
+    theirs_by_key = theirs.by_key
+    changed: set[str] = set()
+    for key in set(base_by_key) | set(theirs_by_key):
+        if key in _RESERVED_INDEX_HEADINGS:
+            continue
+        before = base_by_key.get(key)
+        after = theirs_by_key.get(key)
+        if before is None or after is None or before.text != after.text:
+            changed.add(key)
+
+    base_common = [
+        key
+        for key in base.order
+        if key in theirs_by_key and key not in _RESERVED_INDEX_HEADINGS
+    ]
+    theirs_common = [
+        key
+        for key in theirs.order
+        if key in base_by_key and key not in _RESERVED_INDEX_HEADINGS
+    ]
+    if base_common != theirs_common:
+        changed.update(key for key in base_common if key not in _RESERVED_INDEX_HEADINGS)
+
+    ordered_keys = [
+        section.key for section in theirs.sections if section.key in changed
+    ]
+    ordered_keys.extend(
+        section.key
+        for section in base.sections
+        if section.key in changed and section.key not in theirs_by_key
+    )
+    return tuple(
+        (theirs_by_key.get(key) or base_by_key[key]).name for key in ordered_keys
+    )
+
+
+def plan_project_index_merge(
+    base_text: str,
+    ours_text: str,
+    theirs_text: str,
+) -> ProjectIndexMergePlan:
+    """Plan a no-I/O, section-level three-way merge over ``projects.org``.
+
+    Theirs is the output canvas. Each locally changed existing project section
+    is replayed only when the matching external section remains byte-identical
+    to Base; an identical local/external edit is accepted without replacement.
+    """
+    revisions: dict[str, _ProjectMergeRevision] = {}
+    conflicts: list[ProjectIndexMergeConflict] = []
+    for source, text in (
+        ("base", base_text),
+        ("ours", ours_text),
+        ("theirs", theirs_text),
+    ):
+        revision, parse_conflicts = _project_merge_revision(text, source)
+        conflicts.extend(parse_conflicts)
+        if revision is not None:
+            revisions[source] = revision
+    if conflicts:
+        return ProjectIndexMergePlan(None, conflicts=tuple(conflicts))
+
+    base = revisions["base"]
+    ours = revisions["ours"]
+    theirs = revisions["theirs"]
+    structure_conflicts = _local_project_structure_conflicts(base, ours)
+    if structure_conflicts:
+        return ProjectIndexMergePlan(None, conflicts=structure_conflicts)
+
+    base_by_key = base.by_key
+    ours_by_key = ours.by_key
+    theirs_by_key = theirs.by_key
+    local_keys = [
+        section.key
+        for section in base.sections
+        if section.key not in _RESERVED_INDEX_HEADINGS
+        and ours_by_key[section.key].text != section.text
+    ]
+    replacements: list[tuple[int, int, str]] = []
+    merge_conflicts: list[ProjectIndexMergeConflict] = []
+    for key in local_keys:
+        base_section = base_by_key[key]
+        ours_section = ours_by_key[key]
+        theirs_section = theirs_by_key.get(key)
+        if theirs_section is None:
+            merge_conflicts.append(
+                ProjectIndexMergeConflict(
+                    "external_project_deleted",
+                    f"externally deleted locally changed project {base_section.name!r}",
+                    project=base_section.name,
+                    source="theirs",
+                )
+            )
+        elif theirs_section.text == ours_section.text:
+            continue
+        elif theirs_section.text == base_section.text:
+            replacements.append(
+                (theirs_section.start, theirs_section.end, ours_section.text)
+            )
+        else:
+            merge_conflicts.append(
+                ProjectIndexMergeConflict(
+                    "project_changed_both",
+                    f"project section {base_section.name!r} changed differently "
+                    "in Ours and Theirs",
+                    project=base_section.name,
+                )
+            )
+    if merge_conflicts:
+        return ProjectIndexMergePlan(None, conflicts=tuple(merge_conflicts))
+
+    merged = theirs.text
+    for start, end, replacement in sorted(replacements, reverse=True):
+        merged = merged[:start] + replacement + merged[end:]
+
+    merged_revision, validation_conflicts = _project_merge_revision(
+        merged, "merged"
+    )
+    if merged_revision is None:
+        return ProjectIndexMergePlan(None, conflicts=validation_conflicts)
+    return ProjectIndexMergePlan(
+        merged,
+        replayed_projects=tuple(base_by_key[key].name for key in local_keys),
+        absorbed_projects=_externally_changed_projects(base, theirs),
+    )
+
+
 def registry_index_problems(registry: Path, projects: list[Project]) -> list[str]:
     """Diagnose migration and index structure without changing either layout."""
     problems: list[str] = []

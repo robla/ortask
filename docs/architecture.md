@@ -182,6 +182,9 @@ Behavior used by `projmgr.py` and by `taskui`:
 - `summarize_projects()` — JSON-ready, top-level task summaries per project,
   attaching a `warning` (instead of raising) for unreadable files, files with no
   parseable task headings, or duplicate IDs
+- `plan_project_index_merge()` — a pure Base/Ours/Theirs merge over exact
+  source-backed project sections, returning merged text and replay metadata or
+  typed conflicts without performing file I/O
 
 `projmgr.py`'s `init` adapter writes the registry into `ortask.ini`; its `add`
 adapter creates the per-project symlink subdirectory, using

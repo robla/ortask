@@ -3121,6 +3121,193 @@ def test_shift_project_priority_clamps_at_both_ends() -> None:
         manager.shift_project_priority("1", 1)
 
 
+def test_project_index_merge_replays_local_edit_on_external_canvas() -> None:
+    # Disjoint local/external edits preserve external preamble, order, add, and delete.
+    header = "#+TITLE: Projects\n#+NOTE: base\n\n"
+    external_header = "#+TITLE: Projects\n#+NOTE: externally revised\n\n"
+    alpha = (
+        "* alpha :work:\n:PROPERTIES:\n:DESCRIPTION: Alpha\n:END:\n"
+        "Alpha prose.\n** Directories\n   - ~/src/alpha\n"
+    )
+    alpha_ours = alpha.replace("* alpha", "* [#A] alpha", 1)
+    beta = "* beta\nBeta prose.\n"
+    beta_theirs = "* beta\nBeta prose changed externally.\n"
+    delta = "* delta\nDeleted externally.\n"
+    gamma = "* gamma\nAdded externally.\n"
+    base = header + alpha + beta + delta
+    ours = header + alpha_ours + beta + delta
+    theirs = external_header + beta_theirs + alpha + gamma
+    expected = external_header + beta_theirs + alpha_ours + gamma
+
+    plan = manager.plan_project_index_merge(base, ours, theirs)
+
+    assert plan.can_merge is True
+    assert plan.merged_text == expected
+    assert plan.replayed_projects == ("alpha",)
+    assert set(plan.absorbed_projects) == {"alpha", "beta", "delta", "gamma"}
+    assert plan.conflicts == ()
+
+
+def test_project_index_merge_accepts_identical_local_and_external_edit() -> None:
+    # The same edit in Ours and Theirs is already merged and is not a conflict.
+    base = "#+TITLE: Projects\n\n* alpha\nAlpha prose.\n"
+    changed = base.replace("* alpha", "* [#B] alpha")
+
+    plan = manager.plan_project_index_merge(base, changed, changed)
+
+    assert plan.can_merge is True
+    assert plan.merged_text == changed
+    assert plan.replayed_projects == ("alpha",)
+    assert plan.absorbed_projects == ("alpha",)
+
+
+def test_project_index_merge_applies_multiple_replacements_back_to_front() -> None:
+    # Two length-changing local edits survive an external reorder and third edit.
+    header = "#+TITLE: Projects\n\n"
+    alpha = "* alpha\nAlpha.\n"
+    beta = "* beta\nBeta.\n"
+    gamma = "* gamma\nGamma.\n"
+    alpha_ours = alpha.replace("* alpha", "* [#A] alpha")
+    gamma_ours = gamma.replace("* gamma", "* [#C] gamma")
+    beta_theirs = beta.replace("Beta.", "Beta changed externally.")
+    base = header + alpha + beta + gamma
+    ours = header + alpha_ours + beta + gamma_ours
+    theirs = header + gamma + beta_theirs + alpha
+
+    plan = manager.plan_project_index_merge(base, ours, theirs)
+
+    assert plan.merged_text == header + gamma_ours + beta_theirs + alpha_ours
+    assert plan.replayed_projects == ("alpha", "gamma")
+
+
+def test_project_index_merge_reports_same_section_and_delete_conflicts() -> None:
+    # Differing edits to one section and deleting a locally edited section both refuse.
+    base = "#+TITLE: Projects\n\n* alpha\nAlpha.\n* beta\nBeta.\n"
+    ours = base.replace("* alpha", "* [#A] alpha")
+    changed_theirs = base.replace("* alpha", "* [#B] alpha")
+
+    changed = manager.plan_project_index_merge(base, ours, changed_theirs)
+    deleted = manager.plan_project_index_merge(
+        base,
+        ours,
+        "#+TITLE: Projects\n\n* beta\nBeta.\n",
+    )
+
+    assert changed.merged_text is None
+    assert changed.conflicts[0].kind == "project_changed_both"
+    assert changed.conflicts[0].project == "alpha"
+    assert deleted.merged_text is None
+    assert deleted.conflicts[0].kind == "external_project_deleted"
+    assert deleted.conflicts[0].project == "alpha"
+
+
+@pytest.mark.parametrize(
+    ("base", "ours", "kind"),
+    [
+        (
+            "#+TITLE: Projects\n\n* alpha\nAlpha.\n",
+            "#+TITLE: Locally changed\n\n* alpha\nAlpha.\n",
+            "local_outside_project",
+        ),
+        (
+            "#+TITLE: Projects\n\n* alpha\nAlpha.\n",
+            "#+TITLE: Projects\n\n* alpha\nAlpha.\n* beta\nBeta.\n",
+            "local_project_added",
+        ),
+        (
+            "#+TITLE: Projects\n\n* alpha\nAlpha.\n* beta\nBeta.\n",
+            "#+TITLE: Projects\n\n* alpha\nAlpha.\n",
+            "local_project_deleted",
+        ),
+        (
+            "#+TITLE: Projects\n\n* alpha\nAlpha.\n* beta\nBeta.\n",
+            "#+TITLE: Projects\n\n* beta\nBeta.\n* alpha\nAlpha.\n",
+            "local_project_reordered",
+        ),
+        (
+            "#+TITLE: Projects\n\n* alpha\nAlpha.\n* Tasks\n** TODO t0001 One\n",
+            "#+TITLE: Projects\n\n* alpha\nAlpha.\n* Tasks\n** DONE t0001 One\n",
+            "local_outside_project",
+        ),
+    ],
+)
+def test_project_index_merge_rejects_local_nonproject_changes(
+    base: str, ours: str, kind: str
+) -> None:
+    # Only edits within an existing, uniquely named project section are replayable.
+    plan = manager.plan_project_index_merge(base, ours, base)
+
+    assert plan.merged_text is None
+    assert kind in {conflict.kind for conflict in plan.conflicts}
+    assert all(conflict.source == "ours" for conflict in plan.conflicts)
+
+
+@pytest.mark.parametrize(
+    ("source", "base", "ours", "theirs"),
+    [
+        (
+            "base",
+            "* Alpha\n* [#A] alpha :tag:\n",
+            "* alpha\n",
+            "* alpha\n",
+        ),
+        (
+            "ours",
+            "* alpha\n",
+            "* alpha\n:PROPERTIES:\nnot a property\n:END:\n",
+            "* alpha\n",
+        ),
+        (
+            "theirs",
+            "* alpha\n",
+            "* alpha\n",
+            "* alpha\n:PROPERTIES:\n:DESCRIPTION: unterminated\n",
+        ),
+        (
+            "theirs",
+            "* alpha\n",
+            "* alpha\n",
+            "* alpha\n** Directories\n   - /one\n** Directories\n   - /two\n",
+        ),
+        (
+            "theirs",
+            "* alpha\n",
+            "* alpha\n",
+            "* [#AB] alpha\n",
+        ),
+    ],
+)
+def test_project_index_merge_returns_structured_invalid_input(
+    source: str, base: str, ours: str, theirs: str
+) -> None:
+    # Malformed or ambiguous input returns a source-labeled conflict, not an exception.
+    plan = manager.plan_project_index_merge(base, ours, theirs)
+
+    assert plan.can_merge is False
+    assert plan.merged_text is None
+    assert any(
+        conflict.kind == "invalid_input" and conflict.source == source
+        for conflict in plan.conflicts
+    )
+
+
+def test_project_index_merge_performs_no_file_io(monkeypatch) -> None:
+    # Planning is pure: even disabled path and atomic-write APIs cannot affect it.
+    def reject_io(*args, **kwargs):
+        raise AssertionError("merge planner attempted file I/O")
+
+    monkeypatch.setattr(Path, "read_text", reject_io)
+    monkeypatch.setattr(Path, "write_text", reject_io)
+    monkeypatch.setattr(core, "atomic_write", reject_io)
+    base = "#+TITLE: Projects\n\n* alpha\nAlpha.\n"
+    ours = base.replace("* alpha", "* [#C] alpha")
+
+    plan = manager.plan_project_index_merge(base, ours, base)
+
+    assert plan.can_merge is True
+    assert plan.merged_text == ours
+
+
 def test_set_dirs_noninteractive_default_keeps_missing_entries(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:

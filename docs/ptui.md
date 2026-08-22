@@ -12,6 +12,8 @@ priority changes from the project list. The `m` metadata workspace and Modified
 sorting are not implemented yet. `t0037.1` polls for external index changes,
 adopts them when the project buffer is clean, and blocks rather than overwrites
 when it is dirty; section-level reconciliation remains pending.
+`t0037.2` supplies the pure section-level merge planner; applying its result to
+the open buffer remains `t0037.3`.
 
 ## Project List
 
@@ -181,16 +183,22 @@ spans exposed by `orglib`; `OrgBuffer` owns only file observation, buffer state,
 undo, auto-save, and save orchestration. This keeps a future task-file merger
 possible without teaching the generic buffer about registry structure.
 
-The planner is pure: it receives Base, Ours, and Theirs and returns either
-merged text plus the absorbed project names, or structured conflicts. It does
-not read or write files. Theirs is the output canvas. For every project section
-changed in Ours, replay the complete raw section when that section in Theirs is
-still byte-for-byte Base. If Ours and Theirs made the same change, accept it. If
-both changed the same section differently, report a conflict rather than
-attempting a field-level merge. This first version also conflicts on local
-changes outside a uniquely addressed existing project section. Starting from
-Theirs preserves external changes to the preamble, project order, untouched
-sections, and externally added or deleted projects.
+As of `t0037.2`, `manager.plan_project_index_merge()` implements the pure
+planner. It receives Base, Ours, and Theirs and returns an immutable
+`ProjectIndexMergePlan`: either merged text with replayed-local and
+absorbed-external project names, or typed, source-labeled conflicts. It does not
+read or write files. Theirs is the output canvas. For every project section
+changed in Ours, it replays the complete raw section when that section in
+Theirs is still byte-for-byte Base. If Ours and Theirs made the same change, it
+accepts it. If both changed the same section differently, it reports a conflict
+rather than attempting a field-level merge.
+
+Local preamble changes, project additions/deletions/reordering, and edits to
+reserved sections are also conflicts because they are outside an existing,
+uniquely addressed Base project section. External preamble changes,
+reordering, additions, deletions of locally unchanged projects, and untouched
+sections survive because the planner starts from Theirs. Replacements are
+applied back-to-front and the complete result is parsed again before success.
 
 After a successful dirty merge, Theirs becomes the new disk baseline and the
 merged text remains the dirty buffer. This rebase is essential: `discard` must
@@ -217,9 +225,10 @@ and auto-save, displays a persistent alert, and blocks save. Missing and
 unreadable files also block save. Polling uses no watcher thread and never
 writes `projects.org`.
 
-`t0037.2` and `t0037.3` add reconciliation for a dirty buffer. Until then,
-retrying `C-s` repeats the exact check, Continue Editing preserves the local
-buffer, and Discard on exit leaves the external disk version untouched.
+`t0037.3` applies the planner to a dirty buffer and provides reconciliation UI.
+Until then, retrying `C-s` repeats the exact check, Continue Editing preserves
+the local buffer, and Discard on exit leaves the external disk version
+untouched.
 
 The eventual conflict state offers reload/discard, continue editing, and retry.
 It does not make force-overwrite a routine recovery action. `C-s` remains
@@ -259,6 +268,7 @@ people open in Emacs, so the cookie wins anyway.
 2. Add buffered priority changes from the project list (`t0035.3`, done).
 3. Detect external index changes without weakening save safety (`t0037.1`,
    done).
-4. Add pure section merging and open-buffer reconciliation (`t0037.2`–`.3`).
-5. Add the `m` metadata workspace and bounded save path.
-6. Add modified-time sorting and the task-file mirror diagnostics.
+4. Add the pure project-section merge planner (`t0037.2`, done).
+5. Reconcile the open buffer and expose conflicts (`t0037.3`).
+6. Add the `m` metadata workspace and bounded save path.
+7. Add modified-time sorting and the task-file mirror diagnostics.
