@@ -575,6 +575,147 @@ def cmd_rm(args: argparse.Namespace) -> int:
     return 0
 
 
+def _set_dirs_project(
+    projects: list[manager.Project],
+    requested: str | None,
+) -> manager.Project:
+    """Select an explicit project or the unique registry match for ``$PWD``."""
+    if requested is not None:
+        project = next((item for item in projects if item.name == requested), None)
+        if project is None:
+            raise ValueError(f"project not found in registry: {requested}")
+        if project.warning:
+            raise ValueError(f"{requested}: {project.warning}")
+        return project
+
+    pwd = Path(os.environ.get("PWD", str(Path.cwd()))).expanduser()
+    root = manager.project_root_for(pwd)
+    matches = [
+        project
+        for project in projects
+        if not project.warning and manager.real_project_path(project) == root
+    ]
+    if len(matches) == 1:
+        return matches[0]
+
+    names = ", ".join(project.name for project in projects) or "(none)"
+    if not matches:
+        raise ValueError(
+            f"no registered project matches {manager.friendly_path(root)}; "
+            f"registered projects: {names}"
+        )
+    raise ValueError(
+        f"multiple registered projects match {manager.friendly_path(root)}: "
+        + ", ".join(project.name for project in matches)
+    )
+
+
+def _set_dirs_input(args: argparse.Namespace) -> list[Path]:
+    """Read and resolve the proposed stack without consulting the index."""
+    if args.stdin and args.directories:
+        raise ValueError("--stdin cannot be combined with directory arguments")
+    raw = sys.stdin.read().splitlines() if args.stdin else args.directories
+    raw = [entry for entry in raw if entry]
+    if not raw:
+        raise ValueError("at least one directory is required")
+    return manager.unique_resolved_directories(raw, Path.cwd())
+
+
+def _set_dirs_keep_missing(
+    args: argparse.Namespace, plan: manager.RegistryDirectoriesPlan
+) -> bool | None:
+    """Resolve subtraction policy; ``None`` means the user cancelled."""
+    if not plan.missing:
+        return False
+
+    can_prompt = sys.stdin.isatty() and sys.stdout.isatty() and not args.stdin
+    choice = args.missing
+    if choice is None and not can_prompt:
+        choice = "keep"
+    if choice is not None:
+        if not can_prompt:
+            action = "keeping" if choice == "keep" else "removing"
+            print(
+                f"set-dirs: {action} {len(plan.missing)} existing "
+                f"{'directory' if len(plan.missing) == 1 else 'directories'} "
+                "absent from input",
+                file=sys.stderr,
+            )
+        return choice == "keep"
+
+    print("Existing private directories absent from the live stack:")
+    for path in plan.missing:
+        print(f"  - {manager.format_directory_path(path)}")
+    while True:
+        try:
+            answer = menu.prompt_text("[r]emove, [k]eep, [c]ancel").lower()
+        except menu.ContextCancelled:
+            return None
+        if answer in {"r", "remove"}:
+            return False
+        if answer in {"k", "keep", ""}:
+            return True
+        if answer in {"c", "cancel"}:
+            return None
+
+
+def cmd_set_dirs(args: argparse.Namespace) -> int:
+    """Write a supplied directory stack into one registry-index section."""
+    try:
+        live_paths = _set_dirs_input(args)
+    except ValueError as exc:
+        print(f"set-dirs: {exc}", file=sys.stderr)
+        return 1
+
+    registry, _ = manager.resolve_registry(args.registry)
+    if not registry.is_dir():
+        print(f"set-dirs: project directory not found: {registry}", file=sys.stderr)
+        return 1
+    projects = manager.discover_projects(registry)
+    try:
+        project = _set_dirs_project(projects, args.project)
+        plan = manager.plan_registry_directories_update(project, live_paths)
+    except (ValueError, manager.RegistryIndexError) as exc:
+        print(f"set-dirs: {exc}", file=sys.stderr)
+        return 1
+
+    keep_missing = _set_dirs_keep_missing(args, plan)
+    if keep_missing is None:
+        print("set-dirs: cancelled", file=sys.stderr)
+        return 1
+
+    try:
+        revised, section = manager.render_registry_directories_update(
+            plan, keep_missing=keep_missing
+        )
+    except manager.RegistryIndexError as exc:
+        print(f"set-dirs: {exc}", file=sys.stderr)
+        return 1
+    if args.dry_run:
+        print(
+            f"[dry-run] {project.name} in "
+            f"{manager.friendly_path(plan.index_path)}:"
+        )
+        print(section, end="" if section.endswith("\n") else "\n")
+        if revised == plan.previous_index_text:
+            print("[dry-run] no change")
+        return 0
+
+    try:
+        changed = manager.apply_registry_directories_update(
+            plan, keep_missing=keep_missing
+        )
+    except manager.RegistryIndexError as exc:
+        print(f"set-dirs: {exc}", file=sys.stderr)
+        return 1
+    action = "updated" if changed else "unchanged"
+    print(
+        f"{project.name}: directories {action} in "
+        f"{manager.friendly_path(plan.index_path)}"
+    )
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Report registry problems. Read-only; exits 2 when it finds any."""
     registry, registry_display = manager.resolve_registry(args.registry)
@@ -1046,6 +1187,36 @@ def build_parser() -> argparse.ArgumentParser:
     p_rm.add_argument("--dry-run", action="store_true",
                       help="show what would be removed without changing anything")
 
+    p_set_dirs = sub.add_parser(
+        "set-dirs",
+        help="save a directory stack in one projects.org section",
+    )
+    p_set_dirs.add_argument(
+        "directories",
+        nargs="*",
+        help="directory stack in top-first order",
+    )
+    p_set_dirs.add_argument(
+        "--project",
+        default=None,
+        help="registry project name; default: infer from PWD",
+    )
+    p_set_dirs.add_argument(
+        "--stdin",
+        action="store_true",
+        help="read one directory per line instead of positional arguments",
+    )
+    p_set_dirs.add_argument(
+        "--missing",
+        choices=["keep", "remove"],
+        default=None,
+        help="how to handle existing entries absent from the supplied stack",
+    )
+    p_set_dirs.add_argument("--registry", default=argparse.SUPPRESS,
+                            help="registry directory containing projects.org")
+    p_set_dirs.add_argument("--dry-run", action="store_true",
+                            help="show the replacement section without writing")
+
     return parser
 
 
@@ -1071,6 +1242,7 @@ def main() -> int:
         "migrate": cmd_migrate,
         "projadd": cmd_add,         # deprecated alias
         "rm": cmd_rm,
+        "set-dirs": cmd_set_dirs,
     }
 
     handler = dispatch.get(cmd)

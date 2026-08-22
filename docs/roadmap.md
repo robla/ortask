@@ -748,10 +748,10 @@ models or silently discard text from a legacy private file.
    marker and sole private-stack source. Private-stack consumers error before
    migration or during mixed-state cleanup; `doctor` diagnoses those states.
    Unrelated project verbs keep working.
-4. **`t0031.1`: add `pmgr set-dirs`.** Accept directories positionally or via
-   `--stdin`, select a project with `--project` or unambiguous `$PWD`
-   detection, and patch only that project's direct-child `Directories` region.
-   Empty input is an error.
+4. **`t0031.1`: add `pmgr set-dirs` (done).** It accepts directories
+   positionally or via `--stdin`, selects a project with `--project` or
+   unambiguous `$PWD` detection, and patches only that project's direct-child
+   `Directories` region. Empty input is an error.
 5. **`t0031.2`: add `cdproj -s`.** Capture `dirs -l -p` in the shell, map the
    optional project to `set-dirs --project`, and add matching completion without
    changing the existing `--out` protocol.

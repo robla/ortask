@@ -339,8 +339,8 @@ function unchanged.
 
 ## Saving the directory stack (`cdproj -s` / `pmgr set-dirs`)
 
-**Status: specified, not implemented (`t0031`). It writes to the registry
-index, so it lands after `t0026`.**
+**Status: `pmgr set-dirs` implemented (`t0031.1`); the `cdproj -s` shell
+wrapper remains `t0031.2`.**
 
 `cdproj` loads a stack; this is the other direction. Once a stack has been
 arranged in the shell with `cd`, `pushd`, and `popd`, it can be written back to

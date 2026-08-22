@@ -144,7 +144,7 @@ _projmgr_complete()
     fi
 
     # projadd remains a deprecated alias for add; migrate is a distinct verb.
-    local subcommands="add cdproj doctor help init list migrate projadd rm"
+    local subcommands="add cdproj doctor help init list migrate projadd rm set-dirs"
     local global_opts="-i --interactive --registry --todo-only --help"
     local add_opts="--name --file --registry --force --dry-run --help"
     local doctor_opts="--registry --help"
@@ -153,10 +153,19 @@ _projmgr_complete()
     local migrate_opts="--registry --dry-run --help"
     local cdproj_opts="--out --registry --help"
     local rm_opts="--registry --force --dry-run --help"
+    local set_dirs_opts="--project --stdin --missing --registry --dry-run --help"
 
     case "$prev" in
         --format)
             COMPREPLY=( $(compgen -W "plain json names" -- "$cur") )
+            return 0
+            ;;
+        --missing)
+            COMPREPLY=( $(compgen -W "keep remove" -- "$cur") )
+            return 0
+            ;;
+        --project)
+            COMPREPLY=( $(compgen -W "$(_projmgr_projects)" -- "$cur") )
             return 0
             ;;
         --registry|--file|--name|--out)
@@ -169,10 +178,10 @@ _projmgr_complete()
     local i
     for ((i = 1; i < cword; i++)); do
         case "${words[i]}" in
-            --registry|--file|--name|--format)
+            --registry|--file|--name|--format|--project|--missing)
                 ((i++))
                 ;;
-            -i|--interactive|--todo-only|--help|--all|--force|--dry-run)
+            -i|--interactive|--todo-only|--help|--all|--force|--dry-run|--stdin)
                 ;;
             -*)
                 ;;
@@ -215,6 +224,9 @@ _projmgr_complete()
             rm)
                 COMPREPLY=( $(compgen -W "$rm_opts" -- "$cur") )
                 ;;
+            set-dirs)
+                COMPREPLY=( $(compgen -W "$set_dirs_opts" -- "$cur") )
+                ;;
             *)
                 COMPREPLY=()
                 ;;
@@ -223,6 +235,9 @@ _projmgr_complete()
         case "$command" in
             cdproj|rm)
                 COMPREPLY=( $(compgen -W "$(_projmgr_projects)" -- "$cur") )
+                ;;
+            set-dirs)
+                COMPREPLY=( $(compgen -d -- "$cur") )
                 ;;
             *)
                 COMPREPLY=()

@@ -31,8 +31,9 @@ All scripts are stdlib-only (Python 3.10+, no external dependencies).
   broken/ambiguous/unreadable entries), `init` (record the registry in
   `~/.config/ortask/ortask.ini`), `list` (read-only task overview), `migrate`
   (convert legacy private directory files to the registry-root `projects.org`
-  index), and `rm` (remove one registry entry). `projadd` remains a deprecated
-  alias for `add`. Project-level writes are limited to
+  index), `rm` (remove one registry entry), and `set-dirs` (save a directory
+  stack in one bounded index section). `projadd` remains a deprecated alias for
+  `add`. Project-level writes are limited to
   config, the registry, and explicit output files; `ortask.py` owns local task
   editing. The intended aliases are `pmgr`
   and, for `-i`, `ptui`. Specs: `docs/projmgr.md` for the command,

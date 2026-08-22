@@ -201,7 +201,7 @@ private directory list. After all of =t0026= that list is the project's section
 in =<registry>/projects.org=, so this is the first verb to edit a shared Org
 file in place rather than create one. Specification: "Saving the directory
 stack" in =docs/cdproj.md=.
-*** TODO t0031.1 Implement pmgr set-dirs
+*** DONE t0031.1 Implement pmgr set-dirs
 Current-project detection from =$PWD= (an error rather than a guess when no
 project or two projects match), explicit =--project= override, positional
 directories plus =--stdin=, =~= for paths under =$HOME=, dedupe by resolved

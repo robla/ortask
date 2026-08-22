@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import subprocess
@@ -1151,10 +1152,11 @@ def test_cli_subcommands_are_registered_alphabetically() -> None:
             "help",
             "init",
             "list",
-            "migrate",
-            "projadd",
-            "rm",
-        ],
+                "migrate",
+                "projadd",
+                "rm",
+                "set-dirs",
+            ],
     }
     parsers = {
         "ort": ortask.build_parser(),
@@ -1218,6 +1220,8 @@ def test_bash_completion_for_ortask_and_alias() -> None:
         ("_projmgr_complete", "COMP_WORDS=(pmgr li); COMP_CWORD=1", "list"),
         ("_projmgr_complete", "COMP_WORDS=(projmgr.py list --fo); COMP_CWORD=2", "--format"),
         ("_projmgr_complete", "COMP_WORDS=(pmgr migrate --dr); COMP_CWORD=2", "--dry-run"),
+        ("_projmgr_complete", "COMP_WORDS=(pmgr set-dirs --mi); COMP_CWORD=2", "--missing"),
+        ("_projmgr_complete", "COMP_WORDS=(pmgr set-dirs --missing r); COMP_CWORD=3", "remove"),
     ]
 
     for function, setup, expected in cases:
@@ -1271,6 +1275,7 @@ def test_bash_completion_lists_subcommands_alphabetically() -> None:
                 "migrate",
                 "projadd",
                 "rm",
+                "set-dirs",
             ],
         ),
     ]
@@ -2183,6 +2188,314 @@ def _write_private_index(
         encoding="utf-8",
     )
     return index
+
+
+def _set_dirs_args(registry: Path, directories: list[str], **kw) -> argparse.Namespace:
+    base = dict(
+        registry=str(registry),
+        directories=directories,
+        project="myproj",
+        stdin=False,
+        missing=None,
+        dry_run=False,
+    )
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+def test_set_dirs_replaces_only_selected_directory_section(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # The canonical rewrite may normalize its section but no surrounding byte.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    home = tmp_path / "home"
+    new = home / "work"
+    old = home / "old"
+    shared = tmp_path / "shared"
+    for path in (new, old, shared):
+        path.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = (
+        "#+TITLE: Projects\n\n"
+        "* other\n"
+        "** Directories\n"
+        "   - /other/unchanged\n\n"
+        "* myproj\n"
+        "Project prose stays.\n"
+        "** Directories\n"
+        f"*** file:{old}\n"
+        f"*** file:{shared}\n"
+        "# section comment may be normalized\n"
+        "** Notes\n"
+        "Keep this note byte-for-byte.\n"
+        "* Tasks\n"
+        "** TODO t0001 Registry task\n"
+    )
+    index.write_text(original, encoding="utf-8")
+    old_lookup = orglib.parse(original).directories("myproj")
+    assert old_lookup.section is not None
+
+    args = _set_dirs_args(
+        registry,
+        [str(new), str(shared), str(new)],
+        missing="remove",
+    )
+    assert projmgr.cmd_set_dirs(args) == 0
+
+    revised = index.read_text(encoding="utf-8")
+    new_lookup = orglib.parse(revised).directories("myproj")
+    assert new_lookup.section is not None
+    old_span = old_lookup.section.span
+    new_span = new_lookup.section.span
+    assert revised[:new_span.start] == original[:old_span.start]
+    assert revised[new_span.end:] == original[old_span.end:]
+    assert revised[new_span.start:new_span.end] == (
+        "** Directories\n"
+        "   - ~/work\n"
+        f"   - {shared}\n"
+    )
+    assert "directories updated" in capsys.readouterr().out
+
+
+def test_set_dirs_noninteractive_default_keeps_missing_entries(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Without a prompt, the recoverable default appends omitted existing paths.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    index = _write_private_index(registry, f"   - {old}\n")
+
+    assert projmgr.cmd_set_dirs(_set_dirs_args(registry, [str(new)])) == 0
+
+    lookup = orglib.parse(index.read_text(encoding="utf-8")).directories("myproj")
+    assert lookup.section is not None
+    assert lookup.section.entries == (str(new), str(old))
+    assert "keeping 1 existing directory absent from input" in capsys.readouterr().err
+
+
+def test_set_dirs_dry_run_reads_stdin_without_writing(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Stdin input is deduplicated and rendered, while dry-run preserves the index.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    directory = tmp_path / "stack entry"
+    directory.mkdir()
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = index.read_text(encoding="utf-8")
+    monkeypatch.setattr(
+        sys, "stdin", io.StringIO(f"{directory}\n{directory}\n")
+    )
+
+    args = _set_dirs_args(
+        registry,
+        [],
+        stdin=True,
+        missing="remove",
+        dry_run=True,
+    )
+    assert projmgr.cmd_set_dirs(args) == 0
+
+    assert index.read_text(encoding="utf-8") == original
+    out = capsys.readouterr().out
+    assert "[dry-run] myproj" in out
+    assert f"   - {directory}" in out
+
+
+def test_projmgr_set_dirs_cli_dispatches_to_index_writer(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # The public subcommand reaches the bounded writer with explicit arguments.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    directory = tmp_path / "stack"
+    directory.mkdir()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "projmgr.py"),
+            "set-dirs",
+            "--registry",
+            str(registry),
+            "--project",
+            "myproj",
+            "--missing",
+            "remove",
+            str(directory),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    index = registry / manager.PROJECTS_INDEX_NAME
+    lookup = orglib.parse(index.read_text(encoding="utf-8")).directories("myproj")
+    assert lookup.section is not None
+    assert lookup.section.entries == (str(directory),)
+
+
+def test_set_dirs_infers_project_and_rejects_ambiguous_match(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # PWD selects one resolved project root, never an arbitrary duplicate alias.
+    registry, project = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    nested = project / "docs"
+    nested.mkdir()
+    monkeypatch.setenv("PWD", str(nested))
+    args = _set_dirs_args(
+        registry,
+        [str(project)],
+        project=None,
+        missing="remove",
+    )
+
+    assert projmgr.cmd_set_dirs(args) == 0
+    capsys.readouterr()
+    index = registry / manager.PROJECTS_INDEX_NAME
+    before = index.read_text(encoding="utf-8")
+
+    outsider = tmp_path / "outsider"
+    (outsider / ".git").mkdir(parents=True)
+    monkeypatch.setenv("PWD", str(outsider))
+    assert projmgr.cmd_set_dirs(args) == 1
+    assert "no registered project matches" in capsys.readouterr().err
+    assert index.read_text(encoding="utf-8") == before
+
+    monkeypatch.setenv("PWD", str(nested))
+    register(registry, "alias", project)
+    assert projmgr.cmd_set_dirs(args) == 1
+    assert "multiple registered projects match" in capsys.readouterr().err
+    assert index.read_text(encoding="utf-8") == before
+
+
+def test_set_dirs_requires_input_and_complete_migration(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Empty/conflicting input and missing/mixed registry layouts never write.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = index.read_text(encoding="utf-8")
+
+    assert projmgr.cmd_set_dirs(_set_dirs_args(registry, [])) == 1
+    assert "at least one directory is required" in capsys.readouterr().err
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    assert projmgr.cmd_set_dirs(
+        _set_dirs_args(registry, [], stdin=True)
+    ) == 1
+    assert "at least one directory is required" in capsys.readouterr().err
+    assert projmgr.cmd_set_dirs(
+        _set_dirs_args(registry, [str(tmp_path)], stdin=True)
+    ) == 1
+    assert "--stdin cannot be combined" in capsys.readouterr().err
+    assert index.read_text(encoding="utf-8") == original
+
+    index.unlink()
+    assert projmgr.cmd_set_dirs(
+        _set_dirs_args(registry, [str(tmp_path)], missing="remove")
+    ) == 1
+    assert "registry not migrated; run pmgr migrate" in capsys.readouterr().err
+
+    index.write_text(original, encoding="utf-8")
+    legacy = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
+    legacy.write_text("* Directories\n", encoding="utf-8")
+    assert projmgr.cmd_set_dirs(
+        _set_dirs_args(registry, [str(tmp_path)], missing="remove")
+    ) == 1
+    assert "registry migration incomplete" in capsys.readouterr().err
+    assert index.read_text(encoding="utf-8") == original
+
+
+def test_set_dirs_prompt_supports_remove_keep_and_cancel(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Interactive subtraction offers each specified outcome, including no write.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    _write_private_index(registry, f"   - {old}\n")
+    project = manager.discover_projects(registry)[0]
+    plan = manager.plan_registry_directories_update(project, [new])
+    args = _set_dirs_args(registry, [str(new)])
+
+    class Tty(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setattr(sys, "stdin", Tty())
+    monkeypatch.setattr(sys, "stdout", Tty())
+    monkeypatch.setattr(menu, "prompt_text", lambda label: "remove")
+    assert projmgr._set_dirs_keep_missing(args, plan) is False
+    monkeypatch.setattr(menu, "prompt_text", lambda label: "keep")
+    assert projmgr._set_dirs_keep_missing(args, plan) is True
+    monkeypatch.setattr(menu, "prompt_text", lambda label: "cancel")
+    assert projmgr._set_dirs_keep_missing(args, plan) is None
+
+
+def test_registry_directories_update_rechecks_index_preimage(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # A concurrent index edit invalidates the plan before the atomic replacement.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    project = manager.discover_projects(registry)[0]
+    plan = manager.plan_registry_directories_update(project, [tmp_path])
+    index = registry / manager.PROJECTS_INDEX_NAME
+    changed = plan.previous_index_text + "# concurrent edit\n"
+    index.write_text(changed, encoding="utf-8")
+
+    with pytest.raises(manager.RegistryIndexError, match="changed after"):
+        manager.apply_registry_directories_update(plan, keep_missing=False)
+    assert index.read_text(encoding="utf-8") == changed
+
+
+def test_set_dirs_adds_missing_heading_after_project_prose(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # A missing section is inserted after project prose without rewriting it.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    directory = tmp_path / "stack"
+    directory.mkdir()
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = (
+        manager.PROJECTS_INDEX_HEADER
+        + "* myproj\nKeep this prose.\n"
+        + "* other\nOther bytes stay.\n"
+    )
+    index.write_text(original, encoding="utf-8")
+
+    assert projmgr.cmd_set_dirs(
+        _set_dirs_args(registry, [str(directory)], missing="remove")
+    ) == 0
+
+    assert index.read_text(encoding="utf-8") == (
+        manager.PROJECTS_INDEX_HEADER
+        + "* myproj\nKeep this prose.\n"
+        + "** Directories\n"
+        + f"   - {directory}\n"
+        + "* other\nOther bytes stay.\n"
+    )
 
 
 def test_core_parse_directories() -> None:

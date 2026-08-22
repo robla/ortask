@@ -257,7 +257,7 @@ The existence of `<registry>/projects.org` marks the registry as migrated.
 Commands that consume or edit private directory settings require that marker
 and never fall back to `directories-private.org`:
 
-- `cdproj`, its picker/editor path, and the planned `set-dirs` stop with
+- `cdproj`, its picker/editor path, and `set-dirs` stop with
   `registry not migrated; run pmgr migrate` when the index is absent.
 - A leftover legacy file beside an index is an incomplete migration, not a
   second source. Those commands stop and direct the user back to `pmgr migrate`.

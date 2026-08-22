@@ -13,8 +13,8 @@ This command was named `orgmgr.py` (`orgm`) until 2026-08-19. `projadd`
 survives as a deprecated alias for `add`. `migrate` converts legacy private
 directory files into the registry index; it no longer dispatches to `init`.
 
-Current verb set: `add`, `cdproj`, `doctor`, `init`, `list`, `migrate`, `rm`.
-`set-dirs` is planned in `t0031`.
+Current verb set: `add`, `cdproj`, `doctor`, `init`, `list`, `migrate`, `rm`,
+`set-dirs`.
 
 ## Registry Model
 
@@ -320,7 +320,7 @@ Removing the entry directory by hand is equally valid.
 
 ## `set-dirs`
 
-**Status: specified, not implemented (`t0031`).**
+**Status: implemented (`t0031.1`).**
 
 `projmgr.py set-dirs [--project PROJECT] DIRECTORY...` writes a directory stack
 into the project's private list — the other direction from `cdproj`, which
@@ -405,9 +405,9 @@ puts the location back in its rows, with the count in parentheses:
 `misc/ortask-completion.bash` registers completion for `projmgr.py`,
 `./projmgr.py`, `pmgr`, `ptui`, and the `cdproj` shell function. Subcommands and
 options complete from static lists; the arguments that name a project —
-`cdproj PROJECT`, `rm NAME`, planned `set-dirs --project PROJECT`, and the
-shell's planned `cdproj -s PROJECT` — complete from `list --format names`, so a
-TAB sees exactly the projects the registry holds.
+`cdproj PROJECT`, `rm NAME`, `set-dirs --project PROJECT`, and the shell's
+planned `cdproj -s PROJECT` — complete from `list --format names`, so a TAB sees
+exactly the projects the registry holds.
 
 `cdproj` needs its own completion function rather than sharing `pmgr`'s. The
 shell function supplies `cdproj --out FILE` itself, so the first word the user

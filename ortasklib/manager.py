@@ -619,6 +619,19 @@ class DirectorySource:
         return self.entries is not None
 
 
+@dataclass(frozen=True)
+class RegistryDirectoriesPlan:
+    """One source-revision-bound update to a project's private stack."""
+
+    project: Project
+    index_path: Path
+    previous_index_text: str
+    existing_paths: tuple[Path, ...]
+    live_paths: tuple[Path, ...]
+    additions: tuple[Path, ...]
+    missing: tuple[Path, ...]
+
+
 def legacy_private_files(registry: Path) -> list[Path]:
     """Return migration leftovers without reading their contents."""
     try:
@@ -773,6 +786,131 @@ def ensure_registry_project_directories(project: Project) -> tuple[Path, int]:
     except OSError as exc:
         raise RegistryIndexError(f"cannot write {index_path}: {exc}") from exc
     return index_path, check.project_span.start_line + 1
+
+
+def unique_resolved_directories(entries: list[str], root: Path) -> list[Path]:
+    """Resolve and deduplicate directory spellings, keeping their first order."""
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for path in resolve_directories(entries, root):
+        if path not in seen:
+            seen.add(path)
+            unique.append(path)
+    return unique
+
+
+def format_directory_path(path: Path) -> str:
+    """Use ``~`` for paths under home and absolute spelling everywhere else."""
+    resolved = path.resolve()
+    home = Path.home().resolve()
+    try:
+        relative = resolved.relative_to(home)
+    except ValueError:
+        return str(resolved)
+    return "~" if relative == Path(".") else f"~/{relative.as_posix()}"
+
+
+def plan_registry_directories_update(
+    project: Project, live_paths: list[Path]
+) -> RegistryDirectoriesPlan:
+    """Read one index preimage and compare its private stack with the live one."""
+    index_path, text = require_registry_index(project.path.parent, [project])
+    lookup = orglib.parse(text).directories(project.name)
+    root = real_project_path(project)
+    existing = (
+        unique_resolved_directories(list(lookup.section.entries), root)
+        if lookup.section is not None
+        else []
+    )
+    live: list[Path] = []
+    seen_live: set[Path] = set()
+    for path in live_paths:
+        resolved = path.resolve()
+        if resolved not in seen_live:
+            seen_live.add(resolved)
+            live.append(resolved)
+    existing_set = set(existing)
+    live_set = set(live)
+    return RegistryDirectoriesPlan(
+        project=project,
+        index_path=index_path,
+        previous_index_text=text,
+        existing_paths=tuple(existing),
+        live_paths=tuple(live),
+        additions=tuple(path for path in live if path not in existing_set),
+        missing=tuple(path for path in existing if path not in live_set),
+    )
+
+
+def proposed_registry_directories(
+    plan: RegistryDirectoriesPlan, *, keep_missing: bool
+) -> tuple[Path, ...]:
+    """Return the final stack after applying the selected subtraction policy."""
+    if not keep_missing:
+        return plan.live_paths
+    return plan.live_paths + plan.missing
+
+
+def registry_directories_section(paths: tuple[Path, ...]) -> str:
+    """Render the canonical direct-child directory section."""
+    return "** Directories\n" + "".join(
+        f"   - {format_directory_path(path)}\n" for path in paths
+    )
+
+
+def render_registry_directories_update(
+    plan: RegistryDirectoriesPlan, *, keep_missing: bool
+) -> tuple[str, str]:
+    """Return ``(complete index, replacement section)`` without writing."""
+    text = plan.previous_index_text
+    document = orglib.parse(text)
+    lookup = document.directories(plan.project.name)
+    final_paths = proposed_registry_directories(plan, keep_missing=keep_missing)
+    section_text = registry_directories_section(final_paths)
+
+    if lookup.section is not None:
+        span = lookup.section.span
+        revised = text[:span.start] + section_text + text[span.end:]
+    elif lookup.project_span is not None:
+        insertion = lookup.project_span.end
+        prefix = text[:insertion]
+        if prefix and not prefix.endswith(("\n", "\r")):
+            prefix += "\n"
+        revised = prefix + section_text + text[insertion:]
+    else:
+        prefix = text
+        if prefix and not prefix.endswith(("\n", "\r")):
+            prefix += "\n"
+        revised = prefix + f"* {plan.project.name}\n" + section_text
+
+    check = orglib.parse(revised).directories(plan.project.name)
+    if check.section is None:
+        raise RegistryIndexError(
+            f"{plan.index_path}: cannot create a safe section "
+            f"for {plan.project.name!r}"
+        )
+    return revised, section_text
+
+
+def apply_registry_directories_update(
+    plan: RegistryDirectoriesPlan, *, keep_missing: bool
+) -> bool:
+    """Apply one planned update if its index preimage is still current."""
+    _, current = require_registry_index(plan.project.path.parent, [plan.project])
+    if current != plan.previous_index_text:
+        raise RegistryIndexError(
+            f"{plan.index_path}: changed after directory update was planned"
+        )
+    revised, _ = render_registry_directories_update(
+        plan, keep_missing=keep_missing
+    )
+    if revised == current:
+        return False
+    try:
+        core.atomic_write(plan.index_path, revised)
+    except OSError as exc:
+        raise RegistryIndexError(f"cannot write {plan.index_path}: {exc}") from exc
+    return True
 
 
 def directory_candidates(project: Project) -> list[DirectorySource]:
