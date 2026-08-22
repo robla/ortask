@@ -47,7 +47,10 @@ TRAILING_TAGS_RE = re.compile(r"\s+:(?:[^\s:]+:)+\s*$")
 # A leading Org priority cookie on a heading. One character rather than [A-C]:
 # Org's priority range is configurable and may be numeric, and a cookie this
 # does not strip is a heading that stops matching its own name.
-LEADING_PRIORITY_RE = re.compile(r"^\[#[A-Za-z0-9]\]\s*")
+LEADING_PRIORITY_RE = re.compile(r"^\[#(?P<priority>[A-Za-z0-9])\]\s*")
+PROPERTY_DRAWER_START_RE = re.compile(r"^\s*:PROPERTIES:\s*$", re.IGNORECASE)
+PROPERTY_DRAWER_END_RE = re.compile(r"^\s*:END:\s*$", re.IGNORECASE)
+PROPERTY_RE = re.compile(r"^\s*:(?P<name>[^\s:]+):\s*(?P<value>.*?)\s*$")
 
 
 class OrgStructureError(ValueError):
@@ -92,6 +95,55 @@ class ProjectDirectories:
     @property
     def section_found(self) -> bool:
         return self.section is not None
+
+
+@dataclass(frozen=True)
+class ProjectSection:
+    """One source-backed top-level project section in a registry index.
+
+    ``name`` is the heading with its priority cookie and trailing tags removed,
+    which is what joins the section to a registry entry. ``properties`` keeps
+    every drawer entry in source order, including ones this package assigns no
+    meaning to and repeats of one key, so a reader can report what it found and
+    a writer can put back what it did not change.
+
+    Spans are half-open character offsets into the parsed text: ``span`` covers
+    the whole subtree, ``heading_span`` the heading line alone, and
+    ``drawer_span`` the ``:PROPERTIES:`` block including both delimiters.
+    """
+
+    name: str
+    span: SourceSpan
+    heading_span: SourceSpan
+    priority: str | None = None
+    tags: tuple[str, ...] = ()
+    properties: tuple[tuple[str, str], ...] = ()
+    drawer_span: SourceSpan | None = None
+
+    def property_values(self, name: str) -> tuple[str, ...]:
+        """Every value recorded for ``name``, case-insensitively, in order."""
+        wanted = name.casefold()
+        return tuple(
+            value for key, value in self.properties if key.casefold() == wanted
+        )
+
+    def property_value(self, name: str) -> str | None:
+        """The first value recorded for ``name``, or ``None``."""
+        values = self.property_values(name)
+        return values[0] if values else None
+
+    @property
+    def description(self) -> str | None:
+        return self.property_value("DESCRIPTION")
+
+    @property
+    def task_file(self) -> str | None:
+        """The recorded task-file mirror.
+
+        Non-normative by design: nothing may discover or open a task file from
+        this value. See ``docs/ptui.md``.
+        """
+        return self.property_value("TASK_FILE")
 
 
 @dataclass
@@ -228,12 +280,17 @@ def _headings(lines: list[_SourceLine]) -> list[_Heading]:
     return headings
 
 
-def _project_title(title: str) -> str:
+def project_heading_name(title: str) -> str:
     """The name a project heading claims, with Org decoration removed.
 
     A heading may carry a priority cookie for ``ptui`` ordering and trailing
     tags, neither of which is part of the registry entry name: ``* [#A] ortask
     :work:`` and ``* ortask`` name the same project.
+
+    This is the one place that decoration is stripped. Callers that compare a
+    heading against a registry entry name must come through here rather than
+    normalizing their own way, or a form one of them handles becomes a form the
+    other reports as a stranger.
     """
     without_tags = TRAILING_TAGS_RE.sub("", title)
     return LEADING_PRIORITY_RE.sub("", without_tags.strip()).strip()
@@ -249,6 +306,160 @@ def _span(
 
 def _heading_lines(headings: list[_Heading]) -> str:
     return ", ".join(str(heading.line + 1) for heading in headings)
+
+
+def _heading_tags(title: str) -> tuple[str, ...]:
+    match = TRAILING_TAGS_RE.search(title)
+    if match is None:
+        return ()
+    return tuple(tag for tag in match.group(0).strip().strip(":").split(":") if tag)
+
+
+def _heading_priority(title: str) -> str | None:
+    match = LEADING_PRIORITY_RE.match(TRAILING_TAGS_RE.sub("", title).strip())
+    return match.group("priority") if match else None
+
+
+def _parse_property_drawer(
+    lines: list[_SourceLine],
+    start_line: int,
+    end_line: int,
+    name: str,
+    text_length: int,
+) -> tuple[SourceSpan | None, tuple[tuple[str, str], ...]]:
+    """The drawer directly under a heading, and the properties it holds.
+
+    Org puts a property drawer immediately after its heading, so that is where
+    this looks. A drawer further down the section is refused rather than
+    ignored: silently dropping metadata a person wrote is the worse failure.
+    """
+    first = start_line
+    while first < end_line and not lines[first].text.strip():
+        first += 1
+
+    if first >= end_line or not PROPERTY_DRAWER_START_RE.match(lines[first].text):
+        for later in range(first, end_line):
+            if PROPERTY_DRAWER_START_RE.match(lines[later].text):
+                raise OrgStructureError(
+                    f"property drawer for project {name!r} must directly follow "
+                    f"its heading; found one at line {later + 1}"
+                )
+        return None, ()
+
+    properties: list[tuple[str, str]] = []
+    closing: int | None = None
+    for index in range(first + 1, end_line):
+        line = lines[index].text
+        if PROPERTY_DRAWER_END_RE.match(line):
+            closing = index
+            break
+        if PROPERTY_DRAWER_START_RE.match(line):
+            raise OrgStructureError(
+                f"duplicate property drawer for project {name!r} at line "
+                f"{index + 1}"
+            )
+        if not line.strip():
+            continue
+        match = PROPERTY_RE.match(line)
+        if match is None:
+            raise OrgStructureError(
+                f"malformed property drawer line for project {name!r} at line "
+                f"{index + 1}: {line.strip()!r}"
+            )
+        properties.append((match.group("name"), match.group("value")))
+
+    if closing is None:
+        raise OrgStructureError(
+            f"unterminated property drawer for project {name!r} starting at "
+            f"line {first + 1}"
+        )
+    return _span(lines, first, closing + 1, text_length), tuple(properties)
+
+
+def _project_section(
+    lines: list[_SourceLine],
+    headings: list[_Heading],
+    heading: _Heading,
+    text_length: int,
+) -> ProjectSection:
+    """Build one :class:`ProjectSection` from an already-located heading."""
+    section_end = next(
+        (
+            other.line
+            for other in headings
+            if other.line > heading.line and other.level == 1
+        ),
+        len(lines),
+    )
+    body_end = next(
+        (
+            other.line
+            for other in headings
+            if heading.line < other.line < section_end
+        ),
+        section_end,
+    )
+    name = project_heading_name(heading.title)
+    drawer_span, properties = _parse_property_drawer(
+        lines, heading.line + 1, body_end, name, text_length
+    )
+    return ProjectSection(
+        name=name,
+        span=_span(lines, heading.line, section_end, text_length),
+        heading_span=_span(lines, heading.line, heading.line + 1, text_length),
+        priority=_heading_priority(heading.title),
+        tags=_heading_tags(heading.title),
+        properties=properties,
+        drawer_span=drawer_span,
+    )
+
+
+def parse_project_sections(text: str) -> tuple[ProjectSection, ...]:
+    """Every top-level section of a registry index, in source order.
+
+    A faithful listing rather than a join: reserved headings such as ``Tasks``
+    and repeated names are returned as they appear, because which headings name
+    projects is the registry's question, not this package's. Use
+    :func:`parse_project_section` to look one up by name with the duplicate
+    check applied.
+    """
+    lines = _source_lines(text)
+    headings = _headings(lines)
+    return tuple(
+        _project_section(lines, headings, heading, len(text))
+        for heading in headings
+        if heading.level == 1
+    )
+
+
+def parse_project_section(text: str, project: str) -> ProjectSection | None:
+    """One project's top-level section, or ``None`` when it has none.
+
+    Matched the way :func:`parse_project_directories` matches, so the two agree
+    about which heading belongs to a project. Duplicate matching headings raise
+    :class:`OrgStructureError` rather than resolving to the first.
+    """
+    project_name = project.strip()
+    if not project_name:
+        raise ValueError("project name must not be empty")
+
+    lines = _source_lines(text)
+    headings = _headings(lines)
+    wanted = project_name.casefold()
+    matches = [
+        heading
+        for heading in headings
+        if heading.level == 1
+        and project_heading_name(heading.title).casefold() == wanted
+    ]
+    if len(matches) > 1:
+        raise OrgStructureError(
+            f"duplicate project heading for {project_name!r} at lines "
+            f"{_heading_lines(matches)}"
+        )
+    if not matches:
+        return None
+    return _project_section(lines, headings, matches[0], len(text))
 
 
 def parse_project_directories(text: str, project: str) -> ProjectDirectories:
@@ -274,7 +485,8 @@ def parse_project_directories(text: str, project: str) -> ProjectDirectories:
     matches = [
         heading
         for heading in headings
-        if heading.level == 1 and _project_title(heading.title).casefold() == wanted
+        if heading.level == 1
+        and project_heading_name(heading.title).casefold() == wanted
     ]
     if len(matches) > 1:
         raise OrgStructureError(

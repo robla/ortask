@@ -303,7 +303,7 @@ extension's own tag. Ship =--dry-run= first and prefer the attended
 Implement =docs/ptui.md= so the project browser helps select higher-priority
 work while preserving registry symlinks as the authority for membership and
 task-file resolution.
-*** TODO [#A] t0035.1 Add source-backed project metadata parsing
+*** DONE [#A] t0035.1 Add source-backed project metadata parsing
 Parse optional Org priority cookies plus =DESCRIPTION= and =TASK_FILE=
 properties from each =projects.org= project section. Preserve exact source
 spans, unknown properties, prose, tags, and child sections; reject ambiguous

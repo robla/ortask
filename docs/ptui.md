@@ -5,8 +5,10 @@ open a registered project, but to help the user decide which project deserves
 attention next. The registry remains the source of project membership;
 `projects.org` will supply optional presentation and prioritization metadata.
 
-This is a forward specification. The current project list is alphabetical and
-does not yet read or edit project priority and description metadata.
+This is a forward specification. Priority, description, and the task-file
+mirror are parsed as of `t0035.1` — `orglib.parse(text).project(name)` and
+`manager.read_project_metadata()` — but the project list is still alphabetical
+and shows none of it, and nothing edits it yet.
 
 ## Project List
 

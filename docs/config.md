@@ -214,10 +214,12 @@ Notes on the shape:
   heading with the same title is ordinary prose structure. This keeps the
   parser's boundary obvious and prevents a note from becoming configuration by
   accident.
-- **A direct child `:PROPERTIES:` drawer holds per-project metadata.**
-  `DESCRIPTION` and `TASK_FILE` are specified in `docs/ptui.md`; `TASK_FILE` is
-  a non-normative mirror, and no command may resolve a task file from it. Other
-  properties are preserved and ignored. A project heading may also carry an Org
+- **A `:PROPERTIES:` drawer directly under the project heading holds
+  per-project metadata.** `DESCRIPTION` and `TASK_FILE` are specified in
+  `docs/ptui.md`; `TASK_FILE` is a non-normative mirror, and no command may
+  resolve a task file from it. Other properties are preserved and ignored. The
+  drawer must be the first thing after the heading, as Org places it; one
+  further down the section is reported rather than quietly skipped. A project heading may also carry an Org
   priority cookie, `* [#A] ortask`, which `ptui` uses for ordering.
 - **Other prose under a project heading is free text** and is never parsed.
   That is the point of the file.

@@ -32,6 +32,7 @@ from .syntax import (
     DirectoriesSection,
     OrgStructureError,
     ProjectDirectories,
+    ProjectSection,
     SourceSpan,
     TodoItem,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "Document",
     "OrgStructureError",
     "ProjectDirectories",
+    "ProjectSection",
     "SourceSpan",
     "TodoItem",
     "parse",
@@ -67,6 +69,14 @@ class Document:
     def directories(self, project: str) -> ProjectDirectories:
         """Look up one project's source-backed registry directory section."""
         return syntax.parse_project_directories(self._text, project)
+
+    def project(self, name: str) -> ProjectSection | None:
+        """Look up one project's source-backed section and its metadata."""
+        return syntax.parse_project_section(self._text, name)
+
+    def projects(self) -> tuple[ProjectSection, ...]:
+        """Every top-level section, in source order, as it appears."""
+        return syntax.parse_project_sections(self._text)
 
     def render(self) -> str:
         """The document as text.

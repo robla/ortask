@@ -103,7 +103,8 @@ like a project root?"
 - **`orglib/` (started 2026-08-21):** a *peer* package, not part of
   `ortasklib`. It holds the Org syntax (`syntax.py`: heading regexes,
   `TodoItem`, `parse_org`, top-level `parse_directories`, and source-backed
-  `parse_project_directories`) plus a small `parse(text) -> Document` boundary.
+  `parse_project_directories`, and `parse_project_section` for index metadata)
+  plus a small `parse(text) -> Document` boundary.
   `Document.directories(project)` returns source spans and distinguishes a
   missing project, a missing section, and an empty one. The package imports
   nothing outside the standard library, and the dependency runs `ortasklib` →

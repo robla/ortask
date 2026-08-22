@@ -119,6 +119,19 @@ A peer package, not part of `ortasklib`. It holds Org syntax and nothing else:
 `syntax.py` has the regexes, the `TodoItem` model, and the text parsers;
 `__init__.py` adds the `parse(text) -> Document` boundary that callers use.
 
+`Document` answers three kinds of question. `tasks()` returns task headings.
+`directories(project)` and `project(name)`/`projects()` read one registry
+index: the first for a project's `Directories` section, the second for its
+heading and property drawer as a `ProjectSection` — name, priority, tags,
+properties in source order, and spans for the subtree, the heading line, and
+the drawer. Both return source spans rather than only values, which is what
+lets a writer replace one region and leave the rest of the file alone.
+
+`project_heading_name()` is the one place a project heading's decoration is
+stripped. Priority cookies and trailing tags are not part of a registry entry
+name, and a second normalization elsewhere is how `* [#A] ortask` came to match
+in one call site and read as a stranger in another (`t0036`).
+
 It imports nothing outside the standard library — no `ortasklib`, no third-party
 package. The dependency runs `ortasklib` → `orglib` only, which is what allows a
 different Org backend to be substituted later without `ortasklib` knowing.

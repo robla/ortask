@@ -695,9 +695,89 @@ def _index_project_headings(text: str) -> list[tuple[str, int]]:
     for line_num, line in enumerate(text.splitlines(), start=1):
         match = orglib.syntax.ANY_HEADING_RE.match(line)
         if match and len(match.group("stars")) == 1:
-            title = orglib.syntax.TRAILING_TAGS_RE.sub("", match.group("title")).strip()
+            title = orglib.syntax.project_heading_name(match.group("title"))
             headings.append((title, line_num))
     return headings
+
+
+@dataclass(frozen=True)
+class ProjectMetadata:
+    """Presentation metadata for one registered project, read from the index.
+
+    Empty everywhere is the normal state for a project the index says nothing
+    about. ``warning`` describes a section that could not be read, so a caller
+    can show the project and the problem instead of neither.
+
+    None of this is authoritative. The registry decides membership, normal
+    resolution finds the task file, and ``task_file`` is a mirror recorded for
+    a person to read — see ``docs/ptui.md``.
+    """
+
+    priority: str | None = None
+    description: str | None = None
+    task_file: str | None = None
+    warning: str | None = None
+
+
+def _index_value(value: str | None) -> str | None:
+    stripped = value.strip() if value else ""
+    return stripped or None
+
+
+def _project_metadata(section: orglib.ProjectSection) -> ProjectMetadata:
+    """One index section as presentation metadata, reporting what repeats."""
+    repeated = [
+        name
+        for name in ("DESCRIPTION", "TASK_FILE")
+        if len(section.property_values(name)) > 1
+    ]
+    warning = (
+        "recorded more than once: " + ", ".join(repeated) if repeated else None
+    )
+    return ProjectMetadata(
+        priority=section.priority,
+        description=_index_value(section.description),
+        task_file=_index_value(section.task_file),
+        warning=warning,
+    )
+
+
+def read_project_metadata(
+    registry: Path, projects: list[Project] | tuple[Project, ...]
+) -> dict[str, ProjectMetadata]:
+    """Join index metadata onto registry entries by name.
+
+    Every project gets an entry, so a caller can build a row without checking
+    first. A registry with no index yields metadata for none of them and no
+    warnings: an unmigrated registry is ``doctor``'s business, not a reason to
+    refuse to list projects. A section that cannot be read warns on that
+    project alone, leaving the rest of the list intact.
+
+    Index sections matching no registry entry are ignored here; reporting them
+    is ``registry_index_problems``.
+    """
+    metadata = {project.name: ProjectMetadata() for project in projects}
+    index_path = registry / PROJECTS_INDEX_NAME
+    if not _path_exists(index_path):
+        return metadata
+    try:
+        text = index_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        unreadable = ProjectMetadata(
+            warning=f"cannot read {friendly_path(index_path)}: {exc}"
+        )
+        return dict.fromkeys(metadata, unreadable)
+
+    document = orglib.parse(text)
+    for project in projects:
+        try:
+            section = document.project(project.name)
+        except (orglib.OrgStructureError, ValueError) as exc:
+            metadata[project.name] = ProjectMetadata(warning=str(exc))
+            continue
+        if section is not None:
+            metadata[project.name] = _project_metadata(section)
+    return metadata
 
 
 def registry_index_problems(registry: Path, projects: list[Project]) -> list[str]:

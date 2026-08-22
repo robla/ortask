@@ -97,6 +97,98 @@ def test_project_heading_priority_cookie_does_not_change_the_name():
         ).directories("ortask")
 
 
+def test_project_section_reads_priority_tags_and_drawer():
+    # ptui's metadata (t0035.1): the heading carries priority and tags, the
+    # drawer carries description and the non-normative task-file mirror, and
+    # every span points back at exactly what was read.
+    text = (
+        "#+TITLE: Projects\n\n"
+        "* [#A] ortask   :work:tools:\n"
+        ":PROPERTIES:\n"
+        ":DESCRIPTION: Org-backed task and project tools\n"
+        ":TASK_FILE: ~/src/ortask/todo.org\n"
+        ":CUSTOM_ID: keep-me\n"
+        ":END:\n"
+        "Prose the parser never touches.\n"
+        "** Directories\n"
+        "   - ~/src/ortask\n\n"
+        "* plain\n"
+    )
+    section = orglib.parse(text).project("ortask")
+    assert section is not None
+    assert section.name == "ortask"
+    assert section.priority == "A"
+    assert section.tags == ("work", "tools")
+    assert section.description == "Org-backed task and project tools"
+    assert section.task_file == "~/src/ortask/todo.org"
+    # Unknown properties are kept in order so a writer can put them back.
+    assert section.properties[2] == ("CUSTOM_ID", "keep-me")
+    assert text[section.heading_span.start:section.heading_span.end] == (
+        "* [#A] ortask   :work:tools:\n"
+    )
+    assert text[section.drawer_span.start:section.drawer_span.end].startswith(
+        ":PROPERTIES:\n"
+    )
+    assert text[section.drawer_span.start:section.drawer_span.end].endswith(":END:\n")
+    # The subtree stops before the next project, prose and children included.
+    assert text[section.span.end:] == "* plain\n"
+    assert "Prose the parser never touches." in (
+        text[section.span.start:section.span.end]
+    )
+
+    # A section with no drawer is ordinary, not an error.
+    plain = orglib.parse(text).project("plain")
+    assert plain is not None
+    assert plain.priority is None and plain.properties == ()
+    assert plain.drawer_span is None
+    assert orglib.parse(text).project("absent") is None
+
+
+def test_project_sections_lists_every_top_level_heading():
+    # A faithful listing, not a join: which headings name projects is the
+    # registry's question, so reserved and repeated names come back as written.
+    text = "* one\n* Tasks\n** TODO t0001 x\n* [#C] one\n"
+    assert [
+        (section.name, section.priority)
+        for section in orglib.parse(text).projects()
+    ] == [("one", None), ("Tasks", None), ("one", "C")]
+    # Looking one up by name applies the duplicate check instead.
+    with pytest.raises(orglib.OrgStructureError):
+        orglib.parse(text).project("one")
+
+
+def test_project_section_refuses_a_drawer_it_cannot_place():
+    # Dropping metadata a person wrote is worse than refusing to read it.
+    misplaced = (
+        "* ortask\n"
+        "Prose first.\n"
+        ":PROPERTIES:\n"
+        ":DESCRIPTION: never reached\n"
+        ":END:\n"
+    )
+    with pytest.raises(orglib.OrgStructureError, match="must directly follow"):
+        orglib.parse(misplaced).project("ortask")
+
+    unterminated = "* ortask\n:PROPERTIES:\n:DESCRIPTION: no end\n** Directories\n"
+    with pytest.raises(orglib.OrgStructureError, match="unterminated"):
+        orglib.parse(unterminated).project("ortask")
+
+    malformed = "* ortask\n:PROPERTIES:\nnot a property\n:END:\n"
+    with pytest.raises(orglib.OrgStructureError, match="malformed"):
+        orglib.parse(malformed).project("ortask")
+
+    # A drawer under a child heading belongs to the child, not the project.
+    nested = (
+        "* ortask\n"
+        "** Directories\n"
+        ":PROPERTIES:\n"
+        ":DESCRIPTION: the child's\n"
+        ":END:\n"
+    )
+    section = orglib.parse(nested).project("ortask")
+    assert section is not None and section.properties == ()
+
+
 def test_orglib_render_returns_the_source_unchanged():
     """The fidelity property a future backend has to match, asserted now.
 
@@ -2571,6 +2663,104 @@ def test_migrate_leaves_a_cookied_index_untouched(
     ) == 0
     capsys.readouterr()
     assert index.read_text(encoding="utf-8") == original
+
+
+def test_doctor_accepts_a_cookied_project_section(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # doctor normalizes headings its own way; it must use orglib's rule, or a
+    # priority cookie reads as part of the name and the section looks stale.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    index = registry / manager.PROJECTS_INDEX_NAME
+    index.write_text(
+        manager.PROJECTS_INDEX_HEADER + "* [#A] myproj\n** Directories\n",
+        encoding="utf-8",
+    )
+    assert projmgr.cmd_doctor(argparse.Namespace(registry=str(registry))) == 0
+    assert "stale project section" not in capsys.readouterr().out
+
+    # A section that really matches nothing is still reported, by its name.
+    index.write_text(
+        manager.PROJECTS_INDEX_HEADER
+        + "* [#A] myproj\n** Directories\n* [#B] ghost\n",
+        encoding="utf-8",
+    )
+    assert projmgr.cmd_doctor(argparse.Namespace(registry=str(registry))) == 2
+    assert "stale project section 'ghost'" in capsys.readouterr().out
+
+
+def test_read_project_metadata_joins_the_index_onto_registered_projects(
+    tmp_path: Path,
+) -> None:
+    # The registry decides membership; the index only decorates it (t0035.1).
+    registry = tmp_path / "registry"
+    for name in ("described", "bare", "broken"):
+        project = tmp_path / name
+        write(project / "todo.org", "* Tasks\n** TODO t0001 task\n")
+        register(registry, name, project)
+    (registry / manager.PROJECTS_INDEX_NAME).write_text(
+        manager.PROJECTS_INDEX_HEADER
+        + "* [#A] described\n"
+        ":PROPERTIES:\n"
+        ":DESCRIPTION: A described project\n"
+        ":TASK_FILE: ~/src/described/todo.org\n"
+        ":END:\n"
+        "* bare\n"
+        "* broken\n"
+        "* broken\n"
+        "* ghost\n",
+        encoding="utf-8",
+    )
+    projects = manager.discover_projects(registry)
+    metadata = manager.read_project_metadata(registry, projects)
+
+    # Every registered project has an entry; an index-only section has none.
+    assert set(metadata) == {"described", "bare", "broken"}
+    assert metadata["described"] == manager.ProjectMetadata(
+        priority="A",
+        description="A described project",
+        task_file="~/src/described/todo.org",
+    )
+    assert metadata["bare"] == manager.ProjectMetadata()
+    # One unreadable section warns on its own project and spares the others.
+    assert "duplicate project heading" in metadata["broken"].warning
+    assert metadata["described"].warning is None
+
+
+def test_read_project_metadata_tolerates_a_registry_with_no_index(
+    tmp_path: Path,
+) -> None:
+    # An unmigrated registry is doctor's business, not a reason to refuse rows.
+    registry = tmp_path / "registry"
+    project = tmp_path / "solo"
+    write(project / "todo.org", "* Tasks\n** TODO t0001 task\n")
+    register(registry, "solo", project)
+    projects = manager.discover_projects(registry)
+
+    assert manager.read_project_metadata(registry, projects) == {
+        "solo": manager.ProjectMetadata()
+    }
+
+
+def test_read_project_metadata_reports_a_repeated_property(tmp_path: Path) -> None:
+    # First-wins is a silent choice; say that the file disagrees with itself.
+    registry = tmp_path / "registry"
+    project = tmp_path / "twice"
+    write(project / "todo.org", "* Tasks\n** TODO t0001 task\n")
+    register(registry, "twice", project)
+    (registry / manager.PROJECTS_INDEX_NAME).write_text(
+        manager.PROJECTS_INDEX_HEADER
+        + "* twice\n:PROPERTIES:\n:DESCRIPTION: first\n:DESCRIPTION: second\n:END:\n",
+        encoding="utf-8",
+    )
+    entry = manager.read_project_metadata(
+        registry, manager.discover_projects(registry)
+    )["twice"]
+
+    assert entry.description == "first"
+    assert entry.warning == "recorded more than once: DESCRIPTION"
 
 
 def test_set_dirs_noninteractive_default_keeps_missing_entries(
