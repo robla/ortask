@@ -37,10 +37,14 @@ The user can switch among these views without changing `projects.org`:
   project name. Projects without a readable task file sort last.
 
 `s` should cycle the sort mode and report the active mode in the footer;
-contextual Help should list all modes. Modified time is deliberately a cheap,
-predictable proxy for activity: `ptui` must not recursively scan project trees
-or invoke Git to calculate it. The selected project remains anchored by name
-when the order changes.
+contextual Help should list the modes that exist. Modified time is deliberately
+a cheap, predictable proxy for activity: `ptui` must not recursively scan
+project trees or invoke Git to calculate it. The selected project remains
+anchored by name when the order changes.
+
+Priority and Alphabetical arrive in `t0035.2`, Modified in `t0035.5`, so Help
+lists what is actually available at each step rather than advertising a mode
+that is not there yet.
 
 ## Metadata in `projects.org`
 
@@ -63,6 +67,13 @@ The registry entry name remains the join key. Readers must recognize both
 `* ortask` and `* [#A] ortask`, stripping the priority cookie and trailing tags
 before matching. Names are not editable in metadata mode because renaming the
 heading alone would not rename the registry entry.
+
+**Readers do not strip the cookie yet.** `orglib.syntax._project_title` strips
+trailing tags only, so `* [#A] ortask` does not match registry entry `ortask`
+today. Since the index became the only source of a project's private directory
+stack (`t0026.3`), a heading that gains a cookie silently loses that stack and
+`cdproj` falls back to the project root. Nothing may write a cookie — and
+nobody should hand-add one — until `t0036` lands.
 
 `DESCRIPTION` is a single-line summary intended for the project list.
 `TASK_FILE` is an optional, non-normative mirror for human inspection. The
@@ -112,8 +123,47 @@ changed source file stop the save with a recoverable error. Direct priority
 changes and metadata-workspace edits should share one transaction path so undo,
 dirty-state reporting, and save behavior cannot disagree.
 
+### The write path is an open decision
+
+Two mechanisms exist, and each supplies half of what the paragraph above asks
+for. Choosing between them is `t0035.3`'s first task, not an implementation
+detail to settle at the keyboard.
+
+| | `taskui.OrgBuffer` | `manager.plan_/apply_registry_directories_update` |
+|---|---|---|
+| Buffering, undo/redo, dirty state | yes | no |
+| Auto-save sibling | yes (`#projects.org#`) | no |
+| Preimage check before writing | **no** | yes |
+| Scope of the write | the whole file | one bounded section |
+
+`OrgBuffer` takes any Org path, so it runs on `projects.org` unchanged, and its
+undo/redo is what the metadata workspace wants. But `save()` calls
+`core.atomic_write` on the entire buffer with no check that the file is still
+the one that was read, so a `ptui` session holding a buffer open would overwrite
+a `pmgr set-dirs` run from another terminal. The index path has the check and
+the bounded rewrite, and no buffering at all.
+
+The case to design against is concrete: `ptui` open in one terminal with a
+dirty priority edit, `pmgr set-dirs` run in another, then `C-s`. That must
+report a recoverable error rather than discard the other write.
+
+Two consequences to decide with it:
+
+- **The auto-save sibling.** If `OrgBuffer` is used, `#projects.org#` appears in
+  the registry root. It disturbs no discovery — its suffix is `.org#`, so
+  neither `discover_projects` nor the single-generic-`.org` fallback sees it —
+  but it is a stray file in a registry that may be under version control, and
+  it belongs in the reserved names in `docs/config.md` alongside `log/`.
+- **One editor for the section, or two.** `cdproj`'s picker already edits this
+  file: `e` opens the index in `$VISUAL` at the project's section
+  (`docs/cdproj.md`). If the metadata workspace also edits directories, the two
+  need one transaction path; otherwise the workspace shows the stack read-only
+  and hands off.
+
 ## Suggested Delivery Order
 
+0. Strip the priority cookie when matching project headings (`t0036`). Nothing
+   below can write a cookie safely until this lands.
 1. Parse project priority and description, then add priority/alphabetical sort.
 2. Add buffered priority changes from the project list.
 3. Add the `m` metadata workspace and bounded save path.

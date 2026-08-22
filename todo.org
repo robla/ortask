@@ -307,20 +307,55 @@ task-file resolution.
 Parse optional Org priority cookies plus =DESCRIPTION= and =TASK_FILE=
 properties from each =projects.org= project section. Preserve exact source
 spans, unknown properties, prose, tags, and child sections; reject ambiguous
-project headings or property drawers.
+project headings or property drawers. Needs =t0036= first: until the matcher
+strips the cookie, a section this parser reads is a section
+=parse_project_directories= no longer finds. Document the drawer in
+=docs/config.md='s index shape notes, which currently describe only
+=** Directories= and say everything else under a project heading is free text.
 *** TODO [#A] t0035.2 Add priority-first project rows and sort controls
 Show priority, description, and open-task count. Default to
 =priority -> alphabetical= order, let =s= switch between priority and
-alphabetical views, and keep the highlight anchored by project name.
+alphabetical views, and keep the highlight anchored by project name. =s= cycles
+the modes that exist so far; =t0035.5= adds Modified, which =docs/ptui.md=
+lists as the third. Contextual Help lists the modes actually available, so it
+stays true at each step.
 *** TODO [#A] t0035.3 Add buffered project-priority editing
 Use Shift-Up/Down to change priority through =unset -> C -> B -> A=. Route
 changes through one bounded =projects.org= transaction with visible dirty
 state, undo/redo, =C-s= save, and Save/Discard/Cancel on exit.
+
+Settle the write path before writing code; see "Write path" in =docs/ptui.md=.
+The two existing mechanisms each supply half of what that spec asks for.
+=taskui.OrgBuffer= gives buffering, undo/redo, autosave, and dirty state for
+any Org path, but =save()= rewrites the whole file with no check that it is
+still the file that was read. =manager.plan_registry_directories_update= and
+=apply_registry_directories_update= give the preimage check and the bounded
+rewrite, with no buffering. Neither alone satisfies =docs/ptui.md=, which
+requires both. Whichever way it resolves, a =projects.org= buffer held open
+across a =pmgr set-dirs= run in another terminal is the case to design for.
 *** TODO [#B] t0035.4 Build the project metadata workspace
 Make =m= open a compact editor for priority and description while showing the
 read-only project name, resolved task file, recorded task-file mirror, and
-directory-stack controls. Require an already migrated registry index.
+directory-stack controls. Require an already migrated registry index. Decide
+what "directory-stack controls" means against the editor =cdproj= already has:
+=e= in the =cdproj= picker opens the index in =$VISUAL= at the project's
+section (=docs/cdproj.md=). Either the workspace shows the stack read-only and
+hands off to that path, or it edits the stack itself and the two editors need
+one shared transaction. Two independent editors for one section is the outcome
+to avoid.
 *** TODO [#B] t0035.5 Add modified sorting and task-file mirror diagnostics
 Add newest-task-file-first sorting with unreadable or absent files last.
 Display disagreements between the non-normative =TASK_FILE= mirror and the
 resolved task file, with an explicit refresh action.
+** TODO [#A] t0036 Strip the priority cookie when matching project headings
+=orglib.syntax._project_title= strips trailing tags only, so =* [#A] ortask=
+does not match registry entry =ortask=: =orglib.parse(text).directories('ortask')=
+reports =project_found: False=. Since =t0026.3= made the index the only private
+stack source, a heading that gains a cookie silently loses its directory stack
+and =cdproj= falls back to the project root. Verified 2026-08-22.
+=docs/ptui.md= already tells readers both heading forms are recognized, so this
+is reachable by hand-editing today, before any of =t0035= lands. Strip a leading
+=[#A]=-style cookie where tags are stripped, and correct the matching rule in
+=docs/config.md=, which documents tags only. Tests: =cdproj= resolves the same
+stack with and without a cookie, and =set-dirs= and =migrate= preserve a cookie
+and a property drawer on a section they rewrite. Blocks =t0035.1= and =t0035.3=.

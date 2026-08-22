@@ -214,11 +214,20 @@ Notes on the shape:
   heading with the same title is ordinary prose structure. This keeps the
   parser's boundary obvious and prevents a note from becoming configuration by
   accident.
+- **A direct child `:PROPERTIES:` drawer holds per-project metadata.**
+  `DESCRIPTION` and `TASK_FILE` are specified in `docs/ptui.md`; `TASK_FILE` is
+  a non-normative mirror, and no command may resolve a task file from it. Other
+  properties are preserved and ignored. A project heading may also carry an Org
+  priority cookie, `* [#A] ortask`, which `ptui` uses for ordering.
 - **Other prose under a project heading is free text** and is never parsed.
   That is the point of the file.
 - **The project name is the join key.** Matching should be case-insensitive, to
   agree with the case-insensitive ordering `discover_projects` already uses.
-  Compare the heading text with any trailing `:tags:` stripped.
+  Compare the heading text with any leading priority cookie **and** any
+  trailing `:tags:` stripped. Only tags are stripped as of 2026-08-22
+  (`orglib.syntax._project_title`), so a heading that gains a cookie stops
+  matching its registry entry and loses its private directory stack; `t0036`
+  fixes it.
 - **`* Tasks` is reserved**, and so is `* Template`. They are the index's own
   task section, the thing that makes standing in the registry and running `ort`
   useful. A registry entry named `Tasks` would collide; `doctor` should say so
