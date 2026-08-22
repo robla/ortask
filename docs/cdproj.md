@@ -224,13 +224,33 @@ never written. `ortask.py` owns Org task content, so a task file with no
 
 ## `cdproj`
 
-`cdproj` takes optional arguments and forwards whatever it is given to
-`projmgr.py cdproj --out FILE`, so `cdproj myproject` resolves the project directly,
-and `cdproj --registry ~/other` works without the shell parsing anything.
+For loads, `cdproj` forwards whatever it is given to
+`projmgr.py cdproj --out FILE`, so `cdproj myproject` resolves the project
+directly and `cdproj --registry ~/other` works without the shell parsing those
+arguments. The one shell-side branch is `-s`/`--save`, which captures data only
+the current shell can provide.
 
 ```bash
 # misc/cdproj.func.sh
 cdproj () {
+    if [[ "${1-}" == "-s" || "${1-}" == "--save" ]]; then
+        shift
+        if (( $# > 1 )); then
+            echo "usage: cdproj -s [PROJECT]" >&2
+            return 2
+        fi
+
+        local project_args=()
+        (( $# == 1 )) && project_args=(--project "$1")
+
+        local stack=()
+        readarray -t stack < <(dirs -l -p)
+        (( ${#stack[@]} )) || { echo "cdproj: directory stack is empty" >&2; return 1; }
+
+        "${ORTASK_PROJMGR:-projmgr.py}" set-dirs "${project_args[@]}" "${stack[@]}"
+        return $?
+    fi
+
     local out; out="$(mktemp)" || return 1
     "${ORTASK_PROJMGR:-projmgr.py}" cdproj --out "$out" "$@" || { rm -f "$out"; return 1; }
 
@@ -276,10 +296,11 @@ transiting through the deepest entry on the way there.
 
 ## Completion
 
-`cdproj <Tab>` completes registered project names, so the exact-match `PROJECT`
-argument does not have to be typed from memory. The names come from
-`projmgr.py list --format names`; `misc/ortask-completion.bash` registers a
-`_cdproj_complete` for the function and must be sourced alongside this file.
+`cdproj <Tab>` and `cdproj -s <Tab>` complete registered project names, so the
+exact-match `PROJECT` argument does not have to be typed from memory. The names
+come from `projmgr.py list --format names`; `misc/ortask-completion.bash`
+registers a `_cdproj_complete` for the function and must be sourced alongside
+this file.
 
 The names deliberately come from Python rather than from a glob of the registry.
 A registry holds more than projects — its own README, a notes directory — and
@@ -339,8 +360,7 @@ function unchanged.
 
 ## Saving the directory stack (`cdproj -s` / `pmgr set-dirs`)
 
-**Status: `pmgr set-dirs` implemented (`t0031.1`); the `cdproj -s` shell
-wrapper remains `t0031.2`.**
+**Status: implemented (`t0031`).**
 
 `cdproj` loads a stack; this is the other direction. Once a stack has been
 arranged in the shell with `cd`, `pushd`, and `popd`, it can be written back to

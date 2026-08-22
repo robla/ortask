@@ -10,14 +10,31 @@
 # Editing happens inside the picker (press "e") and never reaches this function.
 #
 # Usage: cdproj [PROJECT] [cdproj options]
-# Arguments are forwarded to "projmgr.py cdproj" after --out, so a new option on
-# that subcommand never requires re-sourcing this file. They land after the
-# subcommand, so projmgr.py's own global-only flags (-i, --todo-only) are not
-# reachable from here; --registry is, because the cdproj subparser accepts it.
+#        cdproj -s|--save [PROJECT]
+# Load arguments are forwarded to "projmgr.py cdproj" after --out. Save is the
+# one shell-side mode because only this shell can read its live directory stack.
 #
 # Tab completion for PROJECT lives in misc/ortask-completion.bash.
 
 cdproj () {
+    if [[ "${1-}" == "-s" || "${1-}" == "--save" ]]; then
+        shift
+        if (( $# > 1 )); then
+            echo "usage: cdproj -s [PROJECT]" >&2
+            return 2
+        fi
+
+        local project_args=()
+        (( $# == 1 )) && project_args=(--project "$1")
+
+        local stack=()
+        readarray -t stack < <(dirs -l -p)
+        (( ${#stack[@]} )) || { echo "cdproj: directory stack is empty" >&2; return 1; }
+
+        "${ORTASK_PROJMGR:-projmgr.py}" set-dirs "${project_args[@]}" "${stack[@]}"
+        return $?
+    fi
+
     local out; out="$(mktemp)" || return 1
     "${ORTASK_PROJMGR:-projmgr.py}" cdproj --out "$out" "$@" || { rm -f "$out"; return 1; }
 

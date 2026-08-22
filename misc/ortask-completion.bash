@@ -273,7 +273,19 @@ _cdproj_complete()
     fi
 
     if [[ "$cur" == -* ]]; then
-        COMPREPLY=( $(compgen -W "--registry --help" -- "$cur") )
+        local options="--registry --help"
+        (( COMP_CWORD == 1 )) && options="-s --save $options"
+        COMPREPLY=( $(compgen -W "$options" -- "$cur") )
+        return 0
+    fi
+
+    # Save accepts at most one project and does not expose the load-only
+    # --registry option. Once that project is present there is nothing else to
+    # complete.
+    if [[ "${COMP_WORDS[1]}" == "-s" || "${COMP_WORDS[1]}" == "--save" ]]; then
+        if (( COMP_CWORD == 2 )); then
+            COMPREPLY=( $(compgen -W "$(_projmgr_projects)" -- "$cur") )
+        fi
         return 0
     fi
 

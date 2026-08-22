@@ -1222,6 +1222,8 @@ def test_bash_completion_for_ortask_and_alias() -> None:
         ("_projmgr_complete", "COMP_WORDS=(pmgr migrate --dr); COMP_CWORD=2", "--dry-run"),
         ("_projmgr_complete", "COMP_WORDS=(pmgr set-dirs --mi); COMP_CWORD=2", "--missing"),
         ("_projmgr_complete", "COMP_WORDS=(pmgr set-dirs --missing r); COMP_CWORD=3", "remove"),
+        ("_cdproj_complete", "COMP_WORDS=(cdproj -s); COMP_CWORD=1", "-s"),
+        ("_cdproj_complete", "COMP_WORDS=(cdproj --sa); COMP_CWORD=1", "--save"),
     ]
 
     for function, setup, expected in cases:
@@ -1241,6 +1243,99 @@ def test_bash_completion_for_ortask_and_alias() -> None:
         assert result.returncode == 0
         assert result.stderr == ""
         assert result.stdout.strip() == expected
+
+
+def test_cdproj_save_forwards_the_live_stack_without_changing_it(tmp_path: Path) -> None:
+    # Save must pass each live stack entry as argv and leave this shell alone.
+    source = ROOT / "misc" / "cdproj.func.sh"
+    first = tmp_path / "first directory"
+    second = tmp_path / "second directory"
+    first.mkdir()
+    second.mkdir()
+    capture = tmp_path / "argv"
+    capture_without_project = tmp_path / "argv-without-project"
+    program = r'''
+source "$CDPROJ_SOURCE"
+fake_projmgr() { printf '%s\n' "$@" > "$CAPTURE"; }
+ORTASK_PROJMGR=fake_projmgr
+cd "$FIRST"
+pushd "$SECOND" >/dev/null
+before_pwd=$PWD
+before_stack=$(dirs -l -p)
+
+cdproj -s elweek || exit
+[[ "$PWD" == "$before_pwd" ]] || exit 20
+[[ "$(dirs -l -p)" == "$before_stack" ]] || exit 21
+
+CAPTURE="$CAPTURE_WITHOUT_PROJECT"
+cdproj --save || exit
+[[ "$PWD" == "$before_pwd" ]] || exit 22
+[[ "$(dirs -l -p)" == "$before_stack" ]] || exit 23
+'''
+
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-c", program],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "CDPROJ_SOURCE": str(source),
+            "FIRST": str(first),
+            "SECOND": str(second),
+            "CAPTURE": str(capture),
+            "CAPTURE_WITHOUT_PROJECT": str(capture_without_project),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+    assert result.stderr == ""
+    assert capture.read_text(encoding="utf-8").splitlines() == [
+        "set-dirs",
+        "--project",
+        "elweek",
+        str(second),
+        str(first),
+    ]
+    assert capture_without_project.read_text(encoding="utf-8").splitlines() == [
+        "set-dirs",
+        str(second),
+        str(first),
+    ]
+
+
+def test_cdproj_save_rejects_more_than_one_project(tmp_path: Path) -> None:
+    # A malformed save invocation must stop before calling the Python helper.
+    source = ROOT / "misc" / "cdproj.func.sh"
+    capture = tmp_path / "called"
+    program = r'''
+source "$CDPROJ_SOURCE"
+fake_projmgr() { touch "$CAPTURE"; }
+ORTASK_PROJMGR=fake_projmgr
+cdproj -s one two
+status=$?
+[[ $status == 2 ]] || exit 20
+[[ ! -e "$CAPTURE" ]] || exit 21
+'''
+
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-c", program],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "CDPROJ_SOURCE": str(source),
+            "CAPTURE": str(capture),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert result.stderr == "usage: cdproj -s [PROJECT]\n"
 
 
 def test_bash_completion_lists_subcommands_alphabetically() -> None:
@@ -1798,12 +1893,14 @@ def test_projmgr_list_format_names_applies_the_marker_rule(
     assert captured.err == ""
 
 
-def test_bash_completion_offers_project_names(tmp_path: Path) -> None:
+def test_bash_completion_offers_project_names(tmp_path: Path, monkeypatch) -> None:
     # cdproj, and the arguments of pmgr that name a project, complete from the
     # registry. The names come from projmgr.py itself rather than from a glob.
     script = ROOT / "misc" / "ortask-completion.bash"
     registry = tmp_path / "projects"
     registry.mkdir(parents=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
     for name in ("elweek", "elusync"):
         project = tmp_path / "src" / name
         write(project / "todo.org", "* Tasks\n** TODO t0001 A task\n")
@@ -1818,6 +1915,9 @@ def test_bash_completion_offers_project_names(tmp_path: Path) -> None:
         ("_cdproj_complete", f"(cdproj --registry {registry} elw)", 3, ["elweek"]),
         ("_cdproj_complete", f"(cdproj --registry {registry} --)", 3,
          ["--registry", "--help"]),
+        ("_cdproj_complete", "(cdproj -s '')", 2, ["elusync", "elweek"]),
+        ("_cdproj_complete", "(cdproj --save elw)", 2, ["elweek"]),
+        ("_cdproj_complete", "(cdproj -s elweek '')", 3, []),
         ("_projmgr_complete", f"(pmgr --registry {registry} cdproj '')", 4,
          ["elusync", "elweek"]),
         ("_projmgr_complete", f"(pmgr --registry {registry} rm '')", 4,

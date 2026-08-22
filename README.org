@@ -100,7 +100,7 @@ It registers completion for =ortask.py=, =./ortask.py=, =ort=, =projmgr.py=,
 =./projmgr.py=, =pmgr=, =ptui=, and the =cdproj= shell function. After sourcing
 it, typing =ortask.py ad<Tab>= or =ort ad<Tab>= completes to =add=, while
 =pmgr -<Tab>= includes =-i= and =--interactive=. =cdproj <Tab>= and
-=pmgr rm <Tab>= complete registered project names.
+=cdproj -s <Tab>= complete registered project names, as does =pmgr rm <Tab>=.
 A Debian package can install the same file under
 =/usr/share/bash-completion/completions/=.
 

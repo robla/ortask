@@ -406,12 +406,12 @@ puts the location back in its rows, with the count in parentheses:
 `./projmgr.py`, `pmgr`, `ptui`, and the `cdproj` shell function. Subcommands and
 options complete from static lists; the arguments that name a project —
 `cdproj PROJECT`, `rm NAME`, `set-dirs --project PROJECT`, and the shell's
-planned `cdproj -s PROJECT` — complete from `list --format names`, so a TAB sees
+`cdproj -s PROJECT` — complete from `list --format names`, so a TAB sees
 exactly the projects the registry holds.
 
 `cdproj` needs its own completion function rather than sharing `pmgr`'s. The
-shell function supplies `cdproj --out FILE` itself, so the first word the user
-types is already the project name, and there is no subcommand in the words for
+shell function supplies `cdproj --out FILE` itself on loads and `set-dirs` on
+saves, so there is no user-entered subcommand in the words for
 `_projmgr_complete` to find.
 
 Completion runs `projmgr.py` (or `$ORTASK_PROJMGR`, the same variable

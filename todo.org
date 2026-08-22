@@ -194,7 +194,7 @@ file keywords and inherited context in a synthetic standalone document, and
 map backend output back to the original span. Exercise orgmunge as a test-only
 adapter first. Report normalization inside the region and prove the rest of the
 file remains exact; do not expose a production writer or runtime selector yet.
-** TODO t0031 Save shell directory stack to private dirstack (cdproj -s / pmgr set-dirs)
+** DONE t0031 Save shell directory stack to private dirstack (cdproj -s / pmgr set-dirs)
 Implement =projmgr.py set-dirs [--project PROJECT]= and =cdproj -s [PROJECT]=
 to write the live shell directory stack (=dirs -l -p=) into the project's
 private directory list. After all of =t0026= that list is the project's section
@@ -211,7 +211,7 @@ and =--dry-run=. Zero directories, including empty =--stdin=, is an error;
 clearing a list needs a future explicit operation. Require a fully migrated
 index and test that every byte outside the rewritten =Directories= subtree is
 unchanged.
-*** TODO t0031.2 Add the cdproj -s shell half
+*** DONE t0031.2 Add the cdproj -s shell half
 Teach =misc/cdproj.func.sh= to recognize =-s=/=--save= and pass =dirs -l -p= as
 arguments rather than on stdin, so the subtraction prompt still has a terminal,
 mapping its optional project argument to =set-dirs --project=. Complete project

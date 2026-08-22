@@ -752,7 +752,7 @@ models or silently discard text from a legacy private file.
    positionally or via `--stdin`, selects a project with `--project` or
    unambiguous `$PWD` detection, and patches only that project's direct-child
    `Directories` region. Empty input is an error.
-5. **`t0031.2`: add `cdproj -s`.** Capture `dirs -l -p` in the shell, map the
+5. **`t0031.2`: add `cdproj -s` (done).** Capture `dirs -l -p` in the shell, map the
    optional project to `set-dirs --project`, and add matching completion without
    changing the existing `--out` protocol.
 
