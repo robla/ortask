@@ -221,12 +221,14 @@ Notes on the shape:
 
 ### What changes in the code
 
-Less than it looks. `orglib.syntax.parse_directories` currently finds a *top-level*
-`* Directories` heading; it needs a project-scoped form that first locates the
-top-level heading matching a project name, then finds `Directories` inside that
-subtree. Bounding a subtree at the next same-or-higher heading is exactly what
-`orglib.syntax.find_tasks_range` already does for `* Tasks`, so this is a generalization
-of existing machinery rather than new parsing.
+The read side landed in `t0026.1`. `orglib.syntax.parse_directories()` retains
+its top-level behavior for project task files, while
+`parse_project_directories()` first locates the unique top-level project
+heading and then its unique direct-child `** Directories`. The public
+`orglib.parse(text).directories(project)` result distinguishes a missing
+project, a missing section, and an empty section, and carries exact source spans
+for both the project and directory subtrees. Migration and consumers are still
+pending in `t0026.2` and `t0026.3`.
 
 Three consequences worth deciding deliberately:
 

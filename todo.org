@@ -144,7 +144,7 @@ marker: private-stack consumers do not fall back to the old files. This task is
 the gate for =t0031=. The =migrate= name is reclaimed here for an actual
 registry-data migration; it no longer remains an alias for =init= after the
 cutover.
-*** TODO t0026.1 Add source-backed registry index parsing to orglib
+*** DONE t0026.1 Add source-backed registry index parsing to orglib
 Find the unique top-level heading matching a project and only its direct child
 =** Directories= section. Preserve source spans and distinguish a missing
 project, a missing section, and an empty section; reject duplicate project or

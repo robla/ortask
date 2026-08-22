@@ -83,17 +83,19 @@ Ambiguous same-tier matches are errors. Do not silently choose alphabetically.
   Everything except the TUI stays stdlib-only.
 - **`orglib/` (started 2026-08-21):** a *peer* package, not part of
   `ortasklib`. It holds the Org syntax (`syntax.py`: heading regexes,
-  `TodoItem`, `parse_org`, `parse_directories`) plus a small
-  `parse(text) -> Document` boundary. It imports nothing outside the standard
+  `TodoItem`, `parse_org`, top-level `parse_directories`, and source-backed
+  `parse_project_directories`) plus a small `parse(text) -> Document` boundary.
+  `Document.directories(project)` distinguishes missing project, missing
+  section, and empty section. The package imports nothing outside the standard
   library, and the dependency runs `ortasklib` → `orglib` only. `core.py`
-  re-exports the moved names, so `core.parse_org` still works and no existing
-  caller changed. The intent is that a different Org backend could be
-  substituted later; see `docs/orglib.md`.
+  re-exports the older moved names, so existing callers remain unchanged. The
+  intent is that a different Org backend could be substituted later; see
+  `docs/orglib.md`.
 
 ## Key files
 
 - `orglib/` — standalone Org syntax package: `syntax.py` (heading regexes,
-  `TodoItem`, `parse_org`, `parse_directories`), `__init__.py` (the
+  `TodoItem`, task and directory parsing, source spans), `__init__.py` (the
   `parse()`/`Document` boundary). Imports nothing outside the stdlib.
 - `ortasklib/` — shared package: `core.py` (IDs/discovery/atomic writes, and
   re-exports of `orglib.syntax`),

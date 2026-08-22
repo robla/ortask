@@ -54,9 +54,12 @@ The default engine remains bespoke and stdlib-only to preserve zero-dependency d
 
 **Implemented so far (2026-08-21):** `orglib/` exists with a single
 bespoke backend and a read-only surface — `parse(text) -> Document`,
-`Document.tasks()`, and `Document.render()`. `manager.summarize_projects()` and
-`projmgr._project_tasks()` are routed through it; the other 16 `parse_org()`
-call sites are not, by design. Mutation, backend selection, and the fidelity
+`Document.tasks()`, `Document.directories(project)`, and `Document.render()`.
+The directory lookup returns immutable source spans and distinguishes missing
+project, missing section, and empty section. `manager.summarize_projects()` and
+`projmgr._project_tasks()` are routed through the task side; directory consumers
+remain on the legacy parser until `t0026.3`. The other `parse_org()` call sites
+have not moved by design. Mutation, backend selection, and the fidelity
 declaration below are still design, not code.
 
 `orglib` is a **peer of `ortasklib`, not a member of it** — a top-level package
@@ -67,9 +70,10 @@ lines with three importers cost one directory rename plus four import lines.
 As of 2026-08-21 the dependency runs one way only: `ortasklib` imports `orglib`,
 and `orglib` imports nothing outside the standard library. The Org syntax —
 heading regexes, `TodoItem`, `find_tasks_range()`, `parse_org()`,
-`parse_directories()` — moved from `ortasklib/core.py` to `orglib/syntax.py`.
-`core.py` re-exports every one of those names, so all 18 pre-existing
-`parse_org()` call sites were left untouched; the move cost no caller churn.
+`parse_directories()`, and the newer `parse_project_directories()` — live in
+`orglib/syntax.py`. `core.py` re-exports the names that predate the package
+split, so existing `parse_org()` and top-level directory callers remain
+untouched.
 
 A subprocess test (`test_orglib_imports_without_ortasklib`) imports `orglib`
 with `ortasklib` blocked at the meta-path and asserts `ortasklib` never enters
@@ -152,13 +156,13 @@ In Org terminology, external libraries do not all use “section” consistently
 `Region` is the umbrella term here; selectors can identify a top-level named
 subtree, one heading subtree, a task body, or eventually a whole document.
 
-The registry-index work in `t0026` is the first incremental use of this model.
-`orglib.parse(text)` must locate one top-level project subtree and its unique
-direct-child `Directories` region, retaining source offsets and distinguishing
-missing from empty. `pmgr migrate` uses those boundaries to validate the new
-index; `pmgr set-dirs` later replaces only that bounded region. This moves the
-directory-parsing slice of `t0020` without making `t0026` wait for the complete
-generic region API in `t0028`.
+The registry-index read side in `t0026.1` is the first incremental use of this
+model. `orglib.parse(text).directories(project)` locates one top-level project
+subtree and its unique direct-child `Directories` region, retaining source
+offsets and distinguishing missing from empty. `pmgr migrate` will use those
+boundaries to validate the new index; `pmgr set-dirs` later replaces only that
+bounded region. This moves the directory-parsing slice of `t0020` without
+making `t0026` wait for the complete generic region API in `t0028`.
 
 ### Testing & Validation with `orgparse`
 

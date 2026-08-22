@@ -309,12 +309,15 @@ function unchanged.
 - `orglib.syntax.parse_directories()` — the Org syntax. Returns the raw entries
   under a `Directories` heading, or `None` when there is no such section, so a
   candidate location can be told apart from a real source. Bare paths, list
-  bullets, `file:` prefixes, and `[[...]]` brackets all parse. For the registry
-  index it takes a project name and accepts only that project's direct-child
-  `** Directories`; without one it keeps the top-level behavior used by project
-  task files.
-- `orglib.Document.directories()` — the same thing through the `orglib`
-  boundary, which is how `manager` should reach it (`t0020`).
+  bullets, `file:` prefixes, and `[[...]]` brackets all parse. It keeps the
+  top-level behavior used by project task files.
+- `orglib.syntax.parse_project_directories()` — the source-backed registry
+  lookup. It accepts only the named project's unique direct-child
+  `** Directories` section and rejects duplicate project or section headings.
+- `orglib.Document.directories(project)` — the public `orglib` boundary for
+  that lookup. It distinguishes missing project, missing section, and empty
+  section and exposes exact project and section spans. This is how `manager`
+  should reach it in `t0026.3`.
 - `core.editor_argv()` — the editor argv, shared with `taskui._open_editor()`.
   It takes an optional line number, which is how `e` opens the index at the
   right project.

@@ -738,10 +738,10 @@ models or silently discard text from a legacy private file.
 
 ### Implementation Order
 
-1. **`t0026.1`: parse bounded index sections.** Extend `orglib` just far enough
-   to identify a project's top-level subtree and unique direct-child
-   `Directories` region with exact source spans. This is an incremental slice
-   of `t0020`, not a dependency on finishing every parser migration.
+1. **`t0026.1`: parse bounded index sections (done).** `orglib` now identifies
+   a project's top-level subtree and unique direct-child `Directories` region
+   with exact source spans. This is an incremental slice of `t0020`, not a
+   dependency on finishing every parser migration.
 2. **`t0026.2`: implement `pmgr migrate`.** Reclaim the name from its temporary
    `init` alias, validate all old files, write the complete index atomically,
    and remove only legacy files represented exactly in the index. Support

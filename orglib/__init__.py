@@ -1,17 +1,19 @@
 """orglib — the boundary between ortask and whatever parses its Org files.
 
 The point of this package is that callers stop naming an implementation. Today
-there is exactly one backend, the bespoke stdlib parser in ``core``, and
-``parse()`` returns a document backed by it. If a second backend is added later
-(see ``docs/orglib.md``), callers that already went through here do not change.
+there is exactly one backend, the bespoke stdlib parser in ``orglib.syntax``,
+and ``parse()`` returns a document backed by it. If a second backend is added
+later (see ``docs/orglib.md``), callers that already went through here do not
+change.
 
 Two contract rules, both deliberate:
 
 - **Text in, text out.** ``parse()`` takes a string and ``render()`` returns a
   string. File discovery, symlink resolution, and atomic writes stay with the
   caller, so a backend cannot impose its own I/O policy.
-- **Backend-neutral values.** ``tasks()`` returns ``core.TodoItem``, never a
-  node object belonging to some parsing library.
+- **Backend-neutral values.** ``tasks()`` returns ``orglib.TodoItem`` and
+  ``directories()`` returns source spans and immutable values, never node
+  objects belonging to some parsing library.
 
 This is intentionally small. It covers the read path only, because that is what
 the callers routed through it so far actually need. Mutation, backend selection,
@@ -26,9 +28,23 @@ on it, not the other way round; ``ortasklib.core`` re-exports the names in
 from __future__ import annotations
 
 from . import syntax
-from .syntax import TodoItem
+from .syntax import (
+    DirectoriesSection,
+    OrgStructureError,
+    ProjectDirectories,
+    SourceSpan,
+    TodoItem,
+)
 
-__all__ = ["Document", "TodoItem", "parse"]
+__all__ = [
+    "DirectoriesSection",
+    "Document",
+    "OrgStructureError",
+    "ProjectDirectories",
+    "SourceSpan",
+    "TodoItem",
+    "parse",
+]
 
 
 class Document:
@@ -47,6 +63,10 @@ class Document:
     def tasks(self) -> list[TodoItem]:
         """Task headings, scoped to ``* Tasks`` when the document has one."""
         return syntax.parse_org(self._text)
+
+    def directories(self, project: str) -> ProjectDirectories:
+        """Look up one project's source-backed registry directory section."""
+        return syntax.parse_project_directories(self._text, project)
 
     def render(self) -> str:
         """The document as text.

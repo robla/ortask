@@ -99,6 +99,109 @@ def test_orglib_tasks_is_scoped_like_core():
     assert [t.id for t in orglib.parse(text).tasks()] == ["t0001"]
 
 
+def test_orglib_directories_distinguishes_missing_and_empty():
+    """Project, section, and entry presence remain three separate states."""
+    text = (
+        "* notes\n"
+        "No private stack.\n"
+        "* empty\n"
+        "** Directories\n"
+        "# Deliberately empty.\n"
+    )
+
+    missing_project = orglib.parse(text).directories("absent")
+    assert not missing_project.project_found
+    assert missing_project.project_span is None
+    assert missing_project.section is None
+
+    missing_section = orglib.parse(text).directories("notes")
+    assert missing_section.project_found
+    assert missing_section.section is None
+
+    empty_section = orglib.parse(text).directories("empty")
+    assert empty_section.project_found
+    assert empty_section.section_found
+    assert empty_section.section is not None
+    assert empty_section.section.entries == ()
+
+
+def test_orglib_directories_uses_only_a_direct_child():
+    """A nested heading named Directories must not become project config."""
+    nested_only = (
+        "* ortask\n"
+        "** Notes\n"
+        "*** Directories\n"
+        "**** file:/not/config\n"
+    )
+    assert orglib.parse(nested_only).directories("ortask").section is None
+
+    with_direct_child = nested_only + "** Directories\n*** file:~/src/ortask\n"
+    lookup = orglib.parse(with_direct_child).directories("ortask")
+    assert lookup.section is not None
+    assert lookup.section.entries == ("~/src/ortask",)
+
+
+def test_orglib_directories_rejects_duplicate_projects():
+    """Case and trailing tags cannot hide an ambiguous project heading."""
+    text = "* OrTask :local:\n** Directories\n* ortask\n** Directories\n"
+
+    with pytest.raises(orglib.OrgStructureError, match="lines 1, 3"):
+        orglib.parse(text).directories("ORTASK")
+
+
+def test_orglib_directories_rejects_duplicate_sections():
+    """Two direct-child directory sections are never resolved first-wins."""
+    text = (
+        "* ortask\n"
+        "** Directories\n"
+        "*** file:/one\n"
+        "** Notes\n"
+        "** Directories\n"
+        "*** file:/two\n"
+    )
+
+    with pytest.raises(orglib.OrgStructureError, match="lines 2, 5"):
+        orglib.parse(text).directories("ortask")
+
+
+def test_orglib_directories_retains_exact_source_spans():
+    """Project and section ranges address exact slices of the original text."""
+    text = (
+        "#+TITLE: Projects\r\n"
+        "* alpha\r\n"
+        "Alpha prose.\r\n"
+        "* OrTask :local:\r\n"
+        "Project prose.\r\n"
+        "** Directories\r\n"
+        "   - ~/src/ortask\r\n"
+        "\r\n"
+        "** Notes\r\n"
+        "Keep me.\r\n"
+        "* tail\r\n"
+    )
+    lookup = orglib.parse(text).directories("ortask")
+
+    assert lookup.project_span is not None
+    assert text[lookup.project_span.start : lookup.project_span.end] == (
+        "* OrTask :local:\r\n"
+        "Project prose.\r\n"
+        "** Directories\r\n"
+        "   - ~/src/ortask\r\n"
+        "\r\n"
+        "** Notes\r\n"
+        "Keep me.\r\n"
+    )
+    assert (lookup.project_span.start_line, lookup.project_span.end_line) == (3, 10)
+
+    assert lookup.section is not None
+    span = lookup.section.span
+    assert text[span.start : span.end] == (
+        "** Directories\r\n   - ~/src/ortask\r\n\r\n"
+    )
+    assert (span.start_line, span.end_line) == (5, 8)
+    assert lookup.section.entries == ("~/src/ortask",)
+
+
 def write(path: Path, content: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8")
