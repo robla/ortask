@@ -21,11 +21,13 @@ from pathlib import Path
 
 try:
     from prompt_toolkit.document import Document
+    from prompt_toolkit.filters import Condition
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.layout import FormattedTextControl, HSplit, VSplit, Window
     from prompt_toolkit.widgets import TextArea
 except ImportError:  # pragma: no cover - optional interactive dependency
     Document = None
+    Condition = None
     FormattedText = None
     FormattedTextControl = None
     HSplit = None
@@ -575,6 +577,7 @@ class _ProjectBrowser:
             dependency is not None
             for dependency in (
                 Document,
+                Condition,
                 FormattedText,
                 FormattedTextControl,
                 HSplit,
@@ -583,6 +586,23 @@ class _ProjectBrowser:
                 TextArea,
             )
         )
+        workspace: menu.WorkspaceView | None = None
+
+        def field_is_editing(focus_index: int) -> bool:
+            return (
+                workspace is not None
+                and workspace.editing_index == focus_index
+            )
+
+        def field_style(focus_index: int) -> str:
+            if workspace is None or workspace.focused_index != focus_index:
+                return ""
+            return (
+                "class:field.editing"
+                if field_is_editing(focus_index)
+                else "class:choice.focused"
+            )
+
         source = self.index_buffer.read()
         metadata = manager.project_metadata_from_text(source, [project])[project.name]
         if metadata.warning:
@@ -626,7 +646,12 @@ class _ProjectBrowser:
             wrap_lines=False,
             height=1,
             dont_extend_height=True,
+            read_only=Condition(lambda: not field_is_editing(1)),
         )
+        description_area.window.always_hide_cursor = Condition(
+            lambda: not field_is_editing(1)
+        )
+        description_area.window.style = lambda: field_style(1)
         description_area.buffer.cursor_position = len(description_area.text)
         directory_area = TextArea(
             text="\n".join(custom.entries or []),
@@ -635,7 +660,12 @@ class _ProjectBrowser:
             scrollbar=True,
             height=3,
             dont_extend_height=True,
+            read_only=Condition(lambda: not field_is_editing(2)),
         )
+        directory_area.window.always_hide_cursor = Condition(
+            lambda: not field_is_editing(2)
+        )
+        directory_area.window.style = lambda: field_style(2)
         directory_area.buffer.cursor_position = len(directory_area.text)
         draft: dict[str, str | None] = {
             "priority": metadata.priority,
@@ -647,8 +677,6 @@ class _ProjectBrowser:
             "task_file": draft["task_file"],
             "directories": tuple(custom.entries or []),
         }
-        workspace: menu.WorkspaceView | None = None
-
         def workspace_summary() -> str:
             parts = [
                 "Effective directories: "
@@ -725,8 +753,16 @@ class _ProjectBrowser:
                     workspace is not None
                     and workspace.focused_index == focus_index
                 )
+                editing = focused and field_is_editing(focus_index)
                 fragments = (
-                    [("class:choice.focused", text)]
+                    [
+                        (
+                            "class:field.editing"
+                            if editing
+                            else "class:choice.focused",
+                            text,
+                        )
+                    ]
                     if focused
                     else [
                         ("class:field.label", f" {label_text} "),
@@ -1048,22 +1084,29 @@ class _ProjectBrowser:
             title_right=f"Registry: {self.display_path}",
             summary=workspace_summary(),
             instruction=(
-                "Tab/S-Tab fields · ←/→ priority · Enter action · "
+                "↑↓←→ fields · Enter edit/open · "
                 "C-s save · C-g help · Esc back"
+            ),
+            editing_instruction=(
+                "EDITING FIELD · arrows edit · Esc finish · "
+                "C-s save · C-g help"
             ),
             dirty_label="PROJECT EDITED",
             help_entries=[
-                ("Tab/Shift-Tab", "Move among editable fields and actions"),
-                ("Left/Right", "Change project priority"),
-                ("Typing", "Edit the description or custom directory stack"),
-                ("Enter (description)", "Move to custom directories"),
+                ("Arrow keys", "Move among fields and actions"),
+                ("Tab/Shift-Tab", "Move among fields and actions"),
+                ("Enter (field)", "Begin editing the focused field"),
+                ("Left/Right (editing)", "Change project priority"),
+                ("Typing (editing)", "Edit description or directories"),
+                ("Enter (description)", "Finish editing the description"),
                 ("Enter (directories)", "Insert a new directory line"),
                 ("Enter (button)", "Refresh TASK_FILE or open the index editor"),
                 ("Ctrl-S", "Save the entire projects.org buffer"),
-                ("Esc", "Return, warning first if fields are unsaved"),
+                ("Esc", "Finish editing; from navigation, return"),
                 ("C-g", "Show or close this help"),
             ],
-            enter_moves_focus=frozenset({1}),
+            edit_focus_indices=frozenset({0, 1, 2}),
+            multiline_edit_focus_indices=frozenset({2}),
             focused_index=1,
             is_dirty=is_dirty,
             on_back=back,

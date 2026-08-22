@@ -107,13 +107,17 @@ Pressing `m` on a project opens a compact metadata workspace showing:
 - the effective directory count and an editable custom directory stack;
 - an action that opens `projects.org` at the project heading in `$VISUAL`.
 
-Tab and Shift-Tab move among fields. Left and Right change priority, Enter
-activates buttons, and `C-s` applies all changed fields as one `OrgBuffer`
-transaction before saving the complete index. Esc offers Save, Discard, and
-Continue when workspace fields are dirty. The directory field records one path
-per line and initially shows only the custom stack. Leaving a missing custom
-stack blank creates no override; clearing an existing stack saves an empty
-custom section, which selects the project root.
+Arrow keys, Tab, and Shift-Tab move among every field and action, including
+text fields, without changing values. Enter puts the focused priority or text
+field into edit mode; only then do Left/Right change priority or typing and
+cursor keys edit text. Enter finishes a single-line field, while Enter inserts
+a line in the directory field; Esc returns either field to navigation mode.
+Buttons activate directly with Enter. `C-s` applies all changed fields as one
+`OrgBuffer` transaction before saving the complete index. Esc from navigation
+offers Save, Discard, and Continue when fields are dirty. The directory field
+records one path per line and initially shows only the custom stack. Leaving a
+missing custom stack blank creates no override; clearing an existing stack
+saves an empty custom section, which selects the project root.
 
 Shift-Up and Shift-Down on the project list raise or lower priority through
 `unset -> C -> B -> A`. A changed priority may move the row in the default sort,

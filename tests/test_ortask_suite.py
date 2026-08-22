@@ -2666,12 +2666,18 @@ def test_project_metadata_workspace_applies_one_buffered_transaction(
     assert workspace.summary.startswith("Effective directories: 1 (custom)")
     assert "TASK_FILE differs" in workspace.summary
     assert workspace.focused_index == 1
+    assert workspace.edit_focus_indices == frozenset({0, 1, 2})
+    assert workspace.multiline_edit_focus_indices == frozenset({2})
+    assert workspace.editing_index is None
     assert workspace.dirty_label == "PROJECT EDITED"
 
     workspace.on_choice_change(session, 0, 1)
+    workspace.editing_index = 1
     workspace.focus_targets[1].buffer.set_document(
         Document("New summary", cursor_position=11)
     )
+    workspace.focused_index = 2
+    workspace.editing_index = 2
     directories = f"{docs_dir}\n{code_dir}"
     workspace.focus_targets[2].buffer.set_document(
         Document(directories, cursor_position=len(directories))
@@ -5548,19 +5554,59 @@ def test_inline_workspace_keeps_multiple_fields_visible_and_focusable() -> None:
         HSplit([title, body]),
         [title, body],
         save,
-        enter_moves_focus=frozenset({0}),
+        edit_focus_indices=frozenset({0, 1}),
+        multiline_edit_focus_indices=frozenset({1}),
     )
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             pin.send_text(
-                "\x15New title\r"
-                "\x15First body line\rSecond body line"
-                "\x07\x07\x13\x1b"
+                "\r\x15New title\r"
+                "\x1b[B\r\x15First body line\rSecond body line"
+                "\x07\x07\x13\t\x1b"
             )
             menu.InlineMenuSession(view).run()
 
     assert saved == [("New title", "First body line\nSecond body line")]
+    assert view.focused_index == 0
+    assert view.editing_index is None
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_workspace_arrows_navigate_until_enter_begins_editing() -> None:
+    # Browse-mode arrows move fields; only Enter enables choice or text edits.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.layout import HSplit, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.output import DummyOutput
+    from prompt_toolkit.widgets import TextArea
+
+    choice = Window(FormattedTextControl("Priority", focusable=True))
+    text_area = TextArea("Old", multiline=False, height=1)
+    text_area.buffer.cursor_position = len(text_area.text)
+    changes: list[int] = []
+
+    view = menu.WorkspaceView(
+        HSplit([choice, text_area]),
+        [choice, text_area],
+        lambda _session: None,
+        edit_focus_indices=frozenset({0, 1}),
+        choice_focus_indices=frozenset({0}),
+        on_choice_change=lambda _session, _index, delta: changes.append(delta),
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text(
+                "\x1b[BX\x1b[A\x1b[C\x1b[D"
+                "\r\x1b[C\r"
+                "\x1b[B\rX\r\x1b"
+            )
+            menu.InlineMenuSession(view).run()
+
+    assert changes == [1]
+    assert text_area.text == "OldX"
     assert view.focused_index == 1
+    assert view.editing_index is None
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
@@ -5622,12 +5668,13 @@ def test_inline_workspace_moves_focused_list_region() -> None:
         HSplit([control]),
         [control],
         lambda _session: None,
+        edit_focus_indices=frozenset({0}),
         list_focus_indices=frozenset({0}),
         on_list_move=move,
     )
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            pin.send_text("\x1b[B\x1b[6~\x1b[A\x1b[5~")
+            pin.send_text("\r\x1b[B\x1b[6~\x1b[A\x1b[5~")
             menu.InlineMenuSession(view).run()
 
     assert moved == [1, 5, -1, -5]
@@ -5743,11 +5790,14 @@ def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) 
     assert "Subtasks: 1" in view.summary
     assert view.focused_index == 2
     assert view.choice_focus_indices == frozenset({0, 1})
+    assert view.edit_focus_indices == frozenset({0, 1, 2, 3, 4})
+    assert view.multiline_edit_focus_indices == frozenset({3})
     assert view.list_focus_indices == frozenset({4})
     assert view.activate_focus_indices == frozenset({4, 5})
-    assert view.enter_moves_focus == frozenset({2})
+    assert view.editing_index is None
     assert view.is_dirty is not None and view.is_dirty() is False
     assert view.status_text is not None and view.status_text() == ""
+    view.editing_index = 2
     view.focus_targets[2].buffer.insert_text(" changed")
     assert view.is_dirty() is True
     taskui._shift_priority(buf, parent, 1)
@@ -5875,8 +5925,10 @@ def test_task_workspace_opens_selected_subtask_workspace(tmp_path: Path) -> None
     assert parent_view.on_list_move is not None
     assert parent_view.on_activate is not None
     assert parent_view.is_dirty is not None
+    parent_view.editing_index = 2
     parent_view.focus_targets[2].buffer.insert_text(" draft")
     parent_view.focused_index = 4
+    parent_view.editing_index = 4
 
     parent_view.on_list_move(session, 4, 1)
     parent_view.on_activate(session, 4)
@@ -5952,7 +6004,7 @@ def test_task_workspace_dirty_editor_button_defaults_to_continue(
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Continue from editor warning, then explicitly discard on exit.
-            pin.send_text("\r changed\t\t\r\r\x1bj\rq")
+            pin.send_text("\r\r changed\r\t\t\r\r\x1bj\rq")
             controller.run()
 
     assert opened == []
@@ -5977,7 +6029,7 @@ def test_bounded_task_text_edit_validates_buffers_and_saves(tmp_path: Path) -> N
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Open the workspace, reject empty TITLE, apply a rename, and save.
-            pin.send_text("\r\x15\x13bqjkped renamed\x13\x1bq\r")
+            pin.send_text("\r\r\x15\x13bqjkped renamed\x13\x1b\x1bq")
             controller.run()
 
     assert org_file.read_text(encoding="utf-8") == (
@@ -6017,9 +6069,9 @@ def test_bounded_task_editor_updates_title_and_multiline_body(tmp_path: Path) ->
         with create_app_session(input=pin, output=DummyOutput()):
             # Edit TITLE and BODY together, apply once, then save the task buffer.
             pin.send_text(
-                "\r\x15Renamed title\r"
-                "\x15First body line\rSecond body line\x13"
-                "\x1bq\r"
+                "\r\r\x15Renamed title\r"
+                "\x1b[B\r\x15First body line\rSecond body line\x13"
+                "\x1b\x1bq"
             )
             controller.run()
 
@@ -6056,7 +6108,7 @@ def test_task_workspace_ctrl_s_saves_whole_file_and_resets_undo(tmp_path: Path) 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Raise priority in the list, edit title, save, try undo, then leave.
-            pin.send_text("\x1b[1;2A\r saved\x13\x1f\x1bq")
+            pin.send_text("\x1b[1;2A\r\r saved\x13\x1f\x1b\x1bq")
             controller.run()
 
     assert org_file.read_text(encoding="utf-8") == (
@@ -6085,8 +6137,11 @@ def test_task_workspace_compact_controls_save_state_and_priority(tmp_path: Path)
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            # Use Right for Priority and Right/Enter for the State choice, then save.
-            pin.send_text("\r\x1b[Z\x1b[C\x1b[Z\x1b[C\r\x13\x1bq")
+            # Enter each compact field before changing Priority and State.
+            pin.send_text(
+                "\r\x1b[Z\r\x1b[C\r"
+                "\x1b[Z\r\x1b[C\x1b[C\r\x13\x1bq"
+            )
             controller.run()
 
     assert org_file.read_text(encoding="utf-8") == (
@@ -6113,7 +6168,7 @@ def test_task_workspace_compact_controls_discard_with_other_fields(tmp_path: Pat
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Change Priority, Escape, choose Discard below Continue, then quit.
-            pin.send_text("\r\x1b[Z\x1b[C\x1bj\rq")
+            pin.send_text("\r\x1b[Z\r\x1b[C\r\x1bj\rq")
             controller.run()
 
     assert org_file.read_text(encoding="utf-8") == original
@@ -6174,7 +6229,7 @@ def test_dirty_workspace_escape_continues_by_default(tmp_path: Path) -> None:
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Escape, accept default Continue, then save the still-present edit.
-            pin.send_text("\r continued\x1b\r\x13\x1bq")
+            pin.send_text("\r\r continued\r\x1b\r\x13\x1bq")
             controller.run()
 
     assert "** TODO t0001 Original continued" in org_file.read_text(
@@ -6203,7 +6258,7 @@ def test_dirty_workspace_escape_can_save_and_return(tmp_path: Path) -> None:
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Escape opens warning; Up selects Save and returns to the task list.
-            pin.send_text("\r saved-on-exit\x1bk\rq")
+            pin.send_text("\r\r saved-on-exit\r\x1bk\rq")
             controller.run()
 
     assert "** TODO t0001 Original saved-on-exit" in org_file.read_text(
@@ -6227,7 +6282,7 @@ def test_dirty_workspace_escape_can_discard_unapplied_edits(tmp_path: Path) -> N
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Escape opens warning; Down selects explicit Discard, then quit.
-            pin.send_text("\r discarded\x1bj\rq")
+            pin.send_text("\r\r discarded\r\x1bj\rq")
             controller.run()
 
     assert org_file.read_text(encoding="utf-8") == original

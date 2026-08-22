@@ -72,8 +72,8 @@ The task selector has two modes, chosen automatically by
   Long lists scroll within the row body while the title, summary, and key hint
   remain fixed; the selector keeps one context row above and below the highlight
   when space permits.
-  Selecting a task opens the task workspace described below; ordinary menu
-  shortcut letters type normally while a text field has focus.
+  Selecting a task opens the task workspace described below. Its fields start
+  in navigation mode; Enter explicitly enables text or choice editing.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved as the scriptable fallback with the
   same `C-t` visibility cycle. It lists the complete filtered hierarchy because
@@ -131,13 +131,14 @@ about two seconds, restoring the current view's command hint. A newer message
 or view transition cancels the old timeout. Final save, discard, and recovery
 outcomes remain persistent.
 
-Treat the interactive UI as a stack. Outside a focused text field, `Esc`, `b`,
+Treat the interactive UI as a stack. Outside an editing text field, `Esc`, `b`,
 and `q` are synonyms for popping its top layer: help returns to the underlying
 menu, a subtask returns to its parent task, a task focus view returns to its
-task list, and a project task list returns to the project list. In a text field,
-only `Esc` requests Back; `b` and `q` insert text. A dirty task workspace warns
-before leaving. Popping the root local-task or project-list layer exits the
-program; no key should skip intermediate layers.
+task list, and a project task list returns to the project list. While a field is
+being edited, `b` and `q` insert text and Esc first returns to field navigation;
+a second Back command leaves the workspace. A dirty task workspace warns before
+leaving. Popping the root local-task or project-list layer exits the program;
+no key should skip intermediate layers.
 
 Unselected rows show task state through the label color (TODO yellow, DONE
 green). The highlighted row instead becomes a single continuous bar in the
@@ -469,45 +470,48 @@ Subtasks
   DONE    tw26W26.0.3.2 Check the submission
 [ Open in external editor ]
 
-Tab/S-Tab fields · ↑/↓ subtasks · Enter open · Ctrl-S save · Esc back
+↑↓←→ fields · Enter edit/open · Ctrl-S save · Esc back
 ```
 
-Title has initial focus. Tab and Shift-Tab move among the four editable fields
-and, when present, the subtask viewport and editor button. On State or
-Priority, Left/Right changes the value and Enter advances it. State cycles
-through `TODO`, `DONE`, and `MOOT`; a parsed `SUPERSEDED` remains visible until
-changed, then follows the canonical `MOOT` position. Priority stops at the ends
-of `none -> C -> B -> A`. Enter moves from Title into Body; within Body it
-inserts a newline. `Ctrl-S` validates and applies all four fields atomically,
+Title has initial focus in navigation mode. Arrow keys, Tab, and Shift-Tab move
+among all fields and actions, including text fields, without changing values.
+Enter begins editing the focused State, Priority, Title, or Body. In edit mode,
+Left/Right changes State or Priority and ordinary text/cursor keys edit Title or
+Body. Enter finishes a choice or Title; within Body it inserts a newline. Esc
+finishes any edit and returns to field navigation. State cycles through `TODO`,
+`DONE`, and `MOOT`; a parsed `SUPERSEDED` remains visible until changed, then
+follows the canonical `MOOT` position. Priority stops at the ends of
+`none -> C -> B -> A`. `Ctrl-S` validates and applies all four fields atomically,
 saves the entire Org file, clears recovery data and transaction history, resets
 both text-field undo histories, and leaves the workspace open at a new clean
 baseline. The footer shows `TASK EDITED` after any field changes,
 while the header independently shows `FILE MODIFIED: N edits` when task-list
 transactions are pending.
 
-Escape returns directly when the fields match the workspace baseline. When
-they differ, Escape opens Save and Return, Continue Editing, and Discard and
-Return choices. Continue Editing is selected by default. Discard restores all
-four fields to the values loaded when the workspace opened or last saved; it
-does not discard older edits already buffered from the task list.
+Escape from navigation returns directly when the fields match the workspace
+baseline. When they differ, it opens Save and Return, Continue Editing, and
+Discard and Return choices. Continue Editing is selected by default. Discard
+restores all four fields to the values loaded when the workspace opened or last
+saved; it does not discard older edits already buffered from the task list.
 
 The body boundary ends at the next Org heading, so child and sibling headings
 cannot be changed from the body control. A five-row viewport contains every
-descendant task in Org source order, indented by heading depth. Focus it with
-Tab or Shift-Tab, move its highlight with Up/Down or `j`/`k`, and move five rows
-with Page Up/Page Down. The viewport scrolls to keep the selected descendant
-visible; it does not truncate the list. Enter opens the selected descendant's
-workspace. Back returns to the parent with its draft fields and subtask
-selection intact. The header count includes all descendants. Direct state and
-priority actions within the subtask viewport remain part of `t0016.4`.
+descendant task in Org source order, indented by heading depth. Navigate to it
+with arrows or Tab, press Enter to interact with it, then move its highlight
+with Up/Down or `j`/`k` and five rows with Page Up/Page Down. Enter again opens
+the selected descendant's workspace; Esc returns to field navigation. The
+viewport scrolls to keep the selected descendant visible and does not truncate
+the list. Back returns to the parent with its draft fields and subtask selection
+intact. The header count includes all descendants. Direct state and priority
+actions within the subtask viewport remain part of `t0016.4`.
 
 The bottom `[ Open in external editor ]` button uses the same terminal handoff
-and source-line targeting as `e` in the task list. Focus it with Tab or
-Shift-Tab and press Enter. If workspace fields are dirty, opening it first
+and source-line targeting as `e` in the task list. Navigate to it and press
+Enter. If workspace fields are dirty, opening it first
 requires Save, Continue Editing, or Discard; Continue Editing is the safe
 default. State and priority remain directly editable from the task list, and
-printable letters type normally inside text fields. The numbered fallback
-retains its older detail/action workflow.
+printable letters type normally only while a text field is in edit mode. The
+numbered fallback retains its older detail/action workflow.
 
 Workflow-specific tools such as castabout may add domain actions such as "copy
 draft", "open destination", or "record result". Those actions should still use

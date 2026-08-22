@@ -174,10 +174,15 @@ class WorkspaceView:
     title_right: str = ""
     summary: str = ""
     instruction: str = "Tab fields · Ctrl-S save · Esc back · C-g help"
+    editing_instruction: str = (
+        "EDITING FIELD · arrows edit · Esc finish · Ctrl-S save · C-g help"
+    )
     dirty_label: str = "TASK EDITED"
     help_entries: list[tuple[str, str]] = field(default_factory=list)
-    enter_moves_focus: frozenset[int] = frozenset()
+    edit_focus_indices: frozenset[int] = frozenset()
+    multiline_edit_focus_indices: frozenset[int] = frozenset()
     focused_index: int = 0
+    editing_index: int | None = None
     is_dirty: Callable[[], bool] | None = None
     on_back: Callable[["InlineMenuSession"], bool] | None = None
     on_resume: Callable[["InlineMenuSession"], None] | None = None
@@ -198,6 +203,8 @@ class WorkspaceView:
         if not self.focus_targets:
             raise ValueError("workspace view requires at least one focus target")
         self.focused_index %= len(self.focus_targets)
+        if self.editing_index != self.focused_index:
+            self.editing_index = None
 
 
 InlineView = MenuView | TextInputView | MultilineInputView | WorkspaceView
@@ -241,6 +248,7 @@ SELECT_STYLE = (
             "help.heading": "bold",
             "help.key": "ansicyan bold",
             "field.label": "ansicyan bold",
+            "field.editing": "bg:#005f5f fg:#ffffff bold",
             "choice.focused": "bg:#00afaf fg:#000000 bold",
             "input.prompt": "ansicyan bold",
             "hint": "ansibrightblack",
@@ -522,15 +530,46 @@ class InlineMenuSession:
             lambda: not self.help_visible
             and isinstance(self.current_view, WorkspaceView)
         )
-        workspace_enter_active = Condition(
+        workspace_navigation_active = Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, WorkspaceView)
+            and self.current_view.editing_index is None
+        )
+        workspace_begin_edit_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, WorkspaceView)
+            and self.current_view.editing_index is None
             and self.current_view.focused_index
-            in self.current_view.enter_moves_focus
+            in self.current_view.edit_focus_indices
+        )
+        workspace_editable_navigation_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, WorkspaceView)
+            and self.current_view.editing_index is None
+            and self.current_view.focused_index
+            in self.current_view.edit_focus_indices
+        )
+        workspace_editing_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, WorkspaceView)
+            and self.current_view.editing_index
+            == self.current_view.focused_index
+        )
+        workspace_finish_edit_active = Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, WorkspaceView)
+            and self.current_view.editing_index
+            == self.current_view.focused_index
+            and self.current_view.focused_index
+            not in self.current_view.multiline_edit_focus_indices
+            and self.current_view.focused_index
+            not in self.current_view.list_focus_indices
         )
         workspace_choice_active = Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, WorkspaceView)
+            and self.current_view.editing_index
+            == self.current_view.focused_index
             and self.current_view.on_choice_change is not None
             and self.current_view.focused_index
             in self.current_view.choice_focus_indices
@@ -541,10 +580,18 @@ class InlineMenuSession:
             and self.current_view.on_activate is not None
             and self.current_view.focused_index
             in self.current_view.activate_focus_indices
+            and (
+                self.current_view.focused_index
+                not in self.current_view.edit_focus_indices
+                or self.current_view.editing_index
+                == self.current_view.focused_index
+            )
         )
         workspace_list_active = Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, WorkspaceView)
+            and self.current_view.editing_index
+            == self.current_view.focused_index
             and self.current_view.on_list_move is not None
             and self.current_view.focused_index
             in self.current_view.list_focus_indices
@@ -608,22 +655,54 @@ class InlineMenuSession:
         def move_workspace_focus(delta: int) -> None:
             view = self.current_view
             assert isinstance(view, WorkspaceView)
+            view.editing_index = None
             view.focused_index = (
                 view.focused_index + delta
             ) % len(view.focus_targets)
             self._focus_current_view()
+
+        @bindings.add("up", filter=workspace_navigation_active, eager=True)
+        @bindings.add("left", filter=workspace_navigation_active, eager=True)
+        @bindings.add("k", filter=workspace_navigation_active, eager=True)
+        def previous_workspace_field(_event) -> None:
+            move_workspace_focus(-1)
+
+        @bindings.add("down", filter=workspace_navigation_active, eager=True)
+        @bindings.add("right", filter=workspace_navigation_active, eager=True)
+        @bindings.add("j", filter=workspace_navigation_active, eager=True)
+        def next_workspace_field_with_arrows(_event) -> None:
+            move_workspace_focus(1)
 
         @bindings.add("c-i", filter=workspace_active, eager=True)
         def next_workspace_field(_event) -> None:
             move_workspace_focus(1)
 
         @bindings.add("s-tab", filter=workspace_active, eager=True)
-        def previous_workspace_field(_event) -> None:
+        def previous_workspace_field_with_tab(_event) -> None:
             move_workspace_focus(-1)
 
-        @bindings.add("enter", filter=workspace_enter_active, eager=True)
-        def enter_workspace_field(_event) -> None:
-            move_workspace_focus(1)
+        @bindings.add("enter", filter=workspace_begin_edit_active, eager=True)
+        def begin_workspace_edit(_event) -> None:
+            view = self.current_view
+            assert isinstance(view, WorkspaceView)
+            view.editing_index = view.focused_index
+            self._replace_message(None)
+            self._focus_current_view()
+            self.application.invalidate()
+
+        @bindings.add("enter", filter=workspace_finish_edit_active, eager=True)
+        def finish_workspace_edit(_event) -> None:
+            view = self.current_view
+            assert isinstance(view, WorkspaceView)
+            view.editing_index = None
+            self._replace_message(None)
+            self.application.invalidate()
+
+        @bindings.add(
+            "<any>", filter=workspace_editable_navigation_active, eager=True
+        )
+        def require_explicit_workspace_edit(_event) -> None:
+            self.set_transient_message("Press Enter to edit this field")
 
         def change_workspace_choice(delta: int) -> None:
             view = self.current_view
@@ -636,7 +715,6 @@ class InlineMenuSession:
             change_workspace_choice(-1)
 
         @bindings.add("right", filter=workspace_choice_active, eager=True)
-        @bindings.add("enter", filter=workspace_choice_active, eager=True)
         def next_workspace_choice(_event) -> None:
             change_workspace_choice(1)
 
@@ -682,7 +760,17 @@ class InlineMenuSession:
             assert isinstance(view, WorkspaceView)
             view.on_save(self)
 
-        @bindings.add("escape", filter=workspace_active, eager=True)
+        @bindings.add("escape", filter=workspace_editing_active, eager=True)
+        def finish_workspace_edit_with_escape(_event) -> None:
+            view = self.current_view
+            assert isinstance(view, WorkspaceView)
+            view.editing_index = None
+            self._replace_message(None)
+            self.application.invalidate()
+
+        @bindings.add("q", filter=workspace_navigation_active, eager=True)
+        @bindings.add("b", filter=workspace_navigation_active, eager=True)
+        @bindings.add("escape", filter=workspace_navigation_active, eager=True)
         def leave_workspace(_event) -> None:
             self.pop_view()
 
@@ -993,6 +1081,12 @@ class InlineMenuSession:
         else:
             instruction = self.message or self.current_view.instruction
             view = self.current_view
+            if (
+                self.message is None
+                and isinstance(view, WorkspaceView)
+                and view.editing_index == view.focused_index
+            ):
+                instruction = view.editing_instruction
             if (
                 self.message is None
                 and isinstance(view, WorkspaceView)

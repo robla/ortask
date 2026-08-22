@@ -25,6 +25,7 @@ from textbuffer import (
 
 try:
     from prompt_toolkit.document import Document
+    from prompt_toolkit.filters import Condition
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.layout import (
         FormattedTextControl,
@@ -36,6 +37,7 @@ try:
     from prompt_toolkit.widgets import TextArea
 except ImportError:  # pragma: no cover - optional interactive dependency
     Document = None
+    Condition = None
     FormattedText = None
     FormattedTextControl = None
     HSplit = None
@@ -1268,23 +1270,51 @@ class InteractiveTaskController:
                 VSplit,
                 TextArea,
                 Document,
+                Condition,
             )
         )
         task_id = item.task.id
+        workspace: menu.WorkspaceView | None = None
+
+        def field_is_editing(focus_index: int) -> bool:
+            return (
+                workspace is not None
+                and workspace.editing_index == focus_index
+            )
+
+        def field_style(focus_index: int) -> str:
+            if workspace is None or workspace.focused_index != focus_index:
+                return ""
+            return (
+                "class:field.editing"
+                if field_is_editing(focus_index)
+                else "class:choice.focused"
+            )
+
         title_area = TextArea(
             text=item.task.text,
             multiline=False,
             wrap_lines=False,
             height=1,
             dont_extend_height=True,
+            read_only=Condition(lambda: not field_is_editing(2)),
         )
+        title_area.window.always_hide_cursor = Condition(
+            lambda: not field_is_editing(2)
+        )
+        title_area.window.style = lambda: field_style(2)
         title_area.buffer.cursor_position = len(title_area.text)
         body_area = TextArea(
             text="\n".join(item.task.body_lines),
             multiline=True,
             wrap_lines=False,
             scrollbar=True,
+            read_only=Condition(lambda: not field_is_editing(3)),
         )
+        body_area.window.always_hide_cursor = Condition(
+            lambda: not field_is_editing(3)
+        )
+        body_area.window.style = lambda: field_style(3)
         body_area.buffer.cursor_position = len(body_area.text)
         draft: dict[str, str | None] = {
             "state": item.task.state,
@@ -1296,7 +1326,6 @@ class InteractiveTaskController:
             "state": draft["state"],
             "priority": draft["priority"],
         }
-        workspace: menu.WorkspaceView | None = None
         descendant_subtasks = _descendant_subtasks(self.buf, item)
         subtask_focus_index = 4 if descendant_subtasks else None
         editor_focus_index = 5 if descendant_subtasks else 4
@@ -1382,7 +1411,12 @@ class InteractiveTaskController:
                     and workspace.focused_index == focus_index
                 )
                 if focused:
-                    fragments = [("class:choice.focused", text)]
+                    style = (
+                        "class:field.editing"
+                        if field_is_editing(focus_index)
+                        else "class:choice.focused"
+                    )
+                    fragments = [(style, text)]
                 else:
                     fragments = [
                         ("class:field.label", f" {label_text} "),
@@ -1734,8 +1768,10 @@ class InteractiveTaskController:
             focus_targets.append(subtask_control)
         focus_targets.append(editor_control)
         activate_focus_indices = {editor_focus_index}
+        edit_focus_indices = {0, 1, 2, 3}
         if subtask_focus_index is not None:
             activate_focus_indices.add(subtask_focus_index)
+            edit_focus_indices.add(subtask_focus_index)
         workspace = menu.WorkspaceView(
             container=container,
             focus_targets=focus_targets,
@@ -1744,25 +1780,31 @@ class InteractiveTaskController:
             title_right=self._file_context(),
             summary=summary(subtask_count),
             instruction=(
-                "Tab/S-Tab fields · ↑/↓ subtasks · Enter open · "
+                "↑↓←→ fields · Enter edit/open · "
                 "Ctrl-S save · C-g help · Esc back"
             ),
+            editing_instruction=(
+                "EDITING FIELD · arrows edit · Esc finish · "
+                "Ctrl-S save · C-g help"
+            ),
             help_entries=[
-                ("Typing", "Edit the focused title or body"),
-                ("Tab/Shift-Tab", "Move among all task fields"),
-                ("Left/Right", "Change the focused state or priority"),
-                ("Enter (choice)", "Choose the next value"),
-                ("Enter (title)", "Move focus to the body"),
+                ("Arrow keys", "Move among fields and actions"),
+                ("Tab/Shift-Tab", "Move among fields and actions"),
+                ("Enter (field)", "Begin editing the focused field"),
+                ("Typing (editing)", "Edit the title or body"),
+                ("Left/Right (editing)", "Change state or priority"),
+                ("Enter (title/choice)", "Finish editing the field"),
                 ("Enter (body)", "Insert a newline"),
-                ("Up/Down (subtasks)", "Move the subtask highlight"),
+                ("Up/Down (subtasks)", "Move after entering the subtask list"),
                 ("Page Up/Down", "Move five subtasks at a time"),
                 ("Enter (subtask)", "Open the highlighted child workspace"),
                 ("Enter (button)", "Open this task in the external editor"),
                 ("Ctrl-S", f"Save the entire {self.buf.path.name} file"),
-                ("Esc", "Return, warning first if edits are unsaved"),
+                ("Esc", "Finish editing; from navigation, return"),
                 ("C-g", "Show or close this help"),
             ],
-            enter_moves_focus=frozenset({2}),
+            edit_focus_indices=frozenset(edit_focus_indices),
+            multiline_edit_focus_indices=frozenset({3}),
             focused_index=2,
             is_dirty=is_dirty,
             on_back=back,
