@@ -299,3 +299,28 @@ rather than assuming daily pages, and never touch a line that lacks the
 extension's own tag. Ship =--dry-run= first and prefer the attended
 =zim --plugin quicknote= path before writing page files directly. Needs
 =t0033.4=.
+** TODO [#A] t0035 Make ptui a priority-driven project dashboard
+Implement =docs/ptui.md= so the project browser helps select higher-priority
+work while preserving registry symlinks as the authority for membership and
+task-file resolution.
+*** TODO [#A] t0035.1 Add source-backed project metadata parsing
+Parse optional Org priority cookies plus =DESCRIPTION= and =TASK_FILE=
+properties from each =projects.org= project section. Preserve exact source
+spans, unknown properties, prose, tags, and child sections; reject ambiguous
+project headings or property drawers.
+*** TODO [#A] t0035.2 Add priority-first project rows and sort controls
+Show priority, description, and open-task count. Default to
+=priority -> alphabetical= order, let =s= switch between priority and
+alphabetical views, and keep the highlight anchored by project name.
+*** TODO [#A] t0035.3 Add buffered project-priority editing
+Use Shift-Up/Down to change priority through =unset -> C -> B -> A=. Route
+changes through one bounded =projects.org= transaction with visible dirty
+state, undo/redo, =C-s= save, and Save/Discard/Cancel on exit.
+*** TODO [#B] t0035.4 Build the project metadata workspace
+Make =m= open a compact editor for priority and description while showing the
+read-only project name, resolved task file, recorded task-file mirror, and
+directory-stack controls. Require an already migrated registry index.
+*** TODO [#B] t0035.5 Add modified sorting and task-file mirror diagnostics
+Add newest-task-file-first sorting with unreadable or absent files last.
+Display disagreements between the non-normative =TASK_FILE= mirror and the
+resolved task file, with an explicit refresh action.
