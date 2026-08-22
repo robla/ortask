@@ -652,7 +652,9 @@ front-ends over `ortasklib/`, with no script importing another script.
 - `init` replaces `migrate`, which no longer migrates anything — it has only
   written the registry path into `ortask.ini` since `projtui.ini` was removed.
   Low priority, but a verb whose name describes a job it no longer does is the
-  kind of drift this section exists to clear.
+  kind of drift this section exists to clear. That completed rename frees
+  `migrate` for the real per-entry-to-`projects.org` conversion in `t0026`;
+  after that work it is a distinct verb, not an `init` alias.
 - `cdproj` moves here from `orgmgr.py` unchanged in behavior (originally named `pcd`).
   It was always a project-layer command; it landed in `orgmgr.py` because that was
   where the registry lived.
@@ -695,7 +697,8 @@ All six steps are complete (`t0019.1`–`t0019.6`):
 5. Converged the `cdproj` picker and the `ptui` project list onto one row and view
    builder.
 6. Renamed `migrate` to `init`; added `rm` and `doctor`. `migrate` and `projadd`
-   remain as deprecated aliases.
+   initially remained as deprecated aliases. The registry-index plan now
+   reclaims `migrate`; only `projadd` remains an alias after `t0026`.
 
 ### Still open
 
@@ -707,7 +710,9 @@ All six steps are complete (`t0019.1`–`t0019.6`):
 - `add` does not offer to create a task file for a project that has none, and
   `cdproj` still has no way to append the current directory to a project's stack
   (`docs/cdproj.md`).
-- The deprecated `migrate` and `projadd` aliases should eventually go.
+- `t0026` must replace the deprecated `migrate` alias with an actual,
+  resumable registry-index migration before private-stack consumers cut over.
+  The remaining `projadd` alias can eventually go.
 
 ### Completion Criteria
 
@@ -721,3 +726,38 @@ All met:
 - `cdproj`, `pmgr`, and `ptui` share one project list and one project record.
 - The registry remains readable, editable, and repairable with `ls`, `ln -s`,
   and `rm`.
+
+## Registry Index and Saved Directory Stacks
+
+### Goal
+
+Move machine-local directory stacks from per-entry files into one literate
+`<registry>/projects.org`, then let `pmgr set-dirs` and `cdproj -s` save the
+shell's current stack there. The transition must not maintain two storage
+models or silently discard text from a legacy private file.
+
+### Implementation Order
+
+1. **`t0026.1`: parse bounded index sections.** Extend `orglib` just far enough
+   to identify a project's top-level subtree and unique direct-child
+   `Directories` region with exact source spans. This is an incremental slice
+   of `t0020`, not a dependency on finishing every parser migration.
+2. **`t0026.2`: implement `pmgr migrate`.** Reclaim the name from its temporary
+   `init` alias, validate all old files, write the complete index atomically,
+   and remove only legacy files represented exactly in the index. Support
+   dry-run and safe cleanup after interruption.
+3. **`t0026.3`: enforce the cutover.** Make `projects.org` the migration marker
+   and sole private-stack source. Private-stack consumers error before migration
+   or during mixed-state cleanup; `doctor` diagnoses those states. Unrelated
+   project verbs keep working.
+4. **`t0031.1`: add `pmgr set-dirs`.** Accept directories positionally or via
+   `--stdin`, select a project with `--project` or unambiguous `$PWD`
+   detection, and patch only that project's direct-child `Directories` region.
+   Empty input is an error.
+5. **`t0031.2`: add `cdproj -s`.** Capture `dirs -l -p` in the shell, map the
+   optional project to `set-dirs --project`, and add matching completion without
+   changing the existing `--out` protocol.
+
+The completed path is therefore parse, migrate, cut over, write, then expose
+the shell wrapper. `docs/config.md` owns the migration contract;
+`docs/cdproj.md` owns stack resolution and saving behavior.

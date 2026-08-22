@@ -137,17 +137,45 @@ permissively licensed libraries.
 resolution, but =manager.choose_org_file= excludes only the literal name
 =directories-private.org=. Verified 2026-08-20: a =notes-private.org= in a
 registry entry is selected as that project's task file. Match the suffix.
-** TODO t0026 Implement the registry index file
-One =projects.org= at the registry root replacing the per-entry
-=directories-private.org= files, per =docs/config.md=. Needs a project-scoped
-=parse_directories= in =orglib= (find the top-level heading matching a project
-name, then =Directories= within that subtree), reached through
-=orglib.parse(text)= rather than =core=; index-first candidates in
-=manager.directory_candidates= with the per-entry file as a deprecated
-fallback; =doctor= reporting stale, duplicate, and left-behind entries; and the
-one-time migration in =docs/config.md=. Blocks =t0031=, which writes to this
-file. After cutover, keep one storage model rather than maintaining dual
-read/write paths.
+** TODO t0026 Implement and migrate to the registry index file
+Replace per-entry =directories-private.org= files with one =projects.org= at
+the registry root, per =docs/config.md=. The index's existence is the migration
+marker: private-stack consumers do not fall back to the old files. This task is
+the gate for =t0031=. The =migrate= name is reclaimed here for an actual
+registry-data migration; it no longer remains an alias for =init= after the
+cutover.
+*** TODO t0026.1 Add source-backed registry index parsing to orglib
+Find the unique top-level heading matching a project and only its direct child
+=** Directories= section. Preserve source spans and distinguish a missing
+project, a missing section, and an empty section; reject duplicate project or
+direct-child =Directories= headings. Reach this through =orglib.parse(text)=,
+not =core=. This incrementally completes the directory-parsing slice of
+=t0020= without waiting for every parse call site to move. Test direct-child
+selection, ignored deeper headings, missing-versus-empty results, duplicate
+errors, and exact source spans.
+*** TODO t0026.2 Implement pmgr migrate
+Reclaim =migrate= from its deprecated =init= alias. =pmgr migrate [--dry-run]=
+validates every legacy private file before writing, creates =projects.org=
+atomically, then removes the migrated files. Preserve each accepted legacy
+document by nesting its contents under the matching project heading and
+demoting headings one level; reject constructs that cannot be nested safely
+rather than discard them. Create an empty index when no private files exist so
+the registry is still marked migrated. If cleanup is interrupted, a later run
+may remove a legacy file only when it matches its index section; disagreement
+is a hard error requiring manual resolution. Fixture tests cover dry-run with
+no mutation, whole-file validation before writing, preservation of accepted
+content, successful cleanup, interrupted cleanup, and conflict refusal.
+*** TODO t0026.3 Cut private-stack consumers over to projects.org
+After migration support exists, make =projects.org= the only private-stack
+source. =cdproj= and its picker/editor path must fail with a concise
+=run pmgr migrate= error when the index is absent or migration cleanup is
+incomplete; =set-dirs= inherits that gate. =pmgr doctor= remains available to
+diagnose the state and exits 2 for missing, malformed, duplicate, stale, or
+mixed index state. =list=, =add=, =rm=, and =init= do not require migration
+because they do not consume private directory settings. Only =pmgr migrate=
+may read =directories-private.org= after this cutover. Test absent-index and
+mixed-state errors, =doctor='s exit status, and that unrelated verbs remain
+available.
 ** TODO t0027 Make orglib independently testable and consumable
 Move its contract tests into a focused module that imports only =orglib= and
 can run without importing =ortasklib=. Define how another repository such as
@@ -173,22 +201,25 @@ map backend output back to the original span. Exercise orgmunge as a test-only
 adapter first. Report normalization inside the region and prove the rest of the
 file remains exact; do not expose a production writer or runtime selector yet.
 ** TODO t0031 Save shell directory stack to private dirstack (cdproj -s / pmgr set-dirs)
-Implement =projmgr.py set-dirs [PROJECT]= and =cdproj -s [PROJECT]= to write the
-live shell directory stack (=dirs -l -p=) into the project's private directory
-list. After =t0026= that list is the project's section in
-=<registry>/projects.org=, so this is the first verb to edit a shared Org file
-in place rather than create one. Specification: "Saving the directory stack" in
-=docs/cdproj.md=.
+Implement =projmgr.py set-dirs [--project PROJECT]= and =cdproj -s [PROJECT]=
+to write the live shell directory stack (=dirs -l -p=) into the project's
+private directory list. After all of =t0026= that list is the project's section
+in =<registry>/projects.org=, so this is the first verb to edit a shared Org
+file in place rather than create one. Specification: "Saving the directory
+stack" in =docs/cdproj.md=.
 *** TODO t0031.1 Implement pmgr set-dirs
 Current-project detection from =$PWD= (an error rather than a guess when no
-project or two projects match), positional directories plus =--stdin=, =~= for
-paths under =$HOME=, dedupe by resolved path, additions written without asking,
-subtractions prompted =[r]emove=/=[k]eep=/=[c]ancel= with =--missing= as the
-non-interactive answer, and =--dry-run=. Test that every byte outside the
-rewritten =Directories= subtree is unchanged.
+project or two projects match), explicit =--project= override, positional
+directories plus =--stdin=, =~= for paths under =$HOME=, dedupe by resolved
+path, additions written without asking, subtractions prompted
+=[r]emove=/=[k]eep=/=[c]ancel= with =--missing= as the non-interactive answer,
+and =--dry-run=. Zero directories, including empty =--stdin=, is an error;
+clearing a list needs a future explicit operation. Require a fully migrated
+index and test that every byte outside the rewritten =Directories= subtree is
+unchanged.
 *** TODO t0031.2 Add the cdproj -s shell half
 Teach =misc/cdproj.func.sh= to recognize =-s=/=--save= and pass =dirs -l -p= as
 arguments rather than on stdin, so the subtraction prompt still has a terminal,
-and complete project names after =-s= in =misc/ortask-completion.bash=. The
-=--out= protocol is untouched: this path writes no stack file and does not =cd=.
-
+mapping its optional project argument to =set-dirs --project=. Complete project
+names after =-s= in =misc/ortask-completion.bash=. The =--out= protocol is
+untouched: this path writes no stack file and does not =cd=.

@@ -152,6 +152,14 @@ In Org terminology, external libraries do not all use “section” consistently
 `Region` is the umbrella term here; selectors can identify a top-level named
 subtree, one heading subtree, a task body, or eventually a whole document.
 
+The registry-index work in `t0026` is the first incremental use of this model.
+`orglib.parse(text)` must locate one top-level project subtree and its unique
+direct-child `Directories` region, retaining source offsets and distinguishing
+missing from empty. `pmgr migrate` uses those boundaries to validate the new
+index; `pmgr set-dirs` later replaces only that bounded region. This moves the
+directory-parsing slice of `t0020` without making `t0026` wait for the complete
+generic region API in `t0028`.
+
 ### Testing & Validation with `orgparse`
 
 `orgparse` is an ideal optional dependency for test suite validation:

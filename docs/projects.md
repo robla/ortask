@@ -138,6 +138,14 @@ and stops holding the settings. The `*-private.org` suffix stays reserved, both
 for files left behind by the migration and for anything later that needs to be
 per-entry.
 
+`pmgr migrate` performs the one-time conversion. The index's existence is the
+migration marker; after the cutover, private-stack consumers never combine or
+fall back between the two layouts. They report `run pmgr migrate` when the
+index is absent, and treat an old private file beside it as incomplete cleanup.
+Commands unrelated to private directory settings, including `list`, `add`,
+`rm`, and `init`, remain usable before migration. `pmgr doctor` is the
+read-only diagnostic for either state.
+
 Tools must never require the registry to be a git repository, and must never
 run git themselves. One real registry is a git repository with its own README
 and agent instructions; that is a legitimate use of the directory and none of
@@ -178,6 +186,7 @@ exits 2 when it finds a problem.
 - The registry is the only thing project-level tools write, apart from
   `ortask.ini` and files named by an explicit `--out`.
 - Org task content belongs to `ortask.py`. Project-level tools read it; they do
-  not edit it.
+  not edit it. `projects.org` is project-manager configuration, not a task file;
+  `migrate` and `set-dirs` may edit only their documented regions there.
 - Symlink targets are never modified. Links are created, repointed, or removed,
   and only inside the registry.

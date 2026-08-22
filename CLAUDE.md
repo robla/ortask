@@ -30,9 +30,11 @@ All scripts are stdlib-only (Python 3.10+, no external dependencies).
   a project's directory stack; see `docs/cdproj.md`), `doctor` (report
   broken/ambiguous/unreadable entries), `init` (record the registry in
   `~/.config/ortask/ortask.ini`), `list` (read-only task overview), and `rm` (remove one
-  registry entry). `migrate` and `projadd` remain as deprecated aliases for
-  `init` and `add`. It edits only config and registry symlinks, never Org
-  content — `ortask.py` owns local task editing. The intended aliases are `pmgr`
+  registry entry). `projadd` remains a deprecated alias for `add`; `migrate`
+  currently aliases `init`, but `t0026` reclaims it for migration to the
+  registry-root `projects.org` index. Project-level writes are limited to
+  config, the registry, and explicit output files; `ortask.py` owns local task
+  editing. The intended aliases are `pmgr`
   and, for `-i`, `ptui`. Specs: `docs/projmgr.md` for the command,
   `docs/projects.md` for the registry model. Renamed from `orgmgr.py` on
   2026-08-19.

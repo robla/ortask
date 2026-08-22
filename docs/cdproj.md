@@ -78,11 +78,10 @@ never part of the project's own repository and needs no per-project
 parser.
 
 **Status (2026-08-21): the private list is moving.** Today it is one file per
-registry entry, `<registry>/<project>/directories-private.org`, holding a
-top-level `* Directories` section. It is moving to one index file at the
-registry root, `<registry>/projects.org`, holding a `Directories` section under
-a top-level heading named for the registry entry — the model decided in
-`docs/config.md`, tracked as `t0026`:
+registry entry, `<registry>/<project>/directories-private.org`. Task `t0026`
+adds `pmgr migrate` and cuts over to one index at
+`<registry>/projects.org`, with a `Directories` section under the top-level
+heading named for the registry entry:
 
 ```org
 # ~/Projects/projects.org
@@ -93,11 +92,12 @@ a top-level heading named for the registry entry — the model decided in
    - ~/src/ortask/docs
 ```
 
-Only the location changes. Every rule below holds in both forms, and the label
-stays `private`. During the transition the index wins: a project with a section
-in `projects.org` reads it, and a project without one falls back to its
-`directories-private.org`, which `pmgr doctor` reports as a leftover to
-migrate. The fallback goes away once a registry is converted.
+Only the location changes. Every resolution rule below still applies, and the
+label stays `private`. The cutover has no dual-read period: after `t0026`, an
+absent index produces `registry not migrated; run pmgr migrate`, and a legacy
+file beside the index is an incomplete-migration error. Only `pmgr migrate`
+reads the old files. A migrated index may omit a project section normally; that
+project simply has no private list.
 
 ### Which list wins
 
@@ -152,12 +152,11 @@ directories.
 All three routes into a stack — the picker, `cdproj PROJECT`, and the numbered
 fallback — resolve identically and warn identically.
 
-Neither private location is a candidate for task-file discovery.
-`directories-private.org` is excluded by name, so a project whose registry entry
-has no task-file symlink will not mistake it for one, and `projects.org` sits at
-the registry root rather than inside an entry, where `discover_projects` never
-looks. What standing *in* the registry and running `ort` picks up is covered in
-`docs/config.md`.
+Neither the index nor a migration leftover is a candidate for task-file
+discovery. `directories-private.org` remains excluded by name, and
+`projects.org` sits at the registry root rather than inside an entry, where
+`discover_projects` never looks. What standing *in* the registry and running
+`ort` picks up is covered in `docs/config.md`.
 
 Per-entry private files follow the `*-private.org` naming convention from
 `docs/projects.md`, so a registry kept under version control needs one
@@ -206,7 +205,7 @@ the stack.
 
 - `↵` resolves the highlighted project's directories, writes them, and exits 0.
   When both lists exist the private one wins outright; see "Which list wins".
-- `e` asks which list to edit — always both candidates, so the private file is
+- `e` asks which list to edit — always both candidates, so the private index is
   discoverable — opens it in `$VISUAL`/`$EDITOR`, then returns to the picker so
   the edited stack can be selected immediately.
 - `Esc`/`q` exits nonzero without writing.
@@ -217,11 +216,12 @@ from `core.editor_argv()`: `VISUAL` before `EDITOR`, `shlex.split()` so
 `EDITOR="emacs -nw"` works, and a line argument only for editors known to take
 one. The shell must not re-solve any of this.
 
-Editing the private file creates it, with a `* Directories` skeleton, if it does
-not exist yet — it lives in the registry, which `projmgr.py` owns. The project's
-task file is never written. `ortask.py` owns Org content, per `docs/orgmgr.md`,
-so a task file with no `* Directories` section is reported rather than
-bootstrapped.
+Editing the private list requires a migrated index. It opens `projects.org` at
+the project's heading; if that project has no section yet, the helper adds a
+project heading with a direct-child `** Directories` skeleton before launching
+the editor. It never creates the index implicitly. The project's task file is
+never written. `ortask.py` owns Org task content, so a task file with no
+`* Directories` section is reported rather than bootstrapped.
 
 ## `cdproj`
 
@@ -310,19 +310,18 @@ function unchanged.
   under a `Directories` heading, or `None` when there is no such section, so a
   candidate location can be told apart from a real source. Bare paths, list
   bullets, `file:` prefixes, and `[[...]]` brackets all parse. For the registry
-  index it takes a project name and looks for `Directories` inside that
-  project's subtree instead of at the top level; without one it keeps today's
-  top-level behavior, which is what a task file and a per-entry private file
-  both use.
+  index it takes a project name and accepts only that project's direct-child
+  `** Directories`; without one it keeps the top-level behavior used by project
+  task files.
 - `orglib.Document.directories()` — the same thing through the `orglib`
   boundary, which is how `manager` should reach it (`t0020`).
 - `core.editor_argv()` — the editor argv, shared with `taskui._open_editor()`.
   It takes an optional line number, which is how `e` opens the index at the
   right project.
 - `manager.directory_candidates()` / `directory_sources()` — the candidate
-  locations, private first, and the subset of them that defines a stack. The
-  index is the first private candidate; the per-entry file follows it until the
-  fallback is dropped.
+  locations, private first, and the subset of them that defines a stack. After
+  `t0026`, the index is the only private candidate; a missing or incompletely
+  migrated index is an error rather than a fallback.
 - `manager.resolve_directories()` — `~`, `$VAR`, and relative-to-project-root
   expansion. Separate from parsing, because resolving needs a project root that
   `core` has no opinion about.
@@ -352,7 +351,8 @@ cdproj -s [PROJECT]     # or cdproj --save [PROJECT]
 The shell half captures its own live stack with `dirs -l -p` and passes it to:
 
 ```sh
-projmgr.py set-dirs [PROJECT] [DIRECTORY...] [--stdin] [--missing keep|remove]
+projmgr.py set-dirs [--project PROJECT] DIRECTORY...
+projmgr.py set-dirs [--project PROJECT] --stdin [--missing keep|remove]
                     [--dry-run]
 ```
 
@@ -362,12 +362,14 @@ parsing. Those two asked the shell to carry a *mode* into Python. `-s` carries
 *data* Python cannot otherwise obtain: the live directory stack belongs to the
 shell, and no key inside the picker can read it. The `--out` protocol is
 untouched — `set-dirs` writes nothing to `--out` and the shell function does
-not `cd`.
+not `cd`. The shell maps its optional positional project to
+`set-dirs --project PROJECT`; the Python command does not overload its first
+directory as a possible project name.
 
 ### Which project
 
-With `PROJECT` given, that registry entry, matched exactly as `cdproj PROJECT`
-matches. Without it:
+With `--project PROJECT`, use that registry entry, matched exactly as
+`cdproj PROJECT` matches. Without it:
 
 1. walk up from `$PWD` for a VCS marker or a task file (`project_root_for()`);
 2. compare that root against the registered projects (`discover_projects()`),
@@ -382,7 +384,10 @@ section.
 ### Where the stack comes from
 
 Directories arrive as positional arguments, one per argument. `--stdin` reads
-them from standard input instead, one per line, for scripting.
+them from standard input instead, one per line, for scripting; it is mutually
+exclusive with positional directories. Zero directories, including empty
+`--stdin`, is an error. Clearing a private list needs a future explicit
+operation rather than an easy-to-mistype empty invocation.
 
 `cdproj -s` passes the stack as arguments rather than on stdin, deliberately:
 stdin has to stay free for the subtraction prompt below. `--stdin` therefore
@@ -392,6 +397,9 @@ prompt would have asked for, defaulting to `keep`.
 ### What gets written
 
 Into the project's section of `<registry>/projects.org`:
+
+- **The index must already exist and migration must be complete.** `set-dirs`
+  never creates the migration marker and never reads a legacy private file.
 
 - **Paths under `$HOME` are written with `~`.** `dirs -l -p` prints them
   expanded; storing them expanded would tie the index to one machine's home.
@@ -434,7 +442,8 @@ defaults to `keep`, because keeping a directory the user still lists is the
 recoverable mistake.
 
 `--dry-run` prints the section that would be written and exits without touching
-the file, matching `init --dry-run` and `rm --dry-run`.
+the file, matching `init --dry-run` and `rm --dry-run`. It still validates the
+migration state and requires at least one input directory.
 
 ## Open questions
 

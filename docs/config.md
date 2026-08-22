@@ -126,9 +126,10 @@ require the registry to be a repository.
 
 ## The registry index file
 
-**Status: decided, not yet implemented.** The sections above describe today's
-behavior; this one describes the direction and supersedes the per-entry
-`directories-private.org` scheme.
+**Status: decided, not yet implemented (`t0026`).** The sections above describe
+today's behavior. The cutover below supersedes the per-entry
+`directories-private.org` scheme; there is deliberately no long-lived fallback
+between the two models.
 
 Private per-project config moves out of one file per registry entry
 (`<entry>/directories-private.org`) and into **one Org file at the registry
@@ -176,7 +177,8 @@ ambiguity error. Anything that wants to be a sibling should be a subdirectory.
 
 ### Shape
 
-One top-level heading per project, whose text is the registry entry name:
+At most one top-level heading per project, whose text is the registry entry
+name. Projects with no private settings or index prose may be absent:
 
 ```org
 #+TITLE: Projects
@@ -200,8 +202,12 @@ Notes on the shape:
   links.** `orglib.syntax._strip_directory_entry` already accepts all four, so the
   central file needs no new entry syntax. List items read better when nested
   under a project heading, and are used in the examples above.
-- **Prose under a project heading is free text** and is never parsed. That is
-  the point of the file.
+- **Only a direct child `** Directories` heading is configuration.** A deeper
+  heading with the same title is ordinary prose structure. This keeps the
+  parser's boundary obvious and prevents a note from becoming configuration by
+  accident.
+- **Other prose under a project heading is free text** and is never parsed.
+  That is the point of the file.
 - **The project name is the join key.** Matching should be case-insensitive, to
   agree with the case-insensitive ordering `discover_projects` already uses.
   Compare the heading text with any trailing `:tags:` stripped.
@@ -236,9 +242,9 @@ Three consequences worth deciding deliberately:
    silent first-wins.
 
 `pmgr doctor` grows the checks that go with those: a section matching no
-registry entry, duplicate sections for one entry, an index that cannot be read
-or parsed, and — during the transition — a `directories-private.org` left
-behind in an entry whose section is already in the index.
+registry entry, duplicate sections for one entry, duplicate direct-child
+`Directories` sections, an index that cannot be read or parsed, and a
+`directories-private.org` left behind after the index was created.
 
 The index is also the first Org file `projmgr.py` edits in place rather than
 creates. Writing one project's `Directories` subtree while leaving every other
@@ -246,32 +252,53 @@ byte alone is the same bounded-region problem `t0028` and `t0029` describe for
 task editing, at a smaller scale, and it is worth doing through `orglib` rather
 than beside it.
 
-For a transition, read the index first and fall back to a per-entry
-`directories-private.org` with a deprecation warning; drop the fallback once the
-registry is converted.
+### Migration gate
 
-### Migration
+The existence of `<registry>/projects.org` marks the registry as migrated.
+After the cutover, commands that consume or edit private directory settings
+require that marker and never fall back to `directories-private.org`:
 
-One-time and mechanical. This sketch reads every entry's private file and emits
-the index; it was tested against the current registry, including entries using
-`file:` links and a file with a trailing unrelated section. It drops `#`
-comments, which `parse_directories` ignores anyway:
+- `cdproj`, its picker/editor path, and the planned `set-dirs` stop with
+  `registry not migrated; run pmgr migrate` when the index is absent.
+- A leftover legacy file beside an index is an incomplete migration, not a
+  second source. Those commands stop and direct the user back to `pmgr migrate`.
+- `pmgr doctor` remains usable and reports either state as a problem, exiting 2.
+- `list`, `add`, `rm`, and `init` continue to work because they do not consume
+  private directory settings.
 
-```sh
-registry=~/Projects
-for entry in "$registry"/*/directories-private.org; do
-    printf '* %s\n** Directories\n' "$(basename "$(dirname "$entry")")"
-    sed -n '/^\* Directories$/,$ {
-        /^\* Directories$/d
-        /^\* /q
-        s/^[*-]\+[[:space:]]*/   - /p
-    }' "$entry"
-    echo
-done > "$registry/projects.org"
-```
+A registered project need not have a section in a migrated index. That means it
+has no private list and falls back to its project list, then its project root.
+It is distinct from an empty direct-child `Directories` section, which is an
+explicit empty private list.
 
-Review the result, then remove the per-entry files. No verb should be added for
-this; it happens once.
+### `pmgr migrate`
+
+Migration is one-time, explicit, and data-preserving. `pmgr migrate [--dry-run]`
+performs these phases in order:
+
+1. Read and validate every `<entry>/directories-private.org` before changing
+   anything. Require exactly one top-level `* Directories` subtree. Reject
+   duplicate project names and content that cannot be nested safely, such as a
+   file-wide keyword whose meaning would escape the project subtree; name every
+   offending file.
+2. Build one project section per legacy file. Wrap the legacy document in a
+   top-level project heading and demote each of its headings one level, so its
+   comments, prose, entry spelling, and unrelated subtrees survive. The old
+   `* Directories` becomes the required direct child `** Directories`.
+3. Write `projects.org` atomically, then remove the legacy files. With no legacy
+   files, write an otherwise empty index so the migration marker still exists.
+
+`--dry-run` prints the proposed index and the files that would be removed. If a
+process stops after the atomic index write but before cleanup, rerunning
+`migrate` removes a legacy file only when the corresponding index section is
+exactly what the deterministic nesting transformation would generate. A
+mismatch or a missing section is a hard error for manual resolution. This
+resumability avoids pretending several file removals can be one atomic
+filesystem transaction.
+
+If a structurally valid `projects.org` exists with no legacy files, migration
+is already complete and the command succeeds without changing it. Only
+`pmgr migrate` reads legacy private files after the cutover.
 
 ### Reserved names
 

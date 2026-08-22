@@ -192,3 +192,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Gemini [2026-08-21 Fri 16:09 PDT]: added task =t0031= to =todo.org= for saving shell directory stacks via =cdproj -s= / =pmgr set-dirs=.
 
 ** Claude [2026-08-21 Fri 16:26 PDT]: retargets the =set-dirs=/=cdproj -s= spec at the registry index =projects.org= across =docs/cdproj.md=, =docs/config.md=, =docs/projmgr.md=, and =docs/projects.md=, resolves the =--stdin=-versus-prompt conflict with argv input plus =--missing=, and splits =t0031= into =t0031.1=/=t0031.2= behind =t0026=.
+** Codex [2026-08-21 Fri 16:53 PDT]: integrated =pmgr migrate= into the =t0026= to =t0031= plan, making =projects.org= the explicit migration marker, specifying a validated and resumable no-fallback cutover, and settling =set-dirs --project= plus zero-input errors.
