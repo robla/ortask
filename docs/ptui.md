@@ -68,12 +68,11 @@ The registry entry name remains the join key. Readers must recognize both
 before matching. Names are not editable in metadata mode because renaming the
 heading alone would not rename the registry entry.
 
-**Readers do not strip the cookie yet.** `orglib.syntax._project_title` strips
-trailing tags only, so `* [#A] ortask` does not match registry entry `ortask`
-today. Since the index became the only source of a project's private directory
-stack (`t0026.3`), a heading that gains a cookie silently loses that stack and
-`cdproj` falls back to the project root. Nothing may write a cookie — and
-nobody should hand-add one — until `t0036` lands.
+`orglib.syntax._project_title` strips both, as of `t0036`. It did not always:
+until then a heading that gained a cookie stopped matching its registry entry,
+and since the index became the only source of a project's private directory
+stack (`t0026.3`), that silently cost the project its stack. The regression
+tests for it are worth keeping wherever this matching moves.
 
 `DESCRIPTION` is a single-line summary intended for the project list.
 `TASK_FILE` is an optional, non-normative mirror for human inspection. The
@@ -157,8 +156,13 @@ do is merge: two people editing different project sections of one file is not a
 conflict in any meaningful sense, and the tool should say so by absorbing the
 other write instead of refusing. That is `t0037`, in two steps — notice the
 change and alert while the buffer is open, then merge what can be merged and
-alert only when it cannot. Refusal remains correct behavior for the case a
-merge cannot handle.
+alert only when it cannot.
+
+**Merging is an in-memory operation.** It updates the buffer, and may refresh
+the auto-save sibling; it never writes `projects.org`, which still changes only
+when the user saves. Merge on detection, ahead of any save, so `C-s` either
+writes a buffer that already contains the other write or refuses with the
+alert. Refusal remains correct for what a merge cannot handle.
 
 Two consequences, both decided:
 
@@ -186,8 +190,8 @@ people open in Emacs, so the cookie wins anyway.
 
 ## Suggested Delivery Order
 
-0. Strip the priority cookie when matching project headings (`t0036`). Nothing
-   below can write a cookie safely until this lands.
+0. Strip the priority cookie when matching project headings (`t0036`, done).
+   Nothing below could write a cookie safely until it landed.
 1. Parse project priority and description, then add priority/alphabetical sort.
 2. Add buffered priority changes from the project list.
 3. Add the `m` metadata workspace and bounded save path.

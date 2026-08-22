@@ -68,6 +68,35 @@ def test_orglib_parse_agrees_with_core():
     assert orglib.parse(text).tasks() == core.parse_org(text)
 
 
+def test_project_heading_priority_cookie_does_not_change_the_name():
+    # A cookie is ptui ordering metadata, not part of the registry entry name,
+    # so a heading that gains one keeps resolving to the same project (t0036).
+    def index(heading: str) -> str:
+        return heading + "\n** Directories\n   - ~/src/ortask\n"
+
+    for heading in (
+        "* ortask",
+        "* [#A] ortask",
+        "* [#c] ortask",
+        "* [#1] ortask",
+        "* [#A] ortask   :work:tools:",
+    ):
+        lookup = orglib.parse(index(heading)).directories("ortask")
+        assert lookup.project_found, heading
+        assert lookup.section is not None
+        assert lookup.section.entries == ("~/src/ortask",), heading
+
+    # Two characters is not a cookie, so the brackets stay part of the name.
+    weird = orglib.parse(index("* [#AB] ortask")).directories("ortask")
+    assert not weird.project_found
+
+    # Both forms name one project, so a file carrying both is ambiguous.
+    with pytest.raises(orglib.OrgStructureError):
+        orglib.parse(
+            index("* ortask") + "\n" + index("* [#A] ortask")
+        ).directories("ortask")
+
+
 def test_orglib_render_returns_the_source_unchanged():
     """The fidelity property a future backend has to match, asserted now.
 
@@ -2451,6 +2480,97 @@ def test_set_dirs_replaces_only_selected_directory_section(
         f"   - {shared}\n"
     )
     assert "directories updated" in capsys.readouterr().out
+
+
+def test_cdproj_resolves_the_same_stack_with_a_priority_cookie(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # ptui will write "* [#A] myproj"; that must not detach the private stack,
+    # which is now the index's alone to supply (t0026.3, t0036).
+    from ortasklib import menu
+
+    registry, project = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    (project / "docs").mkdir()
+    monkeypatch.setattr(menu, "interactive_select_available", lambda: False)
+    monkeypatch.setattr(menu, "prompt_text", lambda prompt: "1")
+    index = registry / manager.PROJECTS_INDEX_NAME
+
+    stacks = []
+    for heading in ("* myproj", "* [#A] myproj"):
+        index.write_text(
+            manager.PROJECTS_INDEX_HEADER
+            + f"{heading}\n** Directories\n"
+            + f"   - {project}\n   - {project / 'docs'}\n",
+            encoding="utf-8",
+        )
+        out_file = tmp_path / "out.txt"
+        assert projmgr.cmd_cdproj(
+            argparse.Namespace(registry=str(registry), out=str(out_file))
+        ) == 0
+        stacks.append(out_file.read_text(encoding="utf-8").splitlines())
+    capsys.readouterr()
+
+    assert stacks[0] == [
+        str(project.resolve()),
+        str((project / "docs").resolve()),
+    ]
+    assert stacks[1] == stacks[0]
+
+
+def test_set_dirs_preserves_priority_cookie_and_property_drawer(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # ptui metadata shares this section (t0035); rewriting the stack may not
+    # disturb the heading's cookie or the drawer above the section.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    home = tmp_path / "home"
+    new = home / "work"
+    new.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    index = registry / manager.PROJECTS_INDEX_NAME
+    preamble = (
+        "#+TITLE: Projects\n\n"
+        "* [#A] myproj\n"
+        ":PROPERTIES:\n"
+        ":DESCRIPTION: Org-backed task and project tools\n"
+        ":END:\n"
+    )
+    index.write_text(preamble + "** Directories\n   - /old/one\n", encoding="utf-8")
+
+    assert projmgr.cmd_set_dirs(
+        _set_dirs_args(registry, [str(new)], missing="remove")
+    ) == 0
+    capsys.readouterr()
+
+    assert index.read_text(encoding="utf-8") == (
+        preamble + "** Directories\n   - ~/work\n"
+    )
+
+
+def test_migrate_leaves_a_cookied_index_untouched(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # A migrated registry whose headings carry cookies is already migrated;
+    # re-running migrate must not rewrite a byte of it.
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = (
+        manager.PROJECTS_INDEX_HEADER
+        + "* [#B] myproj\n** Directories\n   - ~/src/myproj\n"
+    )
+    index.write_text(original, encoding="utf-8")
+
+    assert projmgr.cmd_migrate(
+        argparse.Namespace(registry=str(registry), dry_run=False)
+    ) == 0
+    capsys.readouterr()
+    assert index.read_text(encoding="utf-8") == original
 
 
 def test_set_dirs_noninteractive_default_keeps_missing_entries(

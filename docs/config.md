@@ -224,10 +224,10 @@ Notes on the shape:
 - **The project name is the join key.** Matching should be case-insensitive, to
   agree with the case-insensitive ordering `discover_projects` already uses.
   Compare the heading text with any leading priority cookie **and** any
-  trailing `:tags:` stripped. Only tags are stripped as of 2026-08-22
-  (`orglib.syntax._project_title`), so a heading that gains a cookie stops
-  matching its registry entry and loses its private directory stack; `t0036`
-  fixes it.
+  trailing `:tags:` stripped (`orglib.syntax._project_title`), so `* ortask`,
+  `* [#A] ortask`, and `* [#A] ortask :work:` all name the same project. One
+  file carrying two of those forms is ambiguous and is reported rather than
+  resolved.
 - **`* Tasks` is reserved**, and so is `* Template`. They are the index's own
   task section, the thing that makes standing in the registry and running `ort`
   useful. A registry entry named `Tasks` would collide; `doctor` should say so

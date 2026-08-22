@@ -346,7 +346,7 @@ writers for one section is the outcome to avoid.
 Add newest-task-file-first sorting with unreadable or absent files last.
 Display disagreements between the non-normative =TASK_FILE= mirror and the
 resolved task file, with an explicit refresh action.
-** TODO [#A] t0036 Strip the priority cookie when matching project headings
+** DONE [#A] t0036 Strip the priority cookie when matching project headings
 =orglib.syntax._project_title= strips trailing tags only, so =* [#A] ortask=
 does not match registry entry =ortask=: =orglib.parse(text).directories('ortask')=
 reports =project_found: False=. Since =t0026.3= made the index the only private
@@ -377,10 +377,14 @@ existing resize/refresh path rather than adding a watcher thread, and keep
 same thing can happen to a task file.
 *** TODO t0037.2 Automerge non-conflicting external index changes
 When the external write touched project sections the buffer did not, merge it
-in on the next auto-save and carry on, reporting what was absorbed. Merge at
-the granularity of a project section, using the source spans =t0035.1= already
-produces; two edits inside one section are a conflict, and a conflict alerts
-rather than guesses. Merge on auto-save rather than only at =C-s=, so the
-buffer stays close to the file instead of drifting for the length of a session.
-Tests: a =set-dirs= on another project is absorbed silently, an edit to the
-same section alerts, and a failed merge never writes a partial file.
+into the buffer and carry on, reporting what was absorbed. The merge is an
+in-memory operation: it updates the buffer and may refresh the auto-save
+sibling =#projects.org#=, and it never writes =projects.org=, which still
+changes only when the user saves. Merge when the change is detected, ahead of
+any save, so =C-s= either writes a buffer that already contains the other write
+or refuses with =t0037.1='s alert. Merge at the granularity of a project
+section, using the source spans =t0035.1= produces; two edits inside one
+section are a conflict, and a conflict alerts rather than guesses. Tests: a
+=set-dirs= on another project is absorbed with =projects.org= untouched until
+save, an edit to the same section alerts, and a failed merge leaves both the
+buffer and the file unchanged.

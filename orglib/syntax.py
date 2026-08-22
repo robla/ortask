@@ -44,6 +44,10 @@ TOPLEVEL_HEADING_RE = re.compile(r"^\*\s")
 LIST_BULLET_RE = re.compile(r"^[-+]\s+")
 ANY_HEADING_RE = re.compile(r"^(?P<stars>\*+)[ \t]+(?P<title>.*?)[ \t]*$")
 TRAILING_TAGS_RE = re.compile(r"\s+:(?:[^\s:]+:)+\s*$")
+# A leading Org priority cookie on a heading. One character rather than [A-C]:
+# Org's priority range is configurable and may be numeric, and a cookie this
+# does not strip is a heading that stops matching its own name.
+LEADING_PRIORITY_RE = re.compile(r"^\[#[A-Za-z0-9]\]\s*")
 
 
 class OrgStructureError(ValueError):
@@ -225,7 +229,14 @@ def _headings(lines: list[_SourceLine]) -> list[_Heading]:
 
 
 def _project_title(title: str) -> str:
-    return TRAILING_TAGS_RE.sub("", title).strip()
+    """The name a project heading claims, with Org decoration removed.
+
+    A heading may carry a priority cookie for ``ptui`` ordering and trailing
+    tags, neither of which is part of the registry entry name: ``* [#A] ortask
+    :work:`` and ``* ortask`` name the same project.
+    """
+    without_tags = TRAILING_TAGS_RE.sub("", title)
+    return LEADING_PRIORITY_RE.sub("", without_tags.strip()).strip()
 
 
 def _span(
