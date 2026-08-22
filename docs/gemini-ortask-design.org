@@ -1,111 +1,51 @@
-#+TITLE: ortask.py Design & Enhancement - Gemini's Perspective
-#+DATE: 2026-04-08
+#+TITLE: ortask & projmgr Design & Enhancement - Gemini's Perspective
+#+DATE: 2026-08-21
 #+AUTHOR: Gemini (with Rob Lanphier)
 
 * Overview
 
-This document provides design considerations and enhancements for =ortask.py=, building upon the foundations laid in =claude-ortask-design.org=. The goal is to make =ortask.py= a robust, LLM-friendly tool for managing tasks in Org-mode files.
+This document captures Gemini's architectural perspective and design roadmap for the =ortask= suite, reflecting the current multi-tool architecture (=ortask.py=, =projmgr.py=, =ortasklib/=, and the standalone =orglib/= package).
 
-* The Evolution of ortask.py
+* The Core Design Principles ("The Ortask Way")
 
-Originally conceived as =status.py= (a simple checkbox viewer), the project has evolved into =ortask.py=, a specialized CLI for surgical Org-mode task management.
+1. **Org-mode as Single Source of Truth**: No external database engines or sidecar metadata stores; the =.org= file is the authoritative database.
+2. **Strict File Fidelity & Surgical Editing**: Edits are applied at the line level. Surrounding text, prose, property drawers, blank lines, and non-task sections must remain byte-exact. AST re-serialization is avoided for runtime mutations.
+3. **Stable, Human-Readable IDs**: Numeric IDs (=t0001=, =t0001.1=) and week-based IDs (=tw26w24=) provide stable permalinks directly in headings.
+4. **Zero-Dependency Runtime**: The core toolset depends strictly on the Python standard library, ensuring immediate portability and low startup latency.
+5. **Clean Two-Layer Architecture**:
+   - =ortask.py= (=ort=): Single task file manager operating on the =* Tasks= subtree.
+   - =projmgr.py= (=pmgr=): Multi-project registry manager (=~/Projects=) and directory stack coordinator.
 
-** The "Ortask Way" (Core Design Principles)
+* CLI Refinement & Nomenclature
 
-1. **Org-mode as Source of Truth**: No external databases; the =.org= file is the authoritative store.
-2. **Stable, Hierarchical IDs**: Human-readable numeric (e.g., =t0001=, =t0001.1=) or week-based (e.g., =tw26W24=) IDs in the heading ensure references stay valid.
-3. **LLM-First Design**: Optimized for AI agent consumption via compact state summaries.
-4. **Surgical Persistence**: Modifications must preserve all surrounding prose and non-task content.
-5. **Human-Readable & Greppable**: Simple structure allows standard CLI tools to interact with the data easily.
+** The Problem with "doctor" (Prefer "check" or "audit")
+The =projmgr doctor= verb feels overly cute and vague for a system administration and registry health tool.
+- **Critique**: "Doctor" borrows from package managers (Homebrew, Flutter), but in a Unix task/project manager, users want direct, descriptive verbs.
+- **Recommendation**: Rename or alias =doctor= to =check= (or =audit=). =pmgr check= accurately communicates what it does: validating symlink integrity, verifying task file discoverability, and reporting orphaned registry entries.
 
-* Enhancing the CLI
+** Project & Task Inspection ("info" verbs)
+Rather than overloading list commands, introduce dedicated inspection verbs:
+- =pmgr info [PROJECT | PATH]=: Inspects registry state, project root, task file location, and private directory stacks. Supports scriptable flags (=--name=, =--path=, =--file=).
+- =ort info=: Inspects the active Org task file, reporting heading ranges, ID allocation bounds, keyword state declarations, and task counts.
 
-** Subcommand Architecture
+** Saving Directory Stacks (=cdproj -s= / =pmgr set-dirs=)
+Shell directory stacks should be cleanly persistable:
+- =cdproj -s [PROJECT]= forwards the live =dirs -l -p= stack to =pmgr set-dirs=.
+- Auto-detects the current project from =$PWD= if omitted.
+- Normalizes home paths to =~= and interactively prompts on directory subtractions (=remove=, =keep=, =cancel=).
 
-=ortask.py= uses Python's =argparse= with subparsers to implement a verb-based CLI.
+* Interface & TUI Duality: ptui vs. cdproj
 
-| Subcommand | Description | Gemini's Take |
-|------------+-------------+---------------|
-| =add=      | Create a new task. | Automatically assign the next available ID; support =--parent=. |
-| =context=  | Summarize for LLMs. | *LLM Special*: Output a compact summary for prompt context. |
-| =done ID=  | Mark task as DONE. | Update the heading state while preserving everything else. |
-| =list=     | List tasks (filter by state/limit). | Support =--state= (todo/done) and =--format= (plain/json). |
-| =next=     | Preview next ID. | Useful for scripting and manual entry. |
-| =rename ID=| Change task title. | Preserve the ID and state while updating the text. |
-| =repair=    | Validate IDs/structure. | Check for duplicate IDs or broken hierarchies. |
-| =show ID=  | Detailed view of a task. | Include body text, properties, and subtasks. |
-| =todo ID=  | Reopen a task (alias =open=).| Revert state to TODO. |
+The project navigator (=ptui= / =projmgr.py -i=) and directory switcher (=cdproj=) share underlying project discovery but serve distinct workflows:
 
-** LLM-Specific Features
+1. **Visual Distinction**:
+   - =ptui=: Titled /Project Navigator/, labeled =PROJ=, showing open task counts. Focus is browsing and launching task managers.
+   - =cdproj=: Titled /Change directory/, labeled =CD=, showing target directory paths and active stack sources (=[private]= vs =[project]=).
+2. **Directory Resolution & Precedence**:
+   - When resolving stacks, the private list (=directories-private.org= in the registry) wins outright over shared task file =* Directories=, issuing stderr warnings for any omitted shared paths.
 
-Since this is an AI-integrated workspace, =ortask.py= caters to LLM needs:
+* External Libraries & Testing Strategy
 
-- **=context= subcommand**: Generates a "state of the world" summary. This can be piped directly into an LLM session or used to update =GEMINI.md=.
-- **Body Parsing**: =show= extracts the task body, as LLMs often need the *intent* or *latest update* stored there.
-- **Property Awareness**: If a task has a =:COMPANY:= or =:URL:= property, =ortask.py= makes these easily accessible.
-
-** Robust Parsing (Target Format)
-
-The parser is transitioning from legacy checkboxes to a formal Org-mode structure:
-#+begin_example
-** TODO [#A] t0001 Task Title :tag1:tag2:
-#+end_example
-
-Revised Regex Suggestion:
-#+begin_example
-^\*+\s+(?P<state>TODO|DONE)\s+(?:\[#(?P<priority>[A-C])\]\s+)?(?P<id>(?:t\d{4}|tw\d{2,4}[wW]\d{2})(?:\.\d+)*)\s+(?P<text>.*?)(?:\s+:(?P<tags>[\w:]+):)?\s*$
-#+end_example
-
-** File Modification Strategy
-
-To prevent data loss:
-1. Use a temporary file for writing.
-2. Atomically rename the temporary file to the target Org file.
-3. Preserve non-task content exactly.
-
-* Integration with Workspace
-
-- **AGENTS.md Integration**: Update agents to use =ortask.py add= instead of manual editing.
-- **Automated Summary**: Tools can run =ortask.py context= to quickly understand current priorities.
-
-* The Project Layer and TUI Design
-
-** The Duality of ptui and cdproj
-Both =ptui= (the project navigator) and =cdproj= (the directory stack selector) present a list of projects. Because they share the same list renderer, they can look confusingly similar.
-
-To keep their contexts visually distinct and improve usability, we recommend the following enhancements:
-
-1. **Explicit Title Differentiation**:
-   - =ptui=: Title should be =Project Navigator=.
-   - =cdproj=: Title should be =Select Project Directory=.
-
-2. **Custom Row Labels**:
-   - Instead of a generic =PROJECT= header label for both, use context-specific labels:
-     - =ptui=: Use =NAV= or =PROJ=.
-     - =cdproj=: Use =CD= or =DIR=.
-
-3. **Dynamic Directory Previews in cdproj**:
-   - In =cdproj=, the help/status footer should dynamically display the resolved directory stack (e.g. =Dirs: ~/src/ortask + directories-private.org=) for the currently highlighted project as the user scrolls.
-
-4. **Task Count Previews in ptui**:
-   - In =ptui=, the list should display task counts (e.g. =[ 3 TODO ]=) next to the project name, making the navigator clearly about tasks.
-
-** Directory Stack Resolution & Precedence (Public & Private)
-The =cdproj= command resolves project directory stacks from:
-1. Public project list (=* Directories= section in task file)
-2. Private project list (=directories-private.org= in project's registry entry)
-
-Precedence model: The private list wins outright. When both exist, the stack is the private list in its own order. If the private list lacks entries defined in the public list, a warning is printed to stderr naming those entries. When neither is defined, the project root is used as the fallback stack.
-
-* Future Considerations
-
-- **Dependency Tracking**: Use a =:DEPENDS:= property to link tasks.
-- **Multi-file Support**: Scan multiple =.org= files to provide a global agenda.
-- **Interactive Mode**: A simple TUI for quick task management.
-
-* Implementation Priorities
-
-1. **Refactor**: Implement the subcommand architecture and the new keyword-based regex.
-2. **Read-only Subcommands**: Implement =show= and =context=.
-3. **Write Support**: Implement =done=, =todo=, and =add= with atomic writes.
-4. **Validation**: Implement =repair= to ensure ID integrity.
+1. **Runtime Isolation**: Keep runtime editing bespoke and stdlib-only.
+2. **Testing Validation**: Use =orgparse= as an optional, zero-dependency test oracle (via =pytest.importorskip=) to verify that generated Org structures conform to standard Org syntax.
+3. **Task State Keywords**: Standardize task headers with =#+TODO: TODO | DONE MOOT= across files to ensure third-party tools (Emacs, =orgparse=, =orgmunge=) parse terminal states consistently.
