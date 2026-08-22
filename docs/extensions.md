@@ -54,8 +54,8 @@ ort list --format json                       # tasks in one file
 Three promises come with that:
 
 - **The JSON is the interface; the files are not.** An extension that opens
-  `~/.local/state/ortask/log/2026-08.jsonl` directly is relying on a layout that
-  is free to change. One that calls `ort log --format json` is not.
+  `<registry>/log/2026-08.jsonl` directly is relying on a layout that is free to
+  change. One that calls `ort log --format json` is not.
 - **Unknown fields are ignored, `schema` says when that stops being safe.**
   Fields get added without ceremony. `schema` increments only when an existing
   field changes meaning or disappears, which is the extension's cue to check.

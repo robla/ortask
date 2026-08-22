@@ -43,8 +43,8 @@ exists to prevent.
 
 ## What gets logged
 
-Writes, by default. One event per task affected, so a command that touches five
-tasks emits five events sharing one `session`.
+Writes, and deliberate project switches. One event per task affected, so a
+command that touches five tasks emits five events sharing one `session`.
 
 | Tool | Verb | Event carries |
 |---|---|---|
@@ -59,25 +59,27 @@ tasks emits five events sharing one `session`.
 | `pmgr` | `rm` | project name |
 | `pmgr` | `set-dirs` | project name, the directories written |
 | `pmgr` | `migrate` | how many entries moved |
+| `pmgr` | `cdproj` | project name, the resolved stack — see below |
 
-Read-only commands — `list`, `show`, `doctor`, `repair` without a fix — write
-nothing.
+Read-only commands — `list`, `show`, `doctor`, and `repair` — write nothing.
 
-### Levels
+### Navigation
 
-`cdproj` is the interesting boundary. It changes no data, so by the rule above
-it does not belong in a log of writes. But "I switched to elweek at 09:14 and to
-ortask at 11:40" is exactly what a journal wants, and no other record has it.
+`cdproj` is the interesting boundary. It changes no task data, so by the rule
+above it does not belong in a log of writes. But "I switched to elweek at 09:14
+and to ortask at 11:40" is exactly what a journal wants, and no other record
+has it.
 
-Two levels resolve this without argument:
+Log it. Choosing a project and loading its directory stack is a deliberate act
+that says where attention went, which is the same kind of fact as finishing a
+task.
 
-- **`write`** (default) — the table above. What changed.
-- **`activity`** — adds `cdproj` selections and project-navigator opens. What
-  you did.
-- **`off`** — nothing.
+Do not log merely opening `ptui` and scrolling through the list. Browsing is
+looking, not doing, and a log that records it fills up with events that mean
+nothing on a journal page.
 
-The level is one setting, and moving from `write` to `activity` changes the
-character of the file rather than its shape: same schema, more verbs.
+That line — deliberate act versus looking around — is the test for anything
+added later.
 
 ## Format
 
@@ -126,35 +128,112 @@ Three rules that matter more than the list:
 
 ## Where it lives
 
+In the registry, beside `projects.org`:
+
 ```
-$XDG_STATE_HOME/ortask/log/2026-08.jsonl
+<registry>/log/2026-08.jsonl
 ```
 
-defaulting to `~/.local/state/ortask/log/` when `$XDG_STATE_HOME` is unset.
+So `~/Projects/log/2026-08.jsonl` by default, and
+`~/tmpsorta/proj2026/log/2026-08.jsonl` on the machine this was written on.
 
-State, not config and not data: the XDG basedir spec puts logs and other
-"persists between restarts but is not important enough for data" files in the
-state directory, which is exactly the disposability rule above.
+The registry is where the suite already keeps what it knows about projects
+across all of them, which is exactly the scope of the log. Three things follow
+from putting it there rather than in a hidden state directory:
+
+- **The location needs no new setting.** It is derived from
+  `manager.resolve_registry()`, which already answers `--registry`, then
+  `[projects] registry`, then `~/Projects`. `docs/config.md`'s rule that the
+  suite has exactly one machine-global setting stays true, and the log moves
+  with the registry when the registry moves.
+- **It is visible.** A file under `~/.local/state` is one nobody looks at. A
+  `log/` next to `projects.org` is somewhere a person will actually notice it,
+  read it, and remember it exists — which matters for a file whose whole
+  purpose is being read later.
+- **A registry that is backed up backs up the log too.** For a journal source
+  that is a feature, and it costs nothing, because the log stays disposable:
+  see the privacy note below for what it also means.
 
 One file per month, named for the month. Rotation is then a consequence of the
 naming rather than a procedure — nothing renames anything, "what happened
 today" reads one bounded file, and pruning history is `rm 2025-*.jsonl`.
 
-### Why not `ortask.ini`
+Putting the log somewhere else and symlinking `<registry>/log` to it works
+without any support in the code, since the writer only ever opens paths
+underneath it.
 
-`docs/config.md` states one organizing rule: there is exactly one machine-global
-setting, and it is the location of the registry. Adding a `[log]` section would
-break it for something that has a perfectly good default.
+### `log/` is a reserved registry name
 
-So the location is derived, and two environment variables cover the rest:
+The registry's subdirectories are projects, so a new one needs a rule.
+`log/` joins `projects.org` in the reserved list in `docs/config.md`.
+
+`manager.discover_projects()` already ignores it: an entry is a project only
+when it points outward with a symlink, and `log/` holds ordinary files. But
+`pmgr doctor` reports unrecognized subdirectories as notes — it currently says
+`docs: not a project entry, ignored` for the registry this was written against
+— so `doctor` should recognize `log/` and say nothing about it.
+
+If the registry directory does not exist, nothing is logged. Logging never
+creates a registry, and a missing registry is not an error for a command that
+was not otherwise using one.
+
+A different `--registry` is a different log. That is the intended reading: the
+log describes what happened to the projects in one registry.
+
+## Turning it on and off
+
+`ortask.ini` grows one section:
+
+```ini
+[projects]
+registry = ~/Projects
+
+[log]
+enabled = true
+```
+
+Absent means off. A tool that starts writing a new file into someone's registry
+— possibly a version-controlled one — because they upgraded is a tool that
+surprised them. Opting in once is a small price, and the default can be
+revisited after the feature has proved itself.
+
+This is a deliberate exception to `docs/config.md`'s one-setting rule, and that
+document should record it: the *location* of the log is still derived, so the
+exception is one boolean rather than a second path to keep in sync.
+
+Two environment variables override the file, mostly so tests and one-off runs
+never touch a real log:
 
 | Variable | Effect |
 |---|---|
-| `ORTASK_LOG` | `off`, `write` (default), or `activity`. |
-| `ORTASK_LOG_DIR` | Overrides the directory. Exists mainly so tests never touch a real log. |
+| `ORTASK_LOG` | `off` or `on`. Beats `ortask.ini`. |
+| `ORTASK_LOG_DIR` | Writes the log here instead of `<registry>/log/`. |
 
-If a future setting genuinely needs to be per-project, the registry index
-(`projects.org`) already has a place for it.
+### Per project, later
+
+The eventual shape is per-project control, because "log my work projects, not
+my personal ones" is the realistic want. The registry index is where it goes,
+in the property drawer `docs/ptui.md` specifies for each project section:
+
+```org
+* [#A] ortask
+:PROPERTIES:
+:DESCRIPTION: Org-backed task and project tools
+:LOG: off
+:END:
+```
+
+Absent means "follow the global setting"; `off` and `on` override it. Reading
+one more property from a file `cdproj` already reads costs nothing.
+
+`ptui`'s metadata workspace (`m`, per `docs/ptui.md`) is the right place to
+toggle it — it is already a bounded editor for exactly these per-project
+fields, with buffered edits and one atomic bounded rewrite. A setting the user
+can see and flip next to the project's description is a setting they will
+actually use, unlike one that lives in a file they have to remember the name
+of.
+
+The global switch is where this starts, not where it ends.
 
 ## Writing mechanics
 
@@ -242,21 +321,49 @@ something needs it.
 
 ## Privacy
 
-Task titles land in a plaintext file under `~/.local/state`. That is the same
-exposure as the Org files themselves, in a place a person is less likely to
-think about. `ORTASK_LOG=off` disables the whole mechanism, and the monthly
-files can be deleted at any time with no effect on the tools.
+Task titles land in a plaintext file in the registry. That is roughly the same
+exposure as the Org files themselves, with one new consequence worth stating
+plainly: **a registry that is a git repository will offer to commit the log.**
+The registry this was written against is one.
+
+So a registry under version control should decide deliberately. Either add one
+line:
+
+```gitignore
+log/
+```
+
+or track it on purpose, the same choice `docs/config.md` describes for
+`projects.org`. Tracking it is defensible — a record of what you did, synced
+between machines, is a coherent thing to want — as long as it is a decision
+rather than an accident of `git add -A`.
+
+`[log] enabled = false`, or `ORTASK_LOG=off`, disables the mechanism entirely,
+and the monthly files can be deleted at any time with no effect on the tools.
+
+## Someday: entries a person writes
+
+`ort log "spent the morning on the export path"` would put a note into the same
+stream, as an event with no task and a `note` verb. It costs almost nothing —
+the writer already exists, and the schema already allows an event without a
+`task` — and it closes the gap where the interesting part of a day was thinking
+rather than closing tasks.
+
+It is a someday-maybe rather than part of the first iteration. Worth keeping
+the schema compatible with it in the meantime, which the current shape already
+is.
 
 ## Open questions
 
-- Should `repair` and `doctor` log their findings? They change nothing, but "the
-  registry was broken on Tuesday" is the kind of thing worth being able to look
-  up.
-- Should a project be able to opt out of logging, and if so, where does that
-  setting live? The registry index is the obvious home, at the cost of making
-  the log path read a second file.
-- Is `activity` one level or two? Directory-stack changes and project-navigator
-  opens are both navigation, but only the first is a deliberate act.
-- Should `ort log` be able to write a `* Log` section back into a task file, for
-  people who want the record in Org rather than in a state directory? That
-  reverses the disposability rule and needs its own argument.
+- Should `repair` and `doctor` findings be logged? Both are read-only reports
+  today, so by the rule above neither writes an event. But "the registry was
+  broken on Tuesday" is worth being able to look up. This is entangled with a
+  naming question that deserves settling first: `ort repair` and `pmgr doctor`
+  are the same kind of command — check a thing, report what is wrong — on two
+  different subjects, with two unrelated names, and `repair` does not currently
+  repair anything. Whether both verbs should exist, and what they should be
+  called, is its own task.
+- How much of a multi-task command belongs in one event? One event per task
+  with a shared `session` is specified above, which makes `ort archive` of
+  twenty tasks twenty lines. A journal summarizes them back into one bullet
+  anyway.
