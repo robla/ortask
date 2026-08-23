@@ -1685,7 +1685,7 @@ class _ProjectBrowser:
         )
 
 
-def project_menu(workspace: Path, display_path: str, include_done: bool) -> int:
+def project_menu(workspace: Path, display_path: str, include_done: bool = False) -> int:
     """Interactive project navigator, with the numbered menu as the fallback."""
     if menu.interactive_select_available():
         _ProjectBrowser(workspace, display_path, include_done).run()
@@ -1737,7 +1737,7 @@ def cmd_interactive(args: argparse.Namespace) -> int:
     if not workspace.is_dir():
         print(f"project directory not found: {workspace}", file=sys.stderr)
         return 1
-    return project_menu(workspace, display_path, include_done=not args.todo_only)
+    return project_menu(workspace, display_path)
 
 
 def cmd_list(args: argparse.Namespace) -> int:
