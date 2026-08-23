@@ -41,7 +41,15 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 import orglib  # noqa: E402 — after the sys.path insert above
-from ortasklib import core, log as eventlog, manager, menu, taskui, viewstate
+from ortasklib import (
+    core,
+    log as eventlog,
+    manager,
+    menu,
+    taskui,
+    viewstate,
+    viewui,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +64,31 @@ from ortasklib import core, log as eventlog, manager, menu, taskui, viewstate
 PROJECT_SORT_ACTION = menu.MenuAction(
     "sort", "s", "Cycle project sorting: Priority, Alphabetical, and Modified"
 )
+PROJECT_FILTER_LABELS = {
+    manager.PROJECT_FILTER_ALL: "",
+    manager.PROJECT_FILTER_OPEN: "open only",
+}
+PROJECT_SORT_LABELS = {
+    manager.PROJECT_SORT_PRIORITY: "Priority",
+    manager.PROJECT_SORT_ALPHABETICAL: "Alphabetical",
+    manager.PROJECT_SORT_MODIFIED: "Modified",
+}
+#: What each order's two directions actually mean. A Boolean "reversed" tells a
+#: reader nothing about what will be at the top; these words do.
+PROJECT_SORT_DIRECTIONS = {
+    manager.PROJECT_SORT_PRIORITY: ("highest first", "lowest first"),
+    manager.PROJECT_SORT_ALPHABETICAL: ("A-Z", "Z-A"),
+    manager.PROJECT_SORT_MODIFIED: ("newest first", "oldest first"),
+}
+PROJECT_VIEW_AXES = viewstate.ViewAxes(
+    manager.PROJECT_FILTERS,
+    manager.PROJECT_SORT_MODES,
+    PROJECT_FILTER_LABELS,
+    PROJECT_SORT_LABELS,
+    directions=PROJECT_SORT_DIRECTIONS,
+    sort_noun=" sort",
+)
+
 PROJECT_FILTER_ACTION = menu.MenuAction(
     "filter", "C-t", "Show all projects or only those with open tasks"
 )
@@ -65,6 +98,7 @@ PROJECT_MENU_ACTIONS = {
     ),
     "s": PROJECT_SORT_ACTION,
     "c-t": PROJECT_FILTER_ACTION,
+    "v": menu.MenuAction("view", "v", "Open the view options screen"),
     "s-up": menu.MenuAction(
         "priority_up", "Shift+↑", "Raise the highlighted project's priority"
     ),
@@ -87,11 +121,11 @@ def _project_menu_instruction(
     view: "viewstate.ViewState | str", *, dirty: bool = False
 ) -> str:
     if isinstance(view, str):
-        view = viewstate.PROJECT_VIEW_AXES.initial(sort=view)
+        view = PROJECT_VIEW_AXES.initial(sort=view)
     prefix = "FILE MODIFIED · " if dirty else ""
     return (
         f"{prefix}{view.badge()} · ↑↓/jk · S-↑/↓ priority · ↵ open · s sort · "
-        "C-t filter · m metadata · C-s save · C-/ undo · C-r redo · "
+        "C-t filter · v view · m metadata · C-s save · C-/ undo · C-r redo · "
         "C-g help · Esc/b/q exit"
     )
 
@@ -147,28 +181,37 @@ def _project_summary(
     return "  ·  ".join(parts)
 
 
-def _project_tasks(project: manager.Project) -> str:
+def _snapshot(
+    project: manager.Project,
+    snapshots: dict[str, manager.ProjectSnapshot] | None,
+) -> manager.ProjectSnapshot:
+    """This render's reading of one project's task file."""
+    if snapshots is not None and project.name in snapshots:
+        return snapshots[project.name]
+    return manager.read_project_snapshot(project)
+
+
+def _project_tasks(
+    project: manager.Project,
+    snapshot: manager.ProjectSnapshot | None = None,
+) -> str:
     """How much open work a project has — the navigator's reason to exist.
 
     Counts the same top-level tasks ``projmgr.py list`` shows, so the number
-    here and the rows there agree.
+    here and the rows there agree. The count comes from the render's snapshot
+    rather than a fresh parse, so a row cannot disagree with the filter that
+    kept it.
     """
     if project.warning:
         return f"({project.warning})"
-    org_file = manager.canonical_org_file(project)
-    if org_file is None:
+    if manager.canonical_org_file(project) is None:
         return "(no task file)"
-    try:
-        tasks = orglib.parse(org_file.read_text(encoding="utf-8")).tasks()
-    except OSError:
+    reading = snapshot if snapshot is not None else manager.read_project_snapshot(project)
+    if not reading.readable:
         return "(unreadable)"
-    if not tasks:
+    if not reading.total_tasks:
         return "(no tasks)"
-    root_level = min(task.level for task in tasks)
-    open_tasks = sum(
-        1 for task in tasks if task.level == root_level and task.state == "TODO"
-    )
-    return f"{open_tasks} open"
+    return f"{reading.open_tasks} open"
 
 
 def _project_priority(metadata: manager.ProjectMetadata) -> str:
@@ -197,12 +240,14 @@ def _project_metadata_note(
 
 
 def _navigator_row(
-    project: manager.Project, metadata: manager.ProjectMetadata
+    project: manager.Project,
+    metadata: manager.ProjectMetadata,
+    snapshot: manager.ProjectSnapshot | None = None,
 ) -> str:
     """Priority, name, workload, and description for one interactive row."""
     prefix = (
         f"[{_project_priority(metadata)}] {project.name:<12}  "
-        f"{_project_tasks(project):<14}"
+        f"{_project_tasks(project, snapshot):<14}"
     )
     suffix = "  ".join(
         part
@@ -216,10 +261,14 @@ def _navigator_row(
 
 
 def _navigator_dashboard_detail(
-    project: manager.Project, metadata: manager.ProjectMetadata
+    project: manager.Project,
+    metadata: manager.ProjectMetadata,
+    snapshot: manager.ProjectSnapshot | None = None,
 ) -> str:
     """Fallback rows carry context that the highlight summary normally supplies."""
-    parts = [f"{_project_location(project)}  ({_project_tasks(project)})"]
+    parts = [
+        f"{_project_location(project)}  ({_project_tasks(project, snapshot)})"
+    ]
     if metadata.description:
         parts.append(metadata.description)
     note = _project_metadata_note(project, metadata)
@@ -293,6 +342,7 @@ def _project_rows(
     projects: list[manager.Project],
     listing: _ProjectListing,
     metadata: dict[str, manager.ProjectMetadata] | None = None,
+    snapshots: dict[str, manager.ProjectSnapshot] | None = None,
 ) -> list[menu.MenuRow]:
     metadata = metadata or {}
     return [
@@ -303,6 +353,7 @@ def _project_rows(
                 _navigator_row(
                     project,
                     metadata.get(project.name, manager.ProjectMetadata()),
+                    _snapshot(project, snapshots),
                 )
                 if listing.metadata_rows
                 else f"{project.name:<12}  {listing.detail(project)}"
@@ -317,6 +368,7 @@ def _print_project_dashboard(
     display_path: str,
     listing: _ProjectListing,
     metadata: dict[str, manager.ProjectMetadata] | None = None,
+    snapshots: dict[str, manager.ProjectSnapshot] | None = None,
 ) -> None:
     metadata = metadata or {}
     if listing.metadata_rows:
@@ -327,7 +379,11 @@ def _print_project_dashboard(
                 menu.ProjectRow(
                     index + 1,
                     f"[{_project_priority(project_metadata)}] {project.name}",
-                    _navigator_dashboard_detail(project, project_metadata),
+                    _navigator_dashboard_detail(
+                        project,
+                        project_metadata,
+                        _snapshot(project, snapshots),
+                    ),
                 )
             )
     else:
@@ -367,11 +423,12 @@ def _project_view(
     back_help: str | None = None,
     actions: dict | None = None,
     metadata: dict[str, manager.ProjectMetadata] | None = None,
+    snapshots: dict[str, manager.ProjectSnapshot] | None = None,
     selected_index: int = 0,
     on_resume=None,
 ) -> menu.MenuView:
     view = menu.MenuView(
-        rows=_project_rows(projects, listing, metadata),
+        rows=_project_rows(projects, listing, metadata, snapshots),
         on_result=handle,
         title=listing.title,
         title_right=f"Registry: {display_path}",
@@ -404,7 +461,7 @@ class _ProjectBrowser:
         self.display_path = display_path
         self.include_done = include_done
         #: What the project list shows and in what order.
-        self.view_state = viewstate.PROJECT_VIEW_AXES.initial()
+        self.view_state = PROJECT_VIEW_AXES.initial()
         self.session: menu.InlineMenuSession | None = None
         self.index_buffer: taskui.OrgBuffer | None = None
         self.index_error: str | None = None
@@ -433,15 +490,47 @@ class _ProjectBrowser:
     def sort_mode(self, mode: str) -> None:
         self.view_state = self.view_state.with_sort(mode)
 
+    def _save_index_from_screen(self, session: menu.InlineMenuSession) -> None:
+        """What ``C-s`` means everywhere in the navigator, screens included.
+
+        Unlike the list's own save this leaves the current view in place: the
+        key wrote the file, which is no reason to close the screen the user is
+        working in.
+        """
+        if self.index_buffer is None:
+            session.set_transient_message(
+                self.index_error or "projects.org is not available for editing"
+            )
+            return
+        saved, message = self._save_index_changes()
+        if not saved:
+            if self.index_conflicts:
+                session.push_view(self._conflict_view(parent_is_save=False))
+            else:
+                session.set_transient_message(message)
+            return
+        session.set_message(message)
+
     def _ordered(
         self,
         projects: list[manager.Project],
         metadata: dict[str, manager.ProjectMetadata],
+        snapshots: dict[str, manager.ProjectSnapshot],
     ) -> list[manager.Project]:
-        """Filter, then order — one place, so every render agrees."""
-        kept = manager.filter_projects(projects, self.view_state.filter)
+        """Filter, then order — one place and one snapshot, so a render agrees.
+
+        Every question a render asks about a project's task file is answered
+        from ``snapshots``, which read it once.
+        """
+        kept = manager.filter_projects(
+            projects, self.view_state.filter, snapshots=snapshots
+        )
         return manager.sort_projects(
-            kept, metadata, self.view_state.sort, reverse=self.view_state.reverse
+            kept,
+            metadata,
+            self.view_state.sort,
+            reverse=self.view_state.reverse,
+            snapshots=snapshots,
         )
 
     def _metadata(
@@ -1196,7 +1285,8 @@ class _ProjectBrowser:
     ) -> menu.MenuView:
         discovered = manager.discover_projects(self.workspace)
         metadata = self._metadata(discovered)
-        projects = self._ordered(discovered, metadata)
+        snapshots = manager.snapshot_projects(discovered)
+        projects = self._ordered(discovered, metadata, snapshots)
 
         def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
             project = self._selected_project(projects, result.index)
@@ -1211,6 +1301,26 @@ class _ProjectBrowser:
                 self._replace_view(session, project, fallback)
                 session.set_transient_message(
                     f"Showing: {self.view_state.filter_label or 'all projects'}"
+                )
+                return
+            if result.action == "view":
+                def apply_view(
+                    _inner: menu.InlineMenuSession,
+                    revised: viewstate.ViewState,
+                ) -> None:
+                    # The list below rebuilds from this when the screen is
+                    # popped; nothing to redraw while it is covered.
+                    self.view_state = revised
+
+                session.push_view(
+                    viewui.view_options_screen(
+                        self.view_state,
+                        apply_view,
+                        title="View options: project navigator",
+                        save=self._save_index_from_screen,
+                        save_help="Save buffered project metadata to projects.org",
+                        title_right=f"Registry: {self.display_path}",
+                    )
                 )
                 return
             if result.action == "save":
@@ -1329,6 +1439,7 @@ class _ProjectBrowser:
             select_help="Open the highlighted project",
             actions=PROJECT_MENU_ACTIONS,
             metadata=metadata,
+            snapshots=snapshots,
             selected_index=_anchor_index(projects, selected_name, fallback_index),
             on_resume=resume,
         )
@@ -1524,17 +1635,21 @@ def project_menu(workspace: Path, display_path: str, include_done: bool) -> int:
         _ProjectBrowser(workspace, display_path, include_done).run()
         return 0
 
-    view = viewstate.PROJECT_VIEW_AXES.initial()
+    view = PROJECT_VIEW_AXES.initial()
     while True:
         discovered = manager.discover_projects(workspace)
         metadata = manager.read_project_metadata(workspace, discovered)
+        snapshots = manager.snapshot_projects(discovered)
         projects = manager.sort_projects(
-            manager.filter_projects(discovered, view.filter),
+            manager.filter_projects(discovered, view.filter, snapshots=snapshots),
             metadata,
             view.sort,
             reverse=view.reverse,
+            snapshots=snapshots,
         )
-        _print_project_dashboard(projects, display_path, NAVIGATOR, metadata)
+        _print_project_dashboard(
+            projects, display_path, NAVIGATOR, metadata, snapshots
+        )
         try:
             choice = menu.prompt_text(
                 f"{view.badge()}; number, s=sort, t=filter, Esc/q=quit"

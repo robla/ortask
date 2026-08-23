@@ -46,7 +46,7 @@ except ImportError:  # pragma: no cover - optional interactive dependency
     Window = None
     TextArea = None
 
-from . import core, log as eventlog, menu, tasks, viewstate
+from . import core, log as eventlog, menu, tasks, viewstate, viewui
 from .manager import Project, canonical_org_file, friendly_path
 
 
@@ -194,7 +194,7 @@ def load_menu_items(
         filtered = [
             task
             for task in task_items
-            if viewstate.task_state_matches(task.state, mode)
+            if task_state_matches(task.state, mode)
         ]
         return [
             MenuItem(
@@ -218,7 +218,7 @@ def _filter_menu_items(
         item
         for item in items
         if item.task is not None
-        and viewstate.task_state_matches(item.task.state, mode)
+        and task_state_matches(item.task.state, mode)
     ]
 
 
@@ -311,12 +311,51 @@ def _nearest_visible_task_id(
     return None
 
 
-TASK_FILTERS = viewstate.TASK_FILTERS
+TASK_FILTER_ALL = "all"
+TASK_FILTER_TODO = "todo"
+TASK_FILTER_DONE = "done"
+TASK_FILTERS = (TASK_FILTER_ALL, TASK_FILTER_TODO, TASK_FILTER_DONE)
+
+#: The third position selects every terminal state, so it cannot be spelled
+#: ``DONE``: a ``MOOT`` or ``SUPERSEDED`` task appears under it too. The badge
+#: has one line to spend, so it says ``DONE+`` and contextual help names all
+#: three.
+TASK_FILTER_LABELS = {
+    TASK_FILTER_ALL: "all",
+    TASK_FILTER_TODO: "TODO",
+    TASK_FILTER_DONE: "DONE+",
+}
+TASK_TERMINAL_FILTER_DESCRIPTION = ", ".join(sorted(core.TERMINAL_STATES))
+
+#: ``t0039.5`` adds sibling-scoped orders here. Until then the task list has a
+#: sort axis with one position, which is not a choice and so is not offered —
+#: and file order is not reversible, because it is what keeps children under
+#: their parents.
+TASK_SORT_FILE = "file"
+TASK_SORTS = (TASK_SORT_FILE,)
+
+TASK_VIEW_AXES = viewstate.ViewAxes(
+    TASK_FILTERS,
+    TASK_SORTS,
+    TASK_FILTER_LABELS,
+    {TASK_SORT_FILE: ""},
+)
+
+
+def task_state_matches(state: str, position: str) -> bool:
+    """Whether one task state belongs in a filtered task list."""
+    if position == TASK_FILTER_TODO:
+        return state == "TODO"
+    if position == TASK_FILTER_DONE:
+        return state in core.TERMINAL_STATES
+    if position == TASK_FILTER_ALL:
+        return True
+    raise ValueError(f"unknown filter position: {position}")
 
 
 def _task_filter_mode(include_done: bool, filter_mode: str | None = None) -> str:
     if filter_mode is None:
-        return viewstate.FILTER_ALL if include_done else viewstate.FILTER_TODO
+        return TASK_FILTER_ALL if include_done else TASK_FILTER_TODO
     normalized = filter_mode.lower()
     if normalized not in TASK_FILTERS:
         raise ValueError(f"unknown task filter: {filter_mode}")
@@ -331,9 +370,7 @@ def task_view(
     The sort axis has one position until ``t0039.5`` gives the tree a
     sibling-scoped order, so nothing here offers ``s`` yet.
     """
-    return viewstate.TASK_VIEW_AXES.initial(
-        _task_filter_mode(include_done, filter_mode)
-    )
+    return TASK_VIEW_AXES.initial(_task_filter_mode(include_done, filter_mode))
 
 
 def _next_task_filter(filter_mode: str) -> str:
@@ -572,7 +609,7 @@ def _task_menu_instruction(filter_mode: str) -> str:
     return (
         f"{task_view(True, filter_mode).badge()} · ↑↓/jk move · Tab fold · "
         "←/→ tree · S-Tab all · ↵ open · C-g help · "
-        "C-s save · C-/ undo · C-r redo · C-t filter · Esc/b/q back"
+        "C-s save · C-/ undo · C-r redo · C-t filter · v view · Esc/b/q back"
     )
 
 
@@ -617,8 +654,12 @@ TASK_MENU_ACTIONS = {
     "e": _EDIT_MENU_ACTION,
     "p": _PICK_PRIORITY_ACTION,
     "c-t": menu.MenuAction(
-        "filter", "C-t", "Cycle visibility through all, TODO, and DONE+MOOT"
+        "filter",
+        "C-t",
+        "Cycle visibility: all, TODO, then "
+        f"DONE+ ({TASK_TERMINAL_FILTER_DESCRIPTION})",
     ),
+    "v": menu.MenuAction("view", "v", "Open the view options screen"),
     "s-left": _TOGGLE_MENU_ACTION,
     "s-right": _TOGGLE_MENU_ACTION,
     "s-up": _RAISE_PRIORITY_ACTION,
@@ -865,7 +906,7 @@ class InteractiveTaskController:
     ) -> None:
         self.project = project
         self.buf = buf
-        self.filter_mode = _task_filter_mode(include_done)
+        self.view_state = task_view(include_done)
         self.expanded_task_ids: set[str] = set()
         self.session: menu.InlineMenuSession | None = None
 
@@ -889,8 +930,31 @@ class InteractiveTaskController:
         self.session = session
         session.push_view(self.initial_view())
 
+    @property
+    def filter_mode(self) -> str:
+        """The active filter position, under the name the task list already uses."""
+        return self.view_state.filter
+
+    @filter_mode.setter
+    def filter_mode(self, position: str) -> None:
+        self.view_state = self.view_state.with_filter(position)
+
     def _buffer_status(self) -> str:
         return buffer_status(self.buf)
+
+    def _save_buffer(self, session: menu.InlineMenuSession) -> None:
+        """What ``C-s`` means everywhere in this task context, screens included."""
+        changed = self.buf.dirty
+        try:
+            self.buf.save()
+        except BufferChangedError as exc:
+            session.set_transient_message(str(exc))
+            return
+        session.set_message(
+            f"Saved changes to {self.buf.path.name}"
+            if changed
+            else f"Saved {self.buf.path.name} (unchanged)"
+        )
 
     def _file_context(self) -> str:
         return f"File: {friendly_path(self.buf.path.resolve())}"
@@ -1168,8 +1232,27 @@ class InteractiveTaskController:
             )
             return
         if result.action == "filter":
-            self.filter_mode = _next_task_filter(self.filter_mode)
+            self.view_state = self.view_state.next_filter()
             session.replace_view(self._task_view(selected_id, fallback))
+            return
+        if result.action == "view":
+            def apply_view(
+                _inner: menu.InlineMenuSession, revised: viewstate.ViewState
+            ) -> None:
+                # The list below rebuilds from this on resume; nothing to redraw
+                # while the screen covers it.
+                self.view_state = revised
+
+            session.push_view(
+                viewui.view_options_screen(
+                    self.view_state,
+                    apply_view,
+                    title=f"View options: {self.project.name} tasks",
+                    save=self._save_buffer,
+                    save_help=f"Save the entire {self.buf.path.name} file",
+                    title_right=self._file_context(),
+                )
+            )
             return
         if item is None:
             return

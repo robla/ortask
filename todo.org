@@ -486,36 +486,36 @@ badge showing filter and sort together. Fix the =DONE= filter label, which also
 selects =MOOT=. The shipped =DONE+MOOT= label still omits =SUPERSEDED=;
 =t0039.3.4= closes that remaining display gap. Keep the shipped cycle orders;
 existing tests pin them.
-*** TODO [#B] t0039.3 Harden the view-state boundary before adding more UI
+*** DONE [#B] t0039.3 Harden the view-state boundary before adding more UI
 Keep the useful =ViewState=/=ViewAxes= extraction, but make its generic core
 stdlib-only and independent of =core=, task states, projects, Org, and
 =prompt_toolkit=. Each surface should own its domain positions, labels, and
 predicates; =manager= should not depend on badge or form policy. Do not move the
 code to =orglib=. Keep it in-tree until a second application provides evidence
 for a Handrail extraction.
-**** TODO [#B] t0039.3.1 Separate generic state from task and project policy
+**** DONE [#B] t0039.3.1 Separate generic state from task and project policy
 Leave immutable transitions, validation, and generic stable ordering in the
 small shared seam. Move =task_state_matches= and task axes beside task
 presentation; move project axes beside project presentation while keeping
 registry facts and sort/filter mechanics out of TUI code. Add dependency tests
 so the generic layer cannot import =ortasklib.core= or =prompt_toolkit=.
-**** TODO [#B] t0039.3.2 Declare reversible sorts and their user vocabulary
+**** DONE [#B] t0039.3.2 Declare reversible sorts and their user vocabulary
 Replace the unconstrained global reverse switch with an explicit per-sort
 capability. File order is not reversible before sibling-aware tree sorting.
 Give each reversible sort meaningful direction labels, such as newest/oldest
 or A-Z/Z-A, rather than exposing an unexplained Boolean =Reverse= field.
-**** TODO [#B] t0039.3.3 Build one project presentation snapshot per render
+**** DONE [#B] t0039.3.3 Build one project presentation snapshot per render
 Read each project's task summary and modification time at most once per render,
 then reuse that snapshot for filtering, sorting, row counts, and diagnostics.
 Do not let =open only= add a second Org parse per project or let Modified sort
 stat the same file in separate primary and availability passes.
-**** TODO [#B] t0039.3.4 Correct the terminal-filter display boundary
+**** DONE [#B] t0039.3.4 Correct the terminal-filter display boundary
 The =done= wire value matches =DONE=, =MOOT=, and =SUPERSEDED=, but the current
 =DONE+MOOT= badge and its test still omit the third state. Use concise =DONE+=
 in the persistent badge and spell out all matched states in contextual help.
 Keep the wire value and cycle order unchanged, and include =SUPERSEDED= in the
 regression fixture so the test proves both selection and truthful labeling.
-*** TODO [#B] t0039.4 Build and wire the View Options screen
+*** DONE [#B] t0039.4 Build and wire the View Options screen
 Add =v= to the prompt_toolkit task and project lists as the discoverable,
 explicit companion to the quick toggles. Keep its adapter separate from
 =viewstate.py= and avoid enlarging =menu.py=; a small provisional =viewui.py= is

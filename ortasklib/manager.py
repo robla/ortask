@@ -751,10 +751,17 @@ class ProjectMetadata:
     warning: str | None = None
 
 
-PROJECT_SORT_PRIORITY = viewstate.SORT_PRIORITY
-PROJECT_SORT_ALPHABETICAL = viewstate.SORT_ALPHABETICAL
-PROJECT_SORT_MODIFIED = viewstate.SORT_MODIFIED
-PROJECT_SORT_MODES = viewstate.PROJECT_SORTS
+PROJECT_SORT_PRIORITY = "priority"
+PROJECT_SORT_ALPHABETICAL = "alphabetical"
+PROJECT_SORT_MODIFIED = "modified"
+PROJECT_SORT_MODES = (
+    PROJECT_SORT_PRIORITY,
+    PROJECT_SORT_ALPHABETICAL,
+    PROJECT_SORT_MODIFIED,
+)
+PROJECT_FILTER_ALL = "all"
+PROJECT_FILTER_OPEN = "open"
+PROJECT_FILTERS = (PROJECT_FILTER_ALL, PROJECT_FILTER_OPEN)
 _PROJECT_PRIORITY_RANK = {"A": 0, "B": 1, "C": 2}
 PROJECT_PRIORITY_SCALE = (None, "C", "B", "A")
 
@@ -786,16 +793,79 @@ def project_priority_sort_key(
     return project_priority_rank(metadata), *project_name_sort_key(project)
 
 
-def project_modified_ns(project: Project) -> int | None:
-    """The canonical task file's modification time, or ``None`` if unreadable."""
+@dataclass(frozen=True)
+class ProjectSnapshot:
+    """One project's task file as a render saw it: counts and mtime, read once.
+
+    Filtering, ordering, row text, and diagnostics all want the same two facts
+    about the same file. Reading it per question means parsing and stating the
+    same Org file several times per keystroke, and worse, lets one render
+    disagree with itself if the file changes midway.
+    """
+
+    open_tasks: int | None = None
+    total_tasks: int | None = None
+    modified_ns: int | None = None
+
+    @property
+    def readable(self) -> bool:
+        return self.open_tasks is not None
+
+    @property
+    def unavailable(self) -> int:
+        """1 when the task file cannot be read, so it can be kept last."""
+        return 0 if self.modified_ns is not None else 1
+
+
+def read_project_snapshot(project: Project) -> ProjectSnapshot:
+    """Open one project's task file once and answer everything a render asks."""
+    if project.warning:
+        return ProjectSnapshot()
     try:
         org_file = canonical_org_file(project)
-        if org_file is None:
-            return None
-        with org_file.open("rb") as stream:
-            return os.fstat(stream.fileno()).st_mtime_ns
     except (OSError, RuntimeError):
-        return None
+        return ProjectSnapshot()
+    if org_file is None:
+        return ProjectSnapshot()
+    try:
+        with org_file.open("rb") as stream:
+            modified_ns = os.fstat(stream.fileno()).st_mtime_ns
+            text = stream.read().decode("utf-8")
+    except (OSError, RuntimeError, UnicodeError):
+        return ProjectSnapshot()
+    try:
+        parsed = orglib.parse(text).tasks()
+    except ValueError:
+        return ProjectSnapshot(modified_ns=modified_ns)
+    if not parsed:
+        return ProjectSnapshot(0, 0, modified_ns)
+    root_level = min(task.level for task in parsed)
+    top_level = [task for task in parsed if task.level == root_level]
+    return ProjectSnapshot(
+        sum(1 for task in top_level if task.state == "TODO"),
+        len(top_level),
+        modified_ns,
+    )
+
+
+def snapshot_projects(
+    projects: list[Project] | tuple[Project, ...],
+) -> dict[str, ProjectSnapshot]:
+    """One snapshot per project, for one render."""
+    return {project.name: read_project_snapshot(project) for project in projects}
+
+
+def _snapshot_for(
+    project: Project, snapshots: dict[str, ProjectSnapshot] | None
+) -> ProjectSnapshot:
+    if snapshots is None:
+        return read_project_snapshot(project)
+    return snapshots.get(project.name) or ProjectSnapshot()
+
+
+def project_modified_ns(project: Project) -> int | None:
+    """The canonical task file's modification time, or ``None`` if unreadable."""
+    return read_project_snapshot(project).modified_ns
 
 
 def project_unavailable(project: Project) -> int:
@@ -804,15 +874,16 @@ def project_unavailable(project: Project) -> int:
     Kept out of the recency axis on purpose: reversing the order must not
     promote the projects a reader can learn the least from.
     """
-    return 1 if project_modified_ns(project) is None else 0
+    return read_project_snapshot(project).unavailable
 
 
 def project_modified_sort_key(project: Project) -> tuple[int, int, str, str]:
     """Newest canonical task file first; unavailable files sort last."""
-    modified_ns = project_modified_ns(project)
-    unavailable = 1 if modified_ns is None else 0
-    newest_first = -modified_ns if modified_ns is not None else 0
-    return unavailable, newest_first, *project_name_sort_key(project)
+    snapshot = read_project_snapshot(project)
+    newest_first = (
+        -snapshot.modified_ns if snapshot.modified_ns is not None else 0
+    )
+    return snapshot.unavailable, newest_first, *project_name_sort_key(project)
 
 
 def task_file_mirror_mismatch(
@@ -844,6 +915,7 @@ def sort_projects(
     mode: str,
     *,
     reverse: bool = False,
+    snapshots: dict[str, ProjectSnapshot] | None = None,
 ) -> list[Project]:
     """Return projects in one of the navigator's non-mutating display orders.
 
@@ -870,9 +942,13 @@ def sort_projects(
     if mode == PROJECT_SORT_MODIFIED:
         return viewstate.order_by(
             projects,
-            primary=lambda project: -(project_modified_ns(project) or 0),
+            primary=lambda project: -(
+                _snapshot_for(project, snapshots).modified_ns or 0
+            ),
             tiebreak=project_name_sort_key,
-            unavailable=project_unavailable,
+            unavailable=lambda project: _snapshot_for(
+                project, snapshots
+            ).unavailable,
             reverse=reverse,
         )
     raise ValueError(f"unknown project sort mode: {mode}")
@@ -892,24 +968,17 @@ def top_level_task_counts(project: Project) -> tuple[int, int] | None:
     Counts the same top-level tasks ``projmgr.py list`` shows, so the navigator
     row, the project filter, and that listing never disagree.
     """
-    if project.warning:
+    snapshot = read_project_snapshot(project)
+    if not snapshot.readable:
         return None
-    org_file = canonical_org_file(project)
-    if org_file is None:
-        return None
-    try:
-        tasks = orglib.parse(org_file.read_text(encoding="utf-8")).tasks()
-    except OSError:
-        return None
-    if not tasks:
-        return 0, 0
-    root_level = min(task.level for task in tasks)
-    top_level = [task for task in tasks if task.level == root_level]
-    return sum(1 for task in top_level if task.state == "TODO"), len(top_level)
+    return snapshot.open_tasks, snapshot.total_tasks
 
 
 def filter_projects(
-    projects: list[Project] | tuple[Project, ...], mode: str
+    projects: list[Project] | tuple[Project, ...],
+    mode: str,
+    *,
+    snapshots: dict[str, ProjectSnapshot] | None = None,
 ) -> list[Project]:
     """Hide only what the navigator can prove is quiet.
 
@@ -917,14 +986,14 @@ def filter_projects(
     ``docs/ptui.md`` requires warnings to survive filtering, and a project that
     cannot be read is not a project with nothing left to do.
     """
-    if mode == viewstate.FILTER_ALL:
+    if mode == PROJECT_FILTER_ALL:
         return list(projects)
-    if mode != viewstate.FILTER_OPEN:
+    if mode != PROJECT_FILTER_OPEN:
         raise ValueError(f"unknown project filter: {mode}")
     kept = []
     for project in projects:
-        counts = top_level_task_counts(project)
-        if counts is None or counts[0] > 0:
+        snapshot = _snapshot_for(project, snapshots)
+        if not snapshot.readable or snapshot.open_tasks > 0:
             kept.append(project)
     return kept
 

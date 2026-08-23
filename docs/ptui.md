@@ -52,13 +52,17 @@ Priority and Alphabetical were implemented by `t0035.2`; `t0035.5` adds
 Modified to the same cycle. Help derives its description from the implemented
 mode ring.
 
-The sort implementation can invert a mode's primary axis without inverting its
+The sort implementation inverts a mode's primary axis without inverting its
 tie-break or availability rule: an unreadable task file stays at the bottom of
-a reversed Modified list, and project-name ties stay ascending. No key exposes
-direction yet. Before one does, `t0039.3` must declare which sorts are
-reversible and give their directions meaningful labels. The planned `v` screen
-then exposes those explicit choices under `t0039.4`, while `s` remains the fast
-sort cycle.
+a reversed Modified list, and project-name ties stay ascending. Each order
+declares the words for its two ends rather than a Boolean — `highest first` /
+`lowest first`, `A-Z` / `Z-A`, `newest first` / `oldest first` — and the `v`
+screen is where direction is chosen, while `s` remains the fast sort cycle.
+
+Every render reads each project's task file once, through
+`manager.snapshot_projects()`. Sorting, filtering, the open-task column, and the
+mirror diagnostics all answer from that one snapshot, so a row cannot contradict
+the filter that kept it.
 
 ## Filtering
 
@@ -67,6 +71,10 @@ tasks, reporting the active view in the same footer badge as the sort mode
 (`open only · Priority sort`). The count is the top-level `TODO` count that
 `projmgr.py list` shows, so the row, the filter, and that listing never
 disagree.
+
+`v` opens the view options screen, where the same filter, the sort mode, and
+direction are each a field. Choices apply as they are made; `C-s` from that
+screen is still an ordinary save of `projects.org` and leaves the screen open.
 
 The filter hides only what the navigator can prove is quiet. A project whose
 task file is missing, broken, or unreadable stays visible: warnings survive

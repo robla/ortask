@@ -5,7 +5,9 @@
 a project registry. In `ortasklib/`, `core.py` provides discovery, `tasks.py`
 owns task queries and edits, `manager.py` owns registry behavior, `log.py` owns
 activity events, `viewstate.py` owns what a list shows and in what order, and
-`menu.py`/`taskui.py` implement the bounded TUI. Peer
+`menu.py`/`viewui.py`/`taskui.py` implement the bounded TUI. `viewstate.py`
+imports only the standard library; task and project policy live beside their
+own presentation. Peer
 `textbuffer.py` owns format-neutral transactional file editing;
 `orglib/` owns Org syntax. Neither imports `ortasklib`. Tests are in `tests/`;
 design context is in `docs/`; shell integration is in `misc/`.

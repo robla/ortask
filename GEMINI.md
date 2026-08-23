@@ -27,7 +27,7 @@ This file provides guidance and repository context for Gemini when working in th
 - `ortask.py` (`ort`): Single task file CLI (the core tool).
 - `projmgr.py` (`pmgr`): Multi-project registry manager (`~/Projects`) and directory stack coordinator. `-i` opens the `ptui` project navigator.
 - `orglib/`: Standalone, stdlib-only Org syntax and parsing package (`syntax.py`, `__init__.py`).
-- `ortasklib/`: Shared support package: `core.py` (discovery, IDs, atomic writes), `tasks.py` (queries, validation, surgical edits), `manager.py` (registry discovery, config, index), `menu.py` (bounded inline TUI), `viewstate.py` (shared filter/sort/direction model), and `taskui.py` (interactive task workspace).
+- `ortasklib/`: Shared support package: `core.py` (discovery, IDs, atomic writes), `tasks.py` (queries, validation, surgical edits), `manager.py` (registry discovery, config, index), `menu.py` (bounded inline TUI), `viewstate.py` (stdlib-only filter/sort/direction model), `viewui.py` (the `v` view options screen), and `taskui.py` (interactive task workspace).
 - `misc/`: Shell integration (`cdproj.func.sh`, `ortask-completion.bash`, `projmgr.aliases.sh`).
 - `todo.org`: The repository's active task tracking file.
 - `tests/test_ortask_suite.py`: Comprehensive pytest test suite and refactor gate.

@@ -34,6 +34,7 @@ ortasklib/
   menu.py
   taskui.py
   viewstate.py
+  viewui.py
 ortask.py
 projmgr.py
 ```
@@ -47,17 +48,18 @@ scripts are later moved under `bin/` or renamed, the package can be renamed to
 ## Dependency Graph
 
 ```text
+viewstate (stdlib only)
+
 orglib <- core <- tasks
-               <- manager
-               <- viewstate (transitional core dependency)
+               <- manager -----> viewstate
 
 menu <--------- taskui ---------> textbuffer.py
-                  |  \
-                  |   +--------> viewstate
-                  +------------> manager
+  ^               |  \
+  |               |   +--------> viewstate
+  +--- viewui <---+   +--------> manager
 
 ortask.py ---------------------> core / tasks / taskui
-projmgr.py --------------------> manager / menu / taskui / viewstate
+projmgr.py --------------------> manager / menu / taskui / viewstate / viewui
 ```
 
 No script imports another script. `orglib` sits at the bottom and imports
@@ -68,23 +70,29 @@ format-neutral buffer from `textbuffer.py`. `textbuffer.py` imports only the
 standard library; callers inject atomic writing, auto-save location, and save
 notification.
 
-### Presentation-state seam
+### Presentation state
 
-`t0039.1` introduced `viewstate.py` for immutable filter/sort/direction state,
-labels, and stable primary-axis ordering. A focused module is preferable to
-adding more conditionals to `manager.py`, `taskui.py`, or the already-large
-`menu.py`, but its current dependency boundary is transitional: it imports
-`core` for task-state policy, declares both task and project positions, and is
-imported by `manager` for project ordering.
+`t0039.1` introduced `viewstate.py` for immutable filter/sort/direction state
+and stable primary-axis ordering; `t0039.3` made its boundary real. A focused
+module is preferable to adding more conditionals to `manager.py`, `taskui.py`,
+or the already-large `menu.py`, and the split now runs:
 
-As a prerequisite to the planned View Options screen, keep the generic state
-machinery dependency-free and move domain policy to its owner: task-state
-predicates belong with task presentation, project sort/filter policy belongs
-with project presentation, and each surface declares its own axes and labels.
-`viewstate.py` must not import `prompt_toolkit`, parse Org, read files, or become
-a general dumping ground for list policy. It is not `orglib` material. If
-another application later needs the same model, that is evidence for extracting
-it into Handrail; one ortask consumer is not.
+- `viewstate.py` imports only the standard library. Not `core`, not `orglib`,
+  not `prompt_toolkit`. A subprocess test blocks all three at the meta-path, so
+  a convenience import added later fails there instead of quietly turning the
+  module back into a hub for list policy.
+- Domain policy lives with its owner. Task filter positions, their labels, and
+  `task_state_matches` are in `taskui.py`; project axes, labels, and direction
+  words are in `projmgr.py`. `manager` keeps the sort and filter mechanics and
+  imports `viewstate` only for `order_by`.
+- `viewui.py` is the prompt_toolkit adapter for the `v` screen, so view policy
+  lands in neither `viewstate.py` nor `menu.py`. It is provisional: a second
+  kind of settings screen is what would show its real shape.
+
+`viewstate.py` must not parse Org, read files, or become a general dumping
+ground for list policy. It is not `orglib` material. If another application
+later needs the same model, that is evidence for extracting it into Handrail;
+one ortask consumer is not.
 
 `manager` and `projmgr.py` also import `orglib` directly, for the read paths
 already routed through the `Document` boundary. That is the direction new

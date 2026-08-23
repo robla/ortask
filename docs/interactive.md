@@ -38,7 +38,8 @@ the registry's `projects.org`. It starts in priority-then-name order and `s`
 cycles Priority, Alphabetical, and Modified while keeping the highlight anchored
 to the same project. `C-t` cycles the project filter between every project and
 only those with open tasks; a project whose task file cannot be read stays
-visible either way. Both controls run off the shared view state in
+visible either way. `v` opens a view options screen over the same axes plus sort
+direction. All of it runs off the shared view state in
 `ortasklib/viewstate.py`, and the active view is always named in the footer. `m`
 opens the metadata workspace, including explicit `TASK_FILE` mirror diagnostics
 and refresh. Shift-Up/Down changes the selected project's priority in a
@@ -63,7 +64,8 @@ The task selector has two modes, chosen automatically by
   Shift-Up/Down raises or lowers its priority; `p` opens an explicit priority
   picker; `C-/` undoes one logical task edit; `C-r` redoes it; `C-s` saves the
   Org file and clears that history; `C-t` cycles the visibility filter (`all ->
-  TODO -> DONE+MOOT`); `e` opens the editor at the highlighted task's line;
+  TODO -> DONE+`, whose third position matches every terminal state); `v` opens
+  the view options screen; `e` opens the editor at the highlighted task's line;
   `C-g` opens contextual command help; and `Esc`, `b`, or `q` goes back exactly
   one level. In `projmgr.py -i`,
   leaving a task list returns to the project menu; in local `ortask.py -i`, that
@@ -77,11 +79,14 @@ The task selector has two modes, chosen automatically by
   remain fixed; the selector keeps one context row above and below the highlight
   when space permits.
   Selecting a task opens the task workspace described below. Its fields start
-  in navigation mode; Enter explicitly enables text or choice editing.
+  in navigation mode; Enter explicitly enables text or choice editing. The view
+  options screen is that same workspace with one field per axis.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved as the scriptable fallback with the
   same `C-t` visibility cycle. It lists the complete filtered hierarchy because
-  it has no persistent cursor or per-task expansion state.
+  it has no persistent cursor or per-task expansion state. The `v` screen is not
+  offered here: numbered mode stays a typed-letter prompt, the way the metadata
+  workspace is also highlight-bar only.
 
 The top-level `projmgr.py -i` project list is the root view of the same bounded
 application. Opening a project pushes its recovery or task view; leaving that
@@ -378,7 +383,7 @@ Recommended task-list bindings:
   new mutation.
 - `C-s` writes the complete Org buffer to disk and starts a new history.
 - `e` opens the current Org file or selected task in the editor.
-- `C-t` cycles the task visibility filter: `all -> TODO -> DONE+MOOT`. This is not
+- `C-t` cycles the task visibility filter: `all -> TODO -> DONE+`. This is not
   an exact Emacs binding, but it keeps `C-c` and `C-x` open for future
   multi-key command families while reserving `/` for search.
 - `C-g` opens contextual help. Although Emacs normally uses `C-g` to quit the
@@ -415,27 +420,38 @@ Future TODO-state guidance:
 
 ### State of the work
 
-`t0039.1` and `t0039.2` are done: `ortasklib/viewstate.py` holds the model, both
-surfaces run their quick toggles off it, and `ptui` has the filter it was
-missing. `t0039.3` now hardens the dependency and capability boundaries before
-the `v` screen is added by `t0039.4`. `t0039.3.4` also corrects the current
-`DONE+MOOT` badge, which still omits matched `SUPERSEDED` tasks from its name.
+`t0039.1` through `t0039.4` are done. `ortasklib/viewstate.py` holds the model,
+both surfaces run their quick toggles off it, `ptui` has the filter it was
+missing, and `v` opens the view screen on both. `t0039.5` (sibling-scoped task
+ordering) and `t0039.6` (tag filtering) stay open.
 
-The current model carries a direction Boolean that no key reaches. Project
-sorting honors it correctly, but the model does not yet declare which sorts can
-be reversed or what their two directions mean. In particular, `orti` file order
-must not be reversed before sibling-aware tree sorting exists.
+Direction is reachable now, and it is declared per sort rather than as a global
+Boolean. `ViewAxes.directions` maps each reversible order to the words for its
+two ends — `A-Z`/`Z-A`, `newest first`/`oldest first`,
+`highest first`/`lowest first` — and an order absent from that mapping cannot be
+inverted at all. File order is absent, so `ViewState` refuses a reversed task
+view outright and `with_sort` drops a direction the new order cannot hold. That
+is what keeps children under their parents.
 
-### Keep the model an extraction seam
+### Keep the model generic
 
-Creating a focused module was better than expanding `manager.py`, `taskui.py`,
-or `menu.py`, but the first implementation still mixes generic state with task
-and project policy. Before a screen depends on it, the immutable state and
-ordering helpers should become stdlib-only; task predicates and task axes stay
-with task presentation, while project axes and policy stay with project
-presentation. `viewstate.py` must not import `core`, Org parsing, file I/O, or
-`prompt_toolkit`. Keep it in-tree until a second application makes a Handrail
-extraction more than speculation.
+A focused module was better than expanding `manager.py`, `taskui.py`, or
+`menu.py`, but the first cut still mixed generic state with task and project
+policy. `t0039.3` separated them before the screen was built on top:
+
+- `ortasklib/viewstate.py` is the state machine and stable ordering, and imports
+  nothing but the standard library — not `core`, not Org, not `prompt_toolkit`.
+  A subprocess test blocks all three at the meta-path so a convenience import
+  added later fails there rather than quietly turning it back into a hub.
+- Task filter positions, their labels, and `task_state_matches` live in
+  `taskui.py`, beside task presentation. Project axes, their labels, and their
+  direction words live in `projmgr.py`, beside project presentation. `manager`
+  keeps the sort and filter mechanics and knows nothing about badges or forms.
+- `ortasklib/viewui.py` holds the prompt_toolkit adapter, so `viewstate.py`
+  gains no view policy and `menu.py` gains no branches.
+
+Keep it in-tree until a second application makes a Handrail extraction more than
+speculation.
 
 ### The problem
 
@@ -450,11 +466,11 @@ replaces the quick controls and persistent badge.
 No new key was introduced. Both existing cycles moved onto the shared model and
 each surface gained the one it lacked:
 
-| Key   | Meaning      | `orti`              | `ptui`               |
-|-------|--------------|---------------------|----------------------|
-| `s`   | sort cycle   | not offered yet     | Priority/Alpha/Mod   |
-| `C-t` | filter cycle | all/TODO/DONE+MOOT  | all/open only        |
-| `v`   | view screen  | planned (`t0039.4`) | planned (`t0039.4`)  |
+| Key   | Meaning      | `orti`              | `ptui`                  |
+|-------|--------------|---------------------|-------------------------|
+| `s`   | sort cycle   | not offered yet     | Priority/Alpha/Mod      |
+| `C-t` | filter cycle | all/TODO/DONE+      | all/open only           |
+| `v`   | view screen  | Show                | Show, Order, Direction  |
 
 `ptui`'s project filter hides only what the navigator can prove is quiet. A
 project whose task file is missing, broken, or unreadable stays in the list:
@@ -476,7 +492,7 @@ through — see "What `orti` cannot sort by yet".
 
 Both surfaces already carried a mode word in the instruction line, so the badge
 extends that rather than adding a second status area. It names what is being
-shown and then how it is ordered — `all`, `TODO`, `DONE+MOOT` for tasks;
+shown and then how it is ordered — `all`, `TODO`, `DONE+` for tasks;
 `Priority sort`, `open only · Alphabetical sort`, `Modified sort ↓` for
 projects — and it is present always, not only when the view is non-default. The
 task terminal label becomes `DONE+` under `t0039.3.4`, with help spelling out
@@ -489,43 +505,61 @@ without `s` doing anything.
 
 ### View Options screen (`v`)
 
-Build this screen after the `t0039.3` boundary cleanup. Preserve the shared
-navigation/edit vocabulary, but do not force the feature into `WorkspaceView`
-if its transaction semantics are wrong. Put a small prompt_toolkit adapter in
-its own provisional module rather than adding view policy to `viewstate.py` or
-more branches to `menu.py`.
-
-View choices are session presentation, not file edits. They take effect live;
-Esc returns to the parent list with the chosen view. `C-s` must retain its
-suite-wide meaning of saving the backing Org file or `projects.org` to disk. It
-must never be relabeled as Apply, and view choices must not make the file buffer
-dirty. Enter begins editing a choice and Esc finishes that choice, matching the
-existing field-navigation idiom.
+`v` opens a `menu.WorkspaceView` built by `viewui.choice_screen()`. It reuses
+the workspace's existing vocabulary rather than inventing a second form idiom:
+↑↓ (or Tab) move among fields, `Enter` begins changing the focused one, ←/→
+choose while changing, `Enter` or `Esc` finishes, and `Esc` again returns to the
+list. Space-to-toggle was not adopted.
 
 ```text
-┌─ View options ── ortask ────────────────────────────┐
-│   Show     ◀ open ▶        all · open · closed      │
-│   Order    ◀ file ▶        file · priority · name   │
-│   Direction ◀ newest ▶                              │
-│                                                     │
-│ ↑↓ field · Enter edit · Esc back · C-s save file    │
-└─────────────────────────────────────────────────────┘
+View options: project navigator            Registry: ~/tmpsorta/proj2026
+Showing: open only · Modified sort (oldest first)
+  Show       [open only]
+  Order      ◀ Modified ▶
+  Direction  [oldest first]
+↑↓ field · Enter change · ←/→ choose · C-s save · C-g help · Esc back
 ```
 
-The offered positions differ per surface: `ptui` has no `file` order and no
-task states, while `orti` has no `modified`. The screen renders only axes the
-surface declares and only a direction supported by the selected sort. Until
-sibling-aware sorting lands, `orti` shows only its existing filter; the screen
-can grow without changing its interaction model when task sorting and tag
-filtering arrive.
+The offered positions differ per surface, and the screen renders the axes the
+surface declares rather than a union with dead options. `ptui` shows all three
+fields; `orti` shows only `Show`, because its sort axis has one position and no
+direction. `ViewState.choices()` decides, so a field appears the moment its axis
+has something to choose, and the screen grows into task sorting and tag
+filtering without changing its interaction model.
+
+The direction field's words follow the selected order and track it live, so the
+screen never shows the labels that were true when it opened.
+
+### There is no apply key, so `C-s` still means save
+
+Every choice takes effect the moment it is made. There is nothing to commit,
+because view state is session-only and is never written to disk — an apply step
+would be ceremony around a change that has already happened, and view choices
+never make the file buffer dirty.
+
+That matters for one key in particular. `C-s` means "write the file" in every
+other context in the suite, and a screen that redefined it would punish the one
+reflex a user actually has: someone with buffered priority edits who hits `C-s`
+out of habit must not discover that it only closed a settings form. So `C-s`
+inside the view screen does exactly what it does outside it — `orti` saves the
+task file, `ptui` saves `projects.org` — and the footer says so. The navigator's
+version deliberately leaves the screen open afterward: the key wrote the file,
+which is no reason to close what the user is working in.
+
+Since changes apply live and the list is covered while the screen is open, the
+screen's summary line carries the resulting badge as it is built, and the list
+underneath rebuilds through the same `on_resume` path every other pushed view
+uses. There is no cancel: a view is not an edit, and changing a choice back
+costs one keystroke.
 
 ### Vocabulary
 
 One set of words in the code, the badge, the screen, and the CLI flags. The
 code's triple is `all` / `todo` / `done` and the CLI flag is `--todo`; those
 stayed as the wire values rather than growing "Incomplete" and "Terminal"
-alongside them. Human labels need not repeat wire values: the concise target is
-`DONE+`, while contextual help names all three terminal states it selects.
+alongside them. Human labels need not repeat wire values: the badge says
+`DONE+`, and contextual help spells out `DONE+ (DONE, MOOT, SUPERSEDED)` — all
+three states that position actually selects.
 
 ### Direction is part of the key, not `reverse=True`
 
@@ -536,12 +570,16 @@ too. So `viewstate.order_by` runs three stable passes, weakest key first, and
 inverts only the middle one; `manager` supplies each mode as separate `primary`,
 `tiebreak`, and `unavailable` callables rather than one packed tuple.
 
-That mechanism does not by itself make every order reversible. Before exposing
-direction, an axis declaration must name the reversible sorts and provide
-meaningful labels for each side: A-Z/Z-A, newest/oldest, or high/low priority.
-The file-order task tree is not reversible. Project render preparation should
-also cache each task summary and modification time once, so filtering, rows,
-and the stable sort do not repeatedly parse or stat the same file.
+That mechanism does not by itself make every order reversible, which is why
+`ViewAxes.directions` names the reversible sorts and the words for each side.
+The file-order task tree is not among them.
+
+Each render also reads a project's task file exactly once.
+`manager.snapshot_projects()` returns one `ProjectSnapshot` per project — open
+count, total, modification time — and filtering, ordering, the `n open` column,
+and the diagnostics all answer from it. That is not only cheaper: a row can no
+longer disagree with the filter that kept it, which is what a second read
+midway through a render would allow.
 
 ### What `orti` cannot sort by yet
 

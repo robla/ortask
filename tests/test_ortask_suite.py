@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 import ortask
 import projmgr
 import orglib  # noqa: E402 — after the sys.path insert above
-from ortasklib import core, manager, taskui, tasks, viewstate
+from ortasklib import core, manager, taskui, tasks, viewstate, viewui
 
 
 def test_orglib_imports_without_ortasklib():
@@ -44,6 +44,58 @@ def test_orglib_imports_without_ortasklib():
         text = "* Tasks" + chr(10) + "** TODO t0001 x" + chr(10)
         assert [t.id for t in orglib.parse(text).tasks()] == ["t0001"]
         assert not any(m.startswith("ortasklib") for m in sys.modules)
+        print("ok")
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True, text=True, cwd=str(ROOT),
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"
+
+
+def test_viewstate_is_generic_state_only():
+    """The view-state core must not learn about Org, tasks, or the terminal.
+
+    Run in a subprocess with ``ortasklib.core``, ``orglib``, and
+    ``prompt_toolkit`` blocked, so a convenience import added later fails here
+    rather than quietly turning the shared model into a dependency hub. Task
+    predicates belong beside task presentation, project axes beside project
+    presentation; only the state machine and stable ordering live here.
+    """
+    program = textwrap.dedent(
+        """
+        import sys
+
+        BLOCKED = ("ortasklib.core", "orglib", "prompt_toolkit", "rich")
+
+        class Block:
+            def find_module(self, name, path=None):
+                if name in BLOCKED or any(
+                    name.startswith(one + ".") for one in BLOCKED
+                ):
+                    raise ImportError(name + " is blocked")
+
+        sys.meta_path.insert(0, Block())
+        from ortasklib import viewstate
+
+        axes = viewstate.ViewAxes(
+            ("all", "open"),
+            ("name", "age"),
+            {"all": "", "open": "open only"},
+            {"name": "Name", "age": "Age"},
+            directions={"age": ("newest", "oldest")},
+        )
+        view = axes.initial()
+        assert view.badge() == "Name"
+        assert not view.reversible
+        assert view.next_sort().with_reverse(True).badge() == "Age (oldest)"
+        assert not any(
+            module.startswith(one)
+            for module in sys.modules
+            for one in BLOCKED
+        )
         print("ok")
         """
     )
@@ -2465,19 +2517,24 @@ def test_task_file_mirror_diagnostic_is_semantic_and_non_authoritative(
 
 def test_view_state_cycles_only_the_axes_a_surface_offers() -> None:
     # A one-position axis is not a choice: no key, and nothing in the badge.
-    tasks_view = viewstate.TASK_VIEW_AXES.initial()
+    tasks_view = taskui.TASK_VIEW_AXES.initial()
     assert (tasks_view.filter, tasks_view.sort) == ("all", "file")
     assert tasks_view.axes.cycles_filter and not tasks_view.axes.cycles_sort
     assert tasks_view.badge() == "all"
     assert tasks_view.next_filter().badge() == "TODO"
-    assert tasks_view.next_filter().next_filter().badge() == "DONE+MOOT"
+    assert tasks_view.next_filter().next_filter().badge() == "DONE+"
     assert tasks_view.next_filter().next_filter().next_filter().filter == "all"
     assert tasks_view.next_sort().sort == "file"
 
-    projects_view = viewstate.PROJECT_VIEW_AXES.initial()
+    projects_view = projmgr.PROJECT_VIEW_AXES.initial()
     assert projects_view.badge() == "Priority sort"
     assert projects_view.next_sort().badge() == "Alphabetical sort"
-    assert projects_view.toggle_reverse().badge() == "Priority sort ↓"
+    assert projects_view.toggle_reverse().badge() == (
+        "Priority sort (lowest first)"
+    )
+    assert projects_view.next_sort().toggle_reverse().badge() == (
+        "Alphabetical sort (Z-A)"
+    )
     assert projects_view.next_filter().badge() == "open only · Priority sort"
 
     # Transitions return new states rather than mutating the rendered one.
@@ -2485,7 +2542,16 @@ def test_view_state_cycles_only_the_axes_a_surface_offers() -> None:
     with pytest.raises(ValueError):
         projects_view.with_sort("file")
     with pytest.raises(ValueError):
-        viewstate.next_position(viewstate.TASK_FILTERS, "open")
+        viewstate.next_position(taskui.TASK_FILTERS, "open")
+
+    # t0039.3.2: reversibility is declared per sort, not globally. File order
+    # cannot be inverted, so nothing can put a task list into that state.
+    assert not tasks_view.reversible
+    assert tasks_view.with_reverse(True) == tasks_view
+    with pytest.raises(ValueError):
+        viewstate.ViewState(taskui.TASK_VIEW_AXES, "all", "file", reverse=True)
+    assert projects_view.reversible
+    assert projects_view.direction_label == "highest first"
 
 
 def test_order_by_inverts_only_the_primary_axis() -> None:
@@ -2545,6 +2611,49 @@ def test_reversed_project_sorts_keep_unreadable_projects_last(
     ]
 
 
+def test_project_render_reads_each_task_file_once(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # t0039.3.3: filtering, ordering, and rows share one reading per project.
+    registry = tmp_path / "registry"
+    for name, tasks, modified_ns in (
+        ("alpha", "** TODO t0001 One\n", 1_000_000_000),
+        ("bravo", "** TODO t0001 One\n** DONE t0002 Two\n", 2_000_000_000),
+        ("zulu", "** DONE t0001 Finished\n", 3_000_000_000),
+    ):
+        project = tmp_path / "src" / name
+        task_file = write(project / "tasks.org", f"* Tasks\n{tasks}")
+        os.utime(task_file, ns=(modified_ns, modified_ns))
+        register(registry, name, project)
+    (registry / manager.PROJECTS_INDEX_NAME).write_text(
+        manager.PROJECTS_INDEX_HEADER + "* alpha\n* bravo\n* zulu\n",
+        encoding="utf-8",
+    )
+
+    reads: list[str] = []
+    real = manager.read_project_snapshot
+
+    def counted(project):
+        reads.append(project.name)
+        return real(project)
+
+    monkeypatch.setattr(manager, "read_project_snapshot", counted)
+
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+    browser.view_state = browser.view_state.next_filter().next_sort().next_sort()
+    assert browser.view_state.filter == "open"
+    assert browser.view_state.sort == manager.PROJECT_SORT_MODIFIED
+
+    reads.clear()
+    view = browser.view()
+
+    # The open filter, the Modified order, and the "n open" column all want the
+    # same two facts about the same file; one render reads it once.
+    assert sorted(reads) == ["alpha", "bravo", "zulu"]
+    assert [row.text[4:].split()[0] for row in view.rows] == ["bravo", "alpha"]
+    assert "1 open" in view.rows[1].text
+
+
 def test_project_filter_hides_only_provably_quiet_projects(tmp_path: Path) -> None:
     # docs/ptui.md: warnings survive filtering, and unreadable is not "nothing to do".
     registry = tmp_path / "registry"
@@ -2590,7 +2699,8 @@ def test_task_filter_names_every_state_the_done_position_matches(
         "* Tasks\n"
         "** TODO t0001 Open\n"
         "** DONE t0002 Finished\n"
-        "** MOOT t0003 Abandoned\n",
+        "** MOOT t0003 Abandoned\n"
+        "** SUPERSEDED t0004 Replaced\n",
     )
     buf = taskui.OrgBuffer(org_file)
 
@@ -2601,11 +2711,14 @@ def test_task_filter_names_every_state_the_done_position_matches(
             if item.task is not None
         ]
 
-    assert ids("all") == ["t0001", "t0002", "t0003"]
+    assert ids("all") == ["t0001", "t0002", "t0003", "t0004"]
     assert ids("todo") == ["t0001"]
-    assert ids("done") == ["t0002", "t0003"]
-    assert taskui._task_filter_label("done") == "DONE+MOOT"
-    assert taskui._task_menu_instruction("done").startswith("DONE+MOOT · ")
+    # Every terminal state, SUPERSEDED included — which is why the label is not
+    # the name of one of them.
+    assert ids("done") == ["t0002", "t0003", "t0004"]
+    assert taskui._task_filter_label("done") == "DONE+"
+    assert taskui._task_menu_instruction("done").startswith("DONE+ · ")
+    assert taskui.TASK_TERMINAL_FILTER_DESCRIPTION == "DONE, MOOT, SUPERSEDED"
     assert taskui.task_view(include_done=False).filter == "todo"
 
 
@@ -2731,7 +2844,9 @@ def test_project_browser_filters_and_anchors_the_selection(tmp_path: Path) -> No
 
     assert browser.view_state.filter == "open"
     assert session.message == "Showing: open only"
-    assert session.current_view.instruction.startswith("open only · Priority sort")
+    assert session.current_view.instruction.startswith(
+        "open only · Priority sort"
+    )
     assert [row.text[4:].split()[0] for row in session.current_view.rows] == [
         "alpha",
         "zulu",
@@ -2743,6 +2858,131 @@ def test_project_browser_filters_and_anchors_the_selection(tmp_path: Path) -> No
     assert browser.view_state.filter == "all"
     assert session.message == "Showing: all projects"
     assert len(session.current_view.rows) == 3
+
+
+def test_view_options_screen_applies_live_and_leaves_save_alone(
+    tmp_path: Path,
+) -> None:
+    # No apply key: choices take effect immediately, so C-s keeps meaning "save".
+    saved: list[str] = []
+    applied: list[viewstate.ViewState] = []
+    screen = viewui.view_options_screen(
+        projmgr.PROJECT_VIEW_AXES.initial(),
+        lambda session, revised: applied.append(revised),
+        title="View options: project navigator",
+        save=lambda session: saved.append("projects.org"),
+        save_help="Save buffered project metadata to projects.org",
+    )
+
+    assert len(screen.focus_targets) == 3
+    assert screen.summary == "Showing: Priority sort"
+    assert "C-s save" in screen.instruction
+    assert "C-s save" in screen.editing_instruction
+    assert ("Ctrl-S", "Save buffered project metadata to projects.org") in (
+        screen.help_entries
+    )
+    # Every field needs an explicit Enter before arrows change it, like the
+    # metadata workspace.
+    assert screen.choice_focus_indices == frozenset({0, 1, 2})
+    assert screen.edit_focus_indices == frozenset({0, 1, 2})
+
+    class FakeSession:
+        pass
+
+    session = FakeSession()
+    screen.on_choice_change(session, 1, 1)
+    screen.on_choice_change(session, 2, 1)
+    screen.on_choice_change(session, 0, 1)
+    assert [state.badge() for state in applied] == [
+        "Alphabetical sort",
+        "Alphabetical sort (Z-A)",
+        "open only · Alphabetical sort (Z-A)",
+    ]
+    assert screen.summary == "Showing: open only · Alphabetical sort (Z-A)"
+    assert screen.status_text() == screen.summary
+    assert not saved
+
+    screen.on_save(session)
+    assert saved == ["projects.org"]
+
+    # t0039.3.2: the direction field's words follow the selected order, and
+    # they track it live rather than showing what was true when it opened.
+    def rendered(index: int) -> str:
+        control = screen.focus_targets[index].content
+        return "".join(part[1] for part in control.text()).strip()
+
+    assert rendered(2) == "Direction  [Z-A]"
+    screen.on_choice_change(session, 1, 1)
+    assert rendered(1) == "Order      [Modified]"
+    assert rendered(2) == "Direction  [oldest first]"
+
+    # The task list offers only the axes it has: one filter, no order, no
+    # reverse, because file order is what holds its tree together.
+    task_screen = viewui.view_options_screen(
+        taskui.TASK_VIEW_AXES.initial(),
+        lambda session, revised: applied.append(revised),
+        title="View options: tasks",
+        save=lambda session: saved.append("tasks.org"),
+        save_help="Save the entire tasks.org file",
+    )
+    assert len(task_screen.focus_targets) == 1
+    assert task_screen.summary == "Showing: all"
+
+
+def test_project_browser_view_screen_changes_the_list_behind_it(
+    tmp_path: Path,
+) -> None:
+    # v opens the screen; leaving it re-renders the list through the same resume.
+    registry = tmp_path / "registry"
+    for name, tasks in (
+        ("alpha", "** TODO t0001 One\n"),
+        ("bravo", "** DONE t0001 Finished\n"),
+    ):
+        project = tmp_path / "src" / name
+        write(project / "tasks.org", f"* Tasks\n{tasks}")
+        register(registry, name, project)
+    (registry / manager.PROJECTS_INDEX_NAME).write_text(
+        manager.PROJECTS_INDEX_HEADER + "* alpha\n* bravo\n", encoding="utf-8"
+    )
+
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+    view = browser.view()
+    assert view.actions["v"].name == "view"
+    assert "v view" in view.instruction
+
+    class FakeSession:
+        def __init__(self, current_view) -> None:
+            self.current_view = current_view
+            self.pushed = None
+            self.message = ""
+
+        def push_view(self, replacement) -> None:
+            self.pushed = replacement
+
+        def replace_view(self, replacement) -> None:
+            self.current_view = replacement
+
+        def set_transient_message(self, message: str) -> None:
+            self.message = message
+
+    session = FakeSession(view)
+    view.on_result(session, menu.MenuResult("view", 0))
+    screen = session.pushed
+    assert isinstance(screen, menu.WorkspaceView)
+    assert screen.title == "View options: project navigator"
+
+    screen.on_choice_change(session, 0, 1)
+    assert browser.view_state.filter == "open"
+    # The list is covered while the screen is open; resume rebuilds it.
+    assert [row.text[4:].split()[0] for row in session.current_view.rows] == [
+        "alpha",
+        "bravo",
+    ]
+    view.on_resume(session)
+    assert [row.text[4:].split()[0] for row in session.current_view.rows] == [
+        "alpha"
+    ]
+    assert session.current_view.instruction.startswith("open only · Priority sort")
 
 
 def test_project_browser_buffers_priority_undo_redo_and_save(tmp_path: Path) -> None:
@@ -3248,6 +3488,52 @@ def test_project_browser_exit_resolves_buffered_priority(
     assert browser.index_buffer is not None
     assert browser.index_buffer.dirty is False
     assert not browser.index_buffer.autosave_path.exists()
+
+
+@pytest.mark.skipif(
+    projmgr.menu.Application is None,
+    reason="prompt_toolkit not installed",
+)
+def test_view_options_screen_is_driven_by_the_real_key_bindings(
+    tmp_path: Path,
+) -> None:
+    # v, then the workspace's own navigate/edit modes, then back to the list.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    registry = tmp_path / "registry"
+    for name in ("alpha", "bravo"):
+        project = tmp_path / "src" / name
+        write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+        register(registry, name, project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    index.write_text(
+        manager.PROJECTS_INDEX_HEADER + "* [#A] bravo\n* alpha\n",
+        encoding="utf-8",
+    )
+    original = index.read_text(encoding="utf-8")
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text(
+                "v"          # open the view options screen
+                "j"          # navigation mode: move to the Order field
+                "\r"         # Enter begins changing it
+                "\x1b[C"     # Right: Priority -> Alphabetical
+                "\r"         # Enter finishes changing it
+                "q"          # leave the screen
+                "q"          # leave the navigator
+            )
+            browser.run()
+
+    assert browser.view_state.sort == manager.PROJECT_SORT_ALPHABETICAL
+    assert browser.view_state.filter == "all"
+    # A view is not an edit: nothing was written on the way through.
+    assert index.read_text(encoding="utf-8") == original
+    assert browser.index_buffer is not None
+    assert browser.index_buffer.dirty is False
 
 
 def test_projmgr_navigator_dashboard_keeps_the_location(
@@ -5254,7 +5540,8 @@ def test_selector_help_uses_action_metadata_once() -> None:
 
     assert "C-g" in text and "Show or close this help" in text
     assert "Open the highlighted task in the editor" in text
-    assert "Cycle visibility through all, TODO, and DONE" in text
+    # t0039.3.4: help spells out every terminal state the position selects.
+    assert "DONE+ (DONE, MOOT, SUPERSEDED)" in text
     assert text.count("Cycle the highlighted task's state") == 1
     assert "Raise the highlighted task's priority" in text
     assert "Choose the highlighted task's priority" in text

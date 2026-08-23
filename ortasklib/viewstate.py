@@ -2,13 +2,16 @@
 
 One model behind two controls: the quick-toggle keys (``C-t`` filter, ``s``
 sort) and the ``v`` view screen. A surface declares the positions it offers, so
-neither control has to know which list it is driving and the screen never
+neither control has to know which list it is driving, and the screen never
 presents an option the surface cannot honor.
 
-Pure: no I/O, no ``prompt_toolkit``, no file reading. ortask's task-state names
-live here because they are ortask policy — which is exactly what keeps this
-module out of ``orglib``. See the sort-and-filter section of
-``docs/interactive.md``.
+Generic on purpose. This module imports nothing but the standard library — no
+Org, no task states, no registry, no ``prompt_toolkit``, not even
+``ortasklib.core``. Task predicates and task axes live beside task
+presentation; project axes live beside project presentation. Keeping the state
+machine free of both is what lets one screen drive either list.
+
+See the sort-and-filter section of ``docs/interactive.md``.
 """
 
 from __future__ import annotations
@@ -16,42 +19,18 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Callable, Iterable, Mapping, Sequence, TypeVar
 
-from . import core
-
 T = TypeVar("T")
 
-FILTER_ALL = "all"
-FILTER_TODO = "todo"
-FILTER_DONE = "done"
-FILTER_OPEN = "open"
+AXIS_FILTER = "filter"
+AXIS_SORT = "sort"
+AXIS_DIRECTION = "direction"
 
-SORT_FILE = "file"
-SORT_PRIORITY = "priority"
-SORT_ALPHABETICAL = "alphabetical"
-SORT_MODIFIED = "modified"
+DIRECTION_FORWARD = "forward"
+DIRECTION_REVERSE = "reverse"
+DIRECTIONS = (DIRECTION_FORWARD, DIRECTION_REVERSE)
 
-TASK_FILTERS = (FILTER_ALL, FILTER_TODO, FILTER_DONE)
-PROJECT_FILTERS = (FILTER_ALL, FILTER_OPEN)
-
-#: ``t0039.5`` adds sibling-scoped orders here. Until then the task list has a
-#: sort axis with one position, which is not a choice and so is not offered.
-TASK_SORTS = (SORT_FILE,)
-PROJECT_SORTS = (SORT_PRIORITY, SORT_ALPHABETICAL, SORT_MODIFIED)
-
-_TASK_FILTER_LABELS = {
-    FILTER_ALL: "all",
-    FILTER_TODO: "TODO",
-    # The third position matches every terminal state, so it cannot be called
-    # DONE alone: a MOOT task appears here too.
-    FILTER_DONE: "DONE+MOOT",
-}
-_PROJECT_FILTER_LABELS = {FILTER_ALL: "", FILTER_OPEN: "open only"}
-_TASK_SORT_LABELS = {SORT_FILE: ""}
-_PROJECT_SORT_LABELS = {
-    SORT_PRIORITY: "Priority",
-    SORT_ALPHABETICAL: "Alphabetical",
-    SORT_MODIFIED: "Modified",
-}
+#: Shown for the direction of a sort that has no meaningful opposite.
+NOT_REVERSIBLE = "n/a"
 
 
 def next_position(positions: Sequence[str], current: str) -> str:
@@ -61,6 +40,22 @@ def next_position(positions: Sequence[str], current: str) -> str:
     except ValueError as exc:
         raise ValueError(f"unknown view position: {current}") from exc
     return positions[(index + 1) % len(positions)]
+
+
+@dataclass(frozen=True)
+class AxisChoice:
+    """One axis as the ``v`` screen shows it: positions, spellings, current.
+
+    ``label_for`` is a callable rather than a mapping because a direction's
+    words depend on which sort is selected: the same position reads "A-Z" under
+    one order and "newest first" under another.
+    """
+
+    key: str
+    label: str
+    options: tuple[str, ...]
+    label_for: Callable[[str], str]
+    value: str
 
 
 @dataclass(frozen=True)
@@ -75,9 +70,17 @@ class ViewAxes:
     sorts: tuple[str, ...]
     filter_labels: Mapping[str, str]
     sort_labels: Mapping[str, str]
+    #: Sort position -> (forward words, reverse words). A sort absent from this
+    #: mapping cannot be reversed, which is how file order stays intact: the
+    #: task tree depends on it, so no control may invert it.
+    directions: Mapping[str, tuple[str, str]] = None  # type: ignore[assignment]
     #: Appended to the sort label in the badge, so ``ptui`` can read
     #: "Priority sort" where the task list would only ever say "all".
     sort_noun: str = ""
+
+    def __post_init__(self) -> None:
+        if self.directions is None:
+            object.__setattr__(self, "directions", {})
 
     @property
     def cycles_filter(self) -> bool:
@@ -86,6 +89,16 @@ class ViewAxes:
     @property
     def cycles_sort(self) -> bool:
         return len(self.sorts) > 1
+
+    @property
+    def has_directions(self) -> bool:
+        return any(sort in self.directions for sort in self.sorts)
+
+    def reversible(self, sort: str) -> bool:
+        return sort in self.directions
+
+    def direction_labels(self, sort: str) -> tuple[str, str]:
+        return self.directions.get(sort, (NOT_REVERSIBLE, NOT_REVERSIBLE))
 
     def initial(
         self, filter: str | None = None, sort: str | None = None
@@ -96,18 +109,6 @@ class ViewAxes:
             filter if filter is not None else self.filters[0],
             sort if sort is not None else self.sorts[0],
         )
-
-
-TASK_VIEW_AXES = ViewAxes(
-    TASK_FILTERS, TASK_SORTS, _TASK_FILTER_LABELS, _TASK_SORT_LABELS
-)
-PROJECT_VIEW_AXES = ViewAxes(
-    PROJECT_FILTERS,
-    PROJECT_SORTS,
-    _PROJECT_FILTER_LABELS,
-    _PROJECT_SORT_LABELS,
-    sort_noun=" sort",
-)
 
 
 @dataclass(frozen=True)
@@ -128,14 +129,24 @@ class ViewState:
             raise ValueError(f"unknown filter position: {self.filter}")
         if self.sort not in self.axes.sorts:
             raise ValueError(f"unknown sort position: {self.sort}")
+        if self.reverse and not self.axes.reversible(self.sort):
+            raise ValueError(f"{self.sort} order cannot be reversed")
+
+    @property
+    def reversible(self) -> bool:
+        return self.axes.reversible(self.sort)
 
     def with_filter(self, position: str) -> "ViewState":
         return replace(self, filter=position)
 
     def with_sort(self, position: str) -> "ViewState":
-        return replace(self, sort=position)
+        """Change the order, dropping a direction the new order cannot hold."""
+        keep = self.reverse and self.axes.reversible(position)
+        return replace(self, sort=position, reverse=keep)
 
     def with_reverse(self, reverse: bool) -> "ViewState":
+        if reverse and not self.reversible:
+            return self
         return replace(self, reverse=bool(reverse))
 
     def next_filter(self) -> "ViewState":
@@ -155,6 +166,15 @@ class ViewState:
     def sort_label(self) -> str:
         return self.axes.sort_labels.get(self.sort, self.sort)
 
+    @property
+    def direction(self) -> str:
+        return DIRECTION_REVERSE if self.reverse else DIRECTION_FORWARD
+
+    @property
+    def direction_label(self) -> str:
+        forward, backward = self.axes.direction_labels(self.sort)
+        return backward if self.reverse else forward
+
     def badge(self) -> str:
         """What is shown, then how it is ordered — omitting axes with no choice.
 
@@ -166,9 +186,68 @@ class ViewState:
         if self.axes.cycles_filter and self.filter_label:
             parts.append(self.filter_label)
         if self.axes.cycles_sort and self.sort_label:
-            arrow = " ↓" if self.reverse else ""
-            parts.append(f"{self.sort_label}{self.axes.sort_noun}{arrow}")
+            order = f"{self.sort_label}{self.axes.sort_noun}"
+            if self.reverse:
+                order = f"{order} ({self.direction_label})"
+            parts.append(order)
         return " · ".join(parts)
+
+    def choices(self) -> tuple[AxisChoice, ...]:
+        """The axes this surface offers, for the ``v`` screen.
+
+        An axis with one position is not a choice and is left out, which is why
+        the screen never shows a control that cannot do anything. The direction
+        axis is offered whenever *some* order can be reversed; under an order
+        that cannot, it reads as unavailable rather than vanishing, so the
+        field list does not reshuffle underneath the cursor.
+        """
+        offered: list[AxisChoice] = []
+        if self.axes.cycles_filter:
+            offered.append(
+                AxisChoice(
+                    AXIS_FILTER,
+                    "Show",
+                    self.axes.filters,
+                    lambda position: self.axes.filter_labels.get(position)
+                    or position,
+                    self.filter,
+                )
+            )
+        if self.axes.cycles_sort:
+            offered.append(
+                AxisChoice(
+                    AXIS_SORT,
+                    "Order",
+                    self.axes.sorts,
+                    lambda position: self.axes.sort_labels.get(position)
+                    or position,
+                    self.sort,
+                )
+            )
+        if self.axes.has_directions:
+            forward, backward = self.axes.direction_labels(self.sort)
+            offered.append(
+                AxisChoice(
+                    AXIS_DIRECTION,
+                    "Direction",
+                    DIRECTIONS,
+                    lambda position: backward
+                    if position == DIRECTION_REVERSE
+                    else forward,
+                    self.direction,
+                )
+            )
+        return tuple(offered)
+
+    def with_choice(self, axis: str, value: str) -> "ViewState":
+        """Apply one screen choice, by axis name."""
+        if axis == AXIS_FILTER:
+            return self.with_filter(value)
+        if axis == AXIS_SORT:
+            return self.with_sort(value)
+        if axis == AXIS_DIRECTION:
+            return self.with_reverse(value == DIRECTION_REVERSE)
+        raise ValueError(f"unknown view axis: {axis}")
 
 
 def order_by(
@@ -191,14 +270,3 @@ def order_by(
     if unavailable is not None:
         ordered.sort(key=unavailable)
     return ordered
-
-
-def task_state_matches(state: str, position: str) -> bool:
-    """Whether one task state belongs in a filtered task list."""
-    if position == FILTER_TODO:
-        return state == "TODO"
-    if position == FILTER_DONE:
-        return state in core.TERMINAL_STATES
-    if position == FILTER_ALL:
-        return True
-    raise ValueError(f"unknown filter position: {position}")
