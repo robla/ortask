@@ -46,7 +46,7 @@ except ImportError:  # pragma: no cover - optional interactive dependency
     Window = None
     TextArea = None
 
-from . import core, log as eventlog, menu, tasks
+from . import core, log as eventlog, menu, tasks, viewstate
 from .manager import Project, canonical_org_file, friendly_path
 
 
@@ -191,12 +191,11 @@ def load_menu_items(
             dupes = ", ".join(sorted(duplicates))
             raise ValueError(f"duplicate task IDs in {buf.path}: {dupes}")
         mode = _task_filter_mode(include_done, filter_mode)
-        if mode == "done":
-            filtered = [task for task in task_items if task.state in core.TERMINAL_STATES]
-        elif mode == "todo":
-            filtered = [task for task in task_items if task.state == "TODO"]
-        else:
-            filtered = task_items
+        filtered = [
+            task
+            for task in task_items
+            if viewstate.task_state_matches(task.state, mode)
+        ]
         return [
             MenuItem(
                 label=f"[{task.state}] {task.id} {task.text}",
@@ -215,15 +214,12 @@ def _filter_menu_items(
     mode = _task_filter_mode(True, filter_mode)
     if not any(item.task is not None for item in items):
         return items
-    if mode == "todo":
-        return [item for item in items if item.task and item.task.state == "TODO"]
-    if mode == "done":
-        return [
-            item
-            for item in items
-            if item.task and item.task.state in core.TERMINAL_STATES
-        ]
-    return items
+    return [
+        item
+        for item in items
+        if item.task is not None
+        and viewstate.task_state_matches(item.task.state, mode)
+    ]
 
 
 def _task_tree(
@@ -315,27 +311,39 @@ def _nearest_visible_task_id(
     return None
 
 
-TASK_FILTERS = ("all", "todo", "done")
+TASK_FILTERS = viewstate.TASK_FILTERS
 
 
 def _task_filter_mode(include_done: bool, filter_mode: str | None = None) -> str:
     if filter_mode is None:
-        return "all" if include_done else "todo"
+        return viewstate.FILTER_ALL if include_done else viewstate.FILTER_TODO
     normalized = filter_mode.lower()
     if normalized not in TASK_FILTERS:
         raise ValueError(f"unknown task filter: {filter_mode}")
     return normalized
 
 
+def task_view(
+    include_done: bool, filter_mode: str | None = None
+) -> viewstate.ViewState:
+    """The task list's view state, seeded by ``--todo`` on the first render.
+
+    The sort axis has one position until ``t0039.5`` gives the tree a
+    sibling-scoped order, so nothing here offers ``s`` yet.
+    """
+    return viewstate.TASK_VIEW_AXES.initial(
+        _task_filter_mode(include_done, filter_mode)
+    )
+
+
 def _next_task_filter(filter_mode: str) -> str:
-    index = TASK_FILTERS.index(_task_filter_mode(True, filter_mode))
-    return TASK_FILTERS[(index + 1) % len(TASK_FILTERS)]
+    return viewstate.next_position(
+        TASK_FILTERS, _task_filter_mode(True, filter_mode)
+    )
 
 
 def _task_filter_label(filter_mode: str) -> str:
-    return {"all": "all", "todo": "TODO", "done": "DONE"}[
-        _task_filter_mode(True, filter_mode)
-    ]
+    return task_view(True, filter_mode).filter_label
 
 
 def _prompt_choice(
@@ -562,7 +570,7 @@ def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
 
 def _task_menu_instruction(filter_mode: str) -> str:
     return (
-        f"{_task_filter_label(filter_mode)} · ↑↓/jk move · Tab fold · "
+        f"{task_view(True, filter_mode).badge()} · ↑↓/jk move · Tab fold · "
         "←/→ tree · S-Tab all · ↵ open · C-g help · "
         "C-s save · C-/ undo · C-r redo · C-t filter · Esc/b/q back"
     )
@@ -609,7 +617,7 @@ TASK_MENU_ACTIONS = {
     "e": _EDIT_MENU_ACTION,
     "p": _PICK_PRIORITY_ACTION,
     "c-t": menu.MenuAction(
-        "filter", "C-t", "Cycle visibility through all, TODO, and DONE"
+        "filter", "C-t", "Cycle visibility through all, TODO, and DONE+MOOT"
     ),
     "s-left": _TOGGLE_MENU_ACTION,
     "s-right": _TOGGLE_MENU_ACTION,

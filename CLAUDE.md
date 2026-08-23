@@ -126,7 +126,8 @@ like a project root?"
 - `ortasklib/` — shared package: `core.py` (IDs/discovery/atomic writes, and
   re-exports of `orglib.syntax`), `tasks.py` (local formatting/show/edit/
   validation), `manager.py` (registry discovery/config/index/summaries),
-  `menu.py` (bounded inline application), `taskui.py` (task list and issue
+  `menu.py` (bounded inline application), `viewstate.py` (pure filter/sort/
+  direction model shared by `orti` and `ptui`), `taskui.py` (task list and issue
   workspace, shared by `orti` and `ptui`)
 - `ortask.py` — local task CLI (the core tool)
 - `projmgr.py` — the project layer: registry, index, project list, directory

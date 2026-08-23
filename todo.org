@@ -466,7 +466,7 @@ the combinations a cycle key cannot reach. See the sort-and-filter section of
 shipped bindings. This is mostly a unification, not new machinery; treat the
 existing =TASK_FILTERS= and =PROJECT_SORT_MODES= cycles and their tests as the
 behavior to preserve.
-*** TODO [#B] t0039.1 Define the shared view-state model
+*** DONE [#B] t0039.1 Define the shared view-state model
 Define view state (filter position, sort axis, direction) and pure filter/sort
 helpers in =ortasklib=, by extracting what =taskui.load_menu_items= and
 =manager.sort_projects= already do rather than adding a parallel model. Let each
@@ -476,7 +476,7 @@ unavailable-last term and its ascending name tie-break fixed, since =reverse=Tru
 would flip both. Keep =all=/=todo=/=done= as the wire vocabulary, matching the
 =--todo= flag. Preserve ancestor inclusion and name anchoring. Unit tests only;
 no UI change.
-*** TODO [#B] t0039.2 Put both quick toggles on the shared model, with a badge
+*** DONE [#B] t0039.2 Put both quick toggles on the shared model, with a badge
 Move =C-t= and =s= onto the shared model and give each surface the cycle it
 lacks, introducing no new key: =Tab= is fold, =S-Tab= is fold-all, plain =t= is
 reserved by the keybinding section, and =S= collides visually with the
@@ -487,7 +487,9 @@ orders; the existing sort-mode and filter tests pin them.
 *** TODO [#B] t0039.3 Build the View Options screen on the existing workspace
 Add =v= as a =menu.WorkspaceView= instance, reusing its choice fields
 (=choice_focus_indices=, ←/→ to change), navigation-versus-edit modes, =C-s=,
-=Esc=, and =C-g= help. Do not introduce Space-to-toggle or Enter-to-apply; the
+=Esc=, and =C-g= help. Render the axes the surface declares rather than a union:
+=viewstate.ViewAxes= already answers which positions exist, and =ViewState=
+already carries the direction axis that nothing reaches yet. Do not introduce Space-to-toggle or Enter-to-apply; the
 metadata workspace is the working precedent and ortask should have one form
 idiom. Follow that precedent for degradation too: the screen is prompt_toolkit
 only, and numbered mode keeps its typed-letter prompt.

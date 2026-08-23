@@ -36,7 +36,10 @@ file.
 The project navigator reads optional priority and description metadata from
 the registry's `projects.org`. It starts in priority-then-name order and `s`
 cycles Priority, Alphabetical, and Modified while keeping the highlight anchored
-to the same project. `m` opens the metadata workspace, including explicit
+to the same project. `C-t` cycles the project filter between every project and
+only those with open tasks; a project whose task file cannot be read stays
+visible either way. Both controls run off the shared view state in
+`ortasklib/viewstate.py`, and the active view is always named in the footer. `m` opens the metadata workspace, including explicit
 `TASK_FILE` mirror diagnostics and refresh. Shift-Up/Down changes the selected
 project's priority in a session-wide `projects.org` buffer; `C-/`, `C-r`, and
 `C-s` undo, redo, and save those edits, with visible dirty state and
@@ -59,7 +62,7 @@ The task selector has two modes, chosen automatically by
   Shift-Up/Down raises or lowers its priority; `p` opens an explicit priority
   picker; `C-/` undoes one logical task edit; `C-r` redoes it; `C-s` saves the
   Org file and clears that history; `C-t` cycles the visibility filter (`all ->
-  TODO -> DONE`); `e` opens the editor at the highlighted task's line; `C-g`
+  TODO -> DONE+MOOT`, named for every terminal state it matches); `e` opens the editor at the highlighted task's line; `C-g`
   opens contextual command help; and `Esc`, `b`, or `q` goes back exactly one
   level. In `projmgr.py -i`,
   leaving a task list returns to the project menu; in local `ortask.py -i`, that
@@ -374,7 +377,7 @@ Recommended task-list bindings:
   new mutation.
 - `C-s` writes the complete Org buffer to disk and starts a new history.
 - `e` opens the current Org file or selected task in the editor.
-- `C-t` cycles the task visibility filter: `all -> TODO -> DONE`. This is not
+- `C-t` cycles the task visibility filter: `all -> TODO -> DONE+MOOT`. This is not
   an exact Emacs binding, but it keeps `C-c` and `C-x` open for future
   multi-key command families while reserving `/` for search.
 - `C-g` opens contextual help. Although Emacs normally uses `C-g` to quit the
@@ -409,23 +412,16 @@ Future TODO-state guidance:
 > the section. This is a design direction for review, not a user-mandated
 > constraint.
 
-### What already exists
+### State of the work
 
-The hybrid model is not new machinery. Each surface has one half of it:
+`t0039.1` and `t0039.2` are done: `ortasklib/viewstate.py` holds the model, both
+surfaces run their quick toggles off it, and each has the cycle it was missing.
+`t0039.3` (the `v` screen) is next; `t0039.5` and `t0039.6` stay open.
 
-- `orti` cycles a visibility filter on `C-t`: `all -> TODO -> DONE`
-  (`taskui.TASK_FILTERS`). The `DONE` position matches `core.TERMINAL_STATES`,
-  so it also selects `MOOT`; the footer label saying `DONE` understates that.
-  `orti` has no sort control, deliberately — `load_menu_items` sorts by
-  `line_num` so the hierarchy survives.
-- `ptui` cycles a sort mode on `s`: Priority -> Alphabetical -> Modified
-  (`manager.PROJECT_SORT_MODES`), reported in the footer, selection anchored by
-  name across the change. `ptui` has no filter control.
-- Both already print the active mode in the instruction line
-  (`_task_menu_instruction`, `_project_menu_instruction`).
-
-So the work is: one shared model behind the two existing cycles, the missing
-half on each surface, and one screen for the axes a cycle key cannot reach.
+The model carries a direction axis that nothing reaches yet. `sort_projects`
+honors `reverse=`, and `viewstate.order_by` is what keeps that inversion off the
+tie-break, but no key sets it: direction arrives with the `v` screen, which is
+where a third axis belongs.
 
 ### The problem
 
@@ -437,14 +433,19 @@ active view state visible at all times so no row is ever mysteriously absent.
 
 ### Inline quick toggles
 
-This stage introduces no new key. It puts both existing cycles on the shared
-model and gives each surface the one it lacks:
+No new key was introduced. Both existing cycles moved onto the shared model and
+each surface gained the one it lacked:
 
-| Key   | Meaning      | Today          | After              |
-|-------|--------------|----------------|--------------------|
-| `s`   | sort cycle   | `ptui`         | `ptui`             |
-| `C-t` | filter cycle | `orti`         | `orti`, `ptui`     |
-| `v`   | view screen  | —              | both               |
+| Key   | Meaning      | `orti`              | `ptui`               |
+|-------|--------------|---------------------|----------------------|
+| `s`   | sort cycle   | not offered yet     | Priority/Alpha/Mod   |
+| `C-t` | filter cycle | all/TODO/DONE+MOOT  | all/open only        |
+| `v`   | view screen  | `t0039.3`           | `t0039.3`            |
+
+`ptui`'s project filter hides only what the navigator can prove is quiet. A
+project whose task file is missing, broken, or unreadable stays in the list:
+`docs/ptui.md` requires warnings to survive filtering, and a project that cannot
+be read is not a project with nothing left to do.
 
 Keys that are not available for this:
 
@@ -459,11 +460,16 @@ through — see "What `orti` cannot sort by yet".
 
 ### The view badge
 
-Both surfaces already carry a mode word in the instruction line. Extend that
-rather than adding a second status area: one bracketed badge showing filter and
-sort together, present whenever either is off its default, e.g.
-`[open · name ↑]`. The badge is the thing that makes a non-default view safe to
-leave running; it is not optional polish.
+Both surfaces already carried a mode word in the instruction line, so the badge
+extends that rather than adding a second status area. It names what is being
+shown and then how it is ordered — `all`, `TODO`, `DONE+MOOT` for tasks;
+`Priority sort`, `open only · Alphabetical sort`, `Modified sort ↓` for
+projects — and it is present always, not only when the view is non-default. A
+reader who cannot see why a row is missing has no way to get it back.
+
+An axis with a single position is not a choice: its key is not offered and it
+stays out of the badge. That is how the task list carries a sort axis today
+without `s` doing anything.
 
 ### The View Options screen (`v`)
 
@@ -491,19 +497,19 @@ declares; it does not present a union with dead options.
 ### Vocabulary
 
 One set of words in the code, the badge, the screen, and the CLI flags. The
-code's triple is `all` / `todo` / `done` and the CLI flag is `--todo`; keep
-those as the wire values rather than introducing "Incomplete" and "Terminal"
-alongside them. Fix the display label for the third position so it names what it
-matches (`DONE` also selects `MOOT`).
+code's triple is `all` / `todo` / `done` and the CLI flag is `--todo`; those
+stayed as the wire values rather than growing "Incomplete" and "Terminal"
+alongside them. Only the display label changed, to name what the position
+actually matches: `DONE+MOOT`.
 
 ### Direction is part of the key, not `reverse=True`
 
-`manager.project_modified_sort_key` returns
-`(unavailable, -mtime, name, name)`: unreadable task files sort last, and the
-name tie-break is ascending. Passing `reverse=True` to `sorted` would hoist the
-unreadable projects to the top and flip the tie-break too. Inversion has to live
-inside the key model — invert the primary axis only, keep "unavailable last" and
-the ascending name tie-break fixed.
+The recency order is `(unavailable, -mtime, name, name)`: unreadable task files
+sort last, and the name tie-break is ascending. Passing `reverse=True` to
+`sorted` would hoist the unreadable projects to the top and flip the tie-break
+too. So `viewstate.order_by` runs three stable passes, weakest key first, and
+inverts only the middle one; `manager` supplies each mode as separate `primary`,
+`tiebreak`, and `unavailable` callables rather than one packed tuple.
 
 ### What `orti` cannot sort by yet
 

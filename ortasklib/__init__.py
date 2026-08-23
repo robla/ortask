@@ -11,6 +11,8 @@ Splits reusable behavior out of the top-level scripts:
 - ``log``     — disposable append-only activity events and read-side filters.
 - ``menu``    — dashboard row models, Rich/plain rendering helpers, and shared
                 prompt cancellation for interactive tools.
+- ``viewstate`` — what an interactive list shows and in what order, shared by
+                the quick-toggle keys and the view screen.
 
 ``orglib`` is a peer package, not a member of this one: it holds Org syntax and
 the boundary callers parse through. It imports nothing outside the standard

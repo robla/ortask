@@ -63,9 +63,13 @@ tasks manager menu                       |
 
 No script imports another script. `orglib` sits at the bottom and imports
 nothing at all — not `ortasklib`, not any third-party package. `core` depends
-only on `orglib`; `tasks` and `manager` depend on `core`; `taskui` composes
-`core`, `tasks`, `menu`, the `Project` record from `manager`, and the
-format-neutral buffer from `textbuffer.py`. `textbuffer.py` imports only the
+only on `orglib`; `tasks`, `manager`, and `viewstate` depend on `core`; `taskui`
+composes `core`, `tasks`, `menu`, `viewstate`, the `Project` record from
+`manager`, and the format-neutral buffer from `textbuffer.py`. `viewstate` is
+the leaf of that group: it holds what an interactive list shows and in what
+order, and imports `core` only for ortask's task-state names, so the two
+surfaces cannot drift apart on filtering, ordering, or how they name the active
+view. `textbuffer.py` imports only the
 standard library; callers inject atomic writing, auto-save location, and save
 notification.
 

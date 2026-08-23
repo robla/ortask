@@ -52,6 +52,25 @@ Priority and Alphabetical were implemented by `t0035.2`; `t0035.5` adds
 Modified to the same cycle. Help derives its description from the implemented
 mode ring.
 
+Any mode can be inverted, and inversion applies to that mode's own axis only:
+an unreadable task file stays at the bottom of a reversed Modified list, and the
+project-name tie-break stays ascending. `t0039.1` put that in
+`viewstate.order_by`; no key reaches it until the `v` view screen (`t0039.3`).
+
+## Filtering
+
+`C-t` cycles the project filter between every project and only those with open
+tasks, reporting the active view in the same footer badge as the sort mode
+(`open only · Priority sort`). The count is the top-level `TODO` count that
+`projmgr.py list` shows, so the row, the filter, and that listing never
+disagree.
+
+The filter hides only what the navigator can prove is quiet. A project whose
+task file is missing, broken, or unreadable stays visible: warnings survive
+filtering, and a project that cannot be read is not a project with nothing left
+to do. The selection stays anchored by name, so hiding a project never moves the
+highlight off the one the user was looking at.
+
 ## Metadata in `projects.org`
 
 Each registered project may have one top-level section in the registry's

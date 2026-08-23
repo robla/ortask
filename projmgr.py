@@ -41,7 +41,7 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 import orglib  # noqa: E402 — after the sys.path insert above
-from ortasklib import core, log as eventlog, manager, menu, taskui
+from ortasklib import core, log as eventlog, manager, menu, taskui, viewstate
 
 
 # ---------------------------------------------------------------------------
@@ -56,11 +56,15 @@ from ortasklib import core, log as eventlog, manager, menu, taskui
 PROJECT_SORT_ACTION = menu.MenuAction(
     "sort", "s", "Cycle project sorting: Priority, Alphabetical, and Modified"
 )
+PROJECT_FILTER_ACTION = menu.MenuAction(
+    "filter", "C-t", "Show all projects or only those with open tasks"
+)
 PROJECT_MENU_ACTIONS = {
     "m": menu.MenuAction(
         "metadata", "m", "Edit the highlighted project's metadata"
     ),
     "s": PROJECT_SORT_ACTION,
+    "c-t": PROJECT_FILTER_ACTION,
     "s-up": menu.MenuAction(
         "priority_up", "Shift+↑", "Raise the highlighted project's priority"
     ),
@@ -79,12 +83,16 @@ PROJECT_MENU_ACTIONS = {
 }
 
 
-def _project_menu_instruction(sort_mode: str, *, dirty: bool = False) -> str:
-    label = sort_mode.title()
+def _project_menu_instruction(
+    view: "viewstate.ViewState | str", *, dirty: bool = False
+) -> str:
+    if isinstance(view, str):
+        view = viewstate.PROJECT_VIEW_AXES.initial(sort=view)
     prefix = "FILE MODIFIED · " if dirty else ""
     return (
-        f"{prefix}{label} sort · ↑↓/jk · S-↑/↓ priority · ↵ open · s sort · "
-        "m metadata · C-s save · C-/ undo · C-r redo · C-g help · Esc/b/q exit"
+        f"{prefix}{view.badge()} · ↑↓/jk · S-↑/↓ priority · ↵ open · s sort · "
+        "C-t filter · m metadata · C-s save · C-/ undo · C-r redo · "
+        "C-g help · Esc/b/q exit"
     )
 
 
@@ -395,7 +403,8 @@ class _ProjectBrowser:
         self.workspace = workspace
         self.display_path = display_path
         self.include_done = include_done
-        self.sort_mode = manager.PROJECT_SORT_PRIORITY
+        #: What the project list shows and in what order.
+        self.view_state = viewstate.PROJECT_VIEW_AXES.initial()
         self.session: menu.InlineMenuSession | None = None
         self.index_buffer: taskui.OrgBuffer | None = None
         self.index_error: str | None = None
@@ -414,6 +423,26 @@ class _ProjectBrowser:
             )
         except (OSError, manager.RegistryIndexError) as exc:
             self.index_error = str(exc)
+
+    @property
+    def sort_mode(self) -> str:
+        """The active sort position, under the name the navigator already uses."""
+        return self.view_state.sort
+
+    @sort_mode.setter
+    def sort_mode(self, mode: str) -> None:
+        self.view_state = self.view_state.with_sort(mode)
+
+    def _ordered(
+        self,
+        projects: list[manager.Project],
+        metadata: dict[str, manager.ProjectMetadata],
+    ) -> list[manager.Project]:
+        """Filter, then order — one place, so every render agrees."""
+        kept = manager.filter_projects(projects, self.view_state.filter)
+        return manager.sort_projects(
+            kept, metadata, self.view_state.sort, reverse=self.view_state.reverse
+        )
 
     def _metadata(
         self, projects: list[manager.Project]
@@ -1167,15 +1196,22 @@ class _ProjectBrowser:
     ) -> menu.MenuView:
         discovered = manager.discover_projects(self.workspace)
         metadata = self._metadata(discovered)
-        projects = manager.sort_projects(discovered, metadata, self.sort_mode)
+        projects = self._ordered(discovered, metadata)
 
         def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
             project = self._selected_project(projects, result.index)
             fallback = result.index if result.index is not None else 0
             if result.action == "sort":
-                self.sort_mode = manager.next_project_sort_mode(self.sort_mode)
+                self.view_state = self.view_state.next_sort()
                 self._replace_view(session, project, fallback)
-                session.set_transient_message(f"Sort: {self.sort_mode.title()}")
+                session.set_transient_message(f"Sort: {self.view_state.sort_label}")
+                return
+            if result.action == "filter":
+                self.view_state = self.view_state.next_filter()
+                self._replace_view(session, project, fallback)
+                session.set_transient_message(
+                    f"Showing: {self.view_state.filter_label or 'all projects'}"
+                )
                 return
             if result.action == "save":
                 self._save_index(session, project, fallback)
@@ -1287,7 +1323,7 @@ class _ProjectBrowser:
             handle,
             listing=NAVIGATOR,
             instruction=_project_menu_instruction(
-                self.sort_mode,
+                self.view_state,
                 dirty=self.index_buffer.dirty if self.index_buffer is not None else False,
             ),
             select_help="Open the highlighted project",
@@ -1488,20 +1524,30 @@ def project_menu(workspace: Path, display_path: str, include_done: bool) -> int:
         _ProjectBrowser(workspace, display_path, include_done).run()
         return 0
 
-    sort_mode = manager.PROJECT_SORT_PRIORITY
+    view = viewstate.PROJECT_VIEW_AXES.initial()
     while True:
         discovered = manager.discover_projects(workspace)
         metadata = manager.read_project_metadata(workspace, discovered)
-        projects = manager.sort_projects(discovered, metadata, sort_mode)
+        projects = manager.sort_projects(
+            manager.filter_projects(discovered, view.filter),
+            metadata,
+            view.sort,
+            reverse=view.reverse,
+        )
         _print_project_dashboard(projects, display_path, NAVIGATOR, metadata)
         try:
             choice = menu.prompt_text(
-                f"{sort_mode.title()} sort; number, s=sort, Esc/q=quit"
+                f"{view.badge()}; number, s=sort, t=filter, Esc/q=quit"
             ).strip().lower()
         except menu.ContextCancelled:
             return 0
         if choice == "s":
-            sort_mode = manager.next_project_sort_mode(sort_mode)
+            view = view.next_sort()
+            continue
+        # ``C-t`` is not typeable at a plain prompt, so the numbered fallback
+        # spells the same cycle as a letter, next to ``s``.
+        if choice in {"t", "\x14", "c-t"}:
+            view = view.next_filter()
             continue
         if choice in {"b", "q", ""}:
             return 0

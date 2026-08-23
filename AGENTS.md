@@ -4,7 +4,8 @@
 `ortask.py` is the local, single-Org-file CLI; `projmgr.py` manages projects in
 a project registry. In `ortasklib/`, `core.py` provides discovery, `tasks.py`
 owns task queries and edits, `manager.py` owns registry behavior, `log.py` owns
-activity events, and `menu.py`/`taskui.py` implement the bounded TUI. Peer
+activity events, `viewstate.py` owns what a list shows and in what order, and
+`menu.py`/`taskui.py` implement the bounded TUI. Peer
 `textbuffer.py` owns format-neutral transactional file editing;
 `orglib/` owns Org syntax. Neither imports `ortasklib`. Tests are in `tests/`;
 design context is in `docs/`; shell integration is in `misc/`.

@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 import ortask
 import projmgr
 import orglib  # noqa: E402 — after the sys.path insert above
-from ortasklib import core, manager, taskui, tasks
+from ortasklib import core, manager, taskui, tasks, viewstate
 
 
 def test_orglib_imports_without_ortasklib():
@@ -2463,6 +2463,152 @@ def test_task_file_mirror_diagnostic_is_semantic_and_non_authoritative(
     ).endswith(mismatch)
 
 
+def test_view_state_cycles_only_the_axes_a_surface_offers() -> None:
+    # A one-position axis is not a choice: no key, and nothing in the badge.
+    tasks_view = viewstate.TASK_VIEW_AXES.initial()
+    assert (tasks_view.filter, tasks_view.sort) == ("all", "file")
+    assert tasks_view.axes.cycles_filter and not tasks_view.axes.cycles_sort
+    assert tasks_view.badge() == "all"
+    assert tasks_view.next_filter().badge() == "TODO"
+    assert tasks_view.next_filter().next_filter().badge() == "DONE+MOOT"
+    assert tasks_view.next_filter().next_filter().next_filter().filter == "all"
+    assert tasks_view.next_sort().sort == "file"
+
+    projects_view = viewstate.PROJECT_VIEW_AXES.initial()
+    assert projects_view.badge() == "Priority sort"
+    assert projects_view.next_sort().badge() == "Alphabetical sort"
+    assert projects_view.toggle_reverse().badge() == "Priority sort ↓"
+    assert projects_view.next_filter().badge() == "open only · Priority sort"
+
+    # Transitions return new states rather than mutating the rendered one.
+    assert projects_view.filter == "all" and projects_view.sort == "priority"
+    with pytest.raises(ValueError):
+        projects_view.with_sort("file")
+    with pytest.raises(ValueError):
+        viewstate.next_position(viewstate.TASK_FILTERS, "open")
+
+
+def test_order_by_inverts_only_the_primary_axis() -> None:
+    # sorted(reverse=True) would flip the tie-break and hoist unavailable rows.
+    rows = [("b", 2, 0), ("a", 1, 0), ("c", 1, 0), ("z", 9, 1), ("y", 9, 1)]
+    forward = viewstate.order_by(
+        rows,
+        primary=lambda row: row[1],
+        tiebreak=lambda row: row[0],
+        unavailable=lambda row: row[2],
+    )
+    assert [row[0] for row in forward] == ["a", "c", "b", "y", "z"]
+
+    reversed_rows = viewstate.order_by(
+        rows,
+        primary=lambda row: row[1],
+        tiebreak=lambda row: row[0],
+        unavailable=lambda row: row[2],
+        reverse=True,
+    )
+    # Primary descending; the name tie-break stays ascending; unavailable last.
+    assert [row[0] for row in reversed_rows] == ["b", "a", "c", "y", "z"]
+
+
+def test_reversed_project_sorts_keep_unreadable_projects_last(
+    tmp_path: Path,
+) -> None:
+    # Asking for the oldest project first must not promote the ones we cannot read.
+    registry = tmp_path / "registry"
+    for name, modified_ns in (
+        ("alpha", 1_000_000_000),
+        ("bravo", 2_000_000_000),
+    ):
+        project = tmp_path / "src" / name
+        task_file = write(project / "tasks.org", "* Tasks\n** TODO t0001 One\n")
+        os.utime(task_file, ns=(modified_ns, modified_ns))
+        register(registry, name, project)
+    broken = registry / "gone"
+    broken.mkdir(parents=True)
+    (broken / "gone").symlink_to(tmp_path / "missing")
+
+    projects = manager.discover_projects(registry)
+    metadata = manager.read_project_metadata(registry, projects)
+    order = lambda mode, reverse: [
+        project.name
+        for project in manager.sort_projects(
+            projects, metadata, mode, reverse=reverse
+        )
+    ]
+
+    assert order(manager.PROJECT_SORT_MODIFIED, False) == ["bravo", "alpha", "gone"]
+    assert order(manager.PROJECT_SORT_MODIFIED, True) == ["alpha", "bravo", "gone"]
+    assert order(manager.PROJECT_SORT_ALPHABETICAL, True) == [
+        "gone",
+        "bravo",
+        "alpha",
+    ]
+
+
+def test_project_filter_hides_only_provably_quiet_projects(tmp_path: Path) -> None:
+    # docs/ptui.md: warnings survive filtering, and unreadable is not "nothing to do".
+    registry = tmp_path / "registry"
+    for name, tasks in (
+        ("busy", "** TODO t0001 One\n** DONE t0002 Two\n"),
+        ("quiet", "** DONE t0001 One\n** MOOT t0002 Two\n"),
+        ("empty", ""),
+    ):
+        project = tmp_path / "src" / name
+        write(project / "tasks.org", f"* Tasks\n{tasks}")
+        register(registry, name, project)
+    broken = registry / "gone"
+    broken.mkdir(parents=True)
+    (broken / "gone").symlink_to(tmp_path / "missing")
+
+    projects = manager.discover_projects(registry)
+    by_name = {project.name: project for project in projects}
+    assert manager.top_level_task_counts(by_name["busy"]) == (1, 2)
+    assert manager.top_level_task_counts(by_name["quiet"]) == (0, 2)
+    assert manager.top_level_task_counts(by_name["empty"]) == (0, 0)
+    assert manager.top_level_task_counts(by_name["gone"]) is None
+
+    assert [p.name for p in manager.filter_projects(projects, "all")] == [
+        "busy",
+        "empty",
+        "gone",
+        "quiet",
+    ]
+    assert [p.name for p in manager.filter_projects(projects, "open")] == [
+        "busy",
+        "gone",
+    ]
+    with pytest.raises(ValueError):
+        manager.filter_projects(projects, "todo")
+
+
+def test_task_filter_names_every_state_the_done_position_matches(
+    tmp_path: Path,
+) -> None:
+    # The third position selects MOOT too, so the label cannot say DONE alone.
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n"
+        "** TODO t0001 Open\n"
+        "** DONE t0002 Finished\n"
+        "** MOOT t0003 Abandoned\n",
+    )
+    buf = taskui.OrgBuffer(org_file)
+
+    def ids(mode: str) -> list[str]:
+        return [
+            item.task.id
+            for item in taskui.load_menu_items(buf, filter_mode=mode)
+            if item.task is not None
+        ]
+
+    assert ids("all") == ["t0001", "t0002", "t0003"]
+    assert ids("todo") == ["t0001"]
+    assert ids("done") == ["t0002", "t0003"]
+    assert taskui._task_filter_label("done") == "DONE+MOOT"
+    assert taskui._task_menu_instruction("done").startswith("DONE+MOOT · ")
+    assert taskui.task_view(include_done=False).filter == "todo"
+
+
 def test_project_browser_shows_metadata_and_anchors_sort_selection(
     tmp_path: Path,
 ) -> None:
@@ -2539,6 +2685,64 @@ def test_project_browser_shows_metadata_and_anchors_sort_selection(
     assert browser.sort_mode == manager.PROJECT_SORT_PRIORITY
     assert session.message == "Sort: Priority"
     assert session.current_view.selected_index == 1
+
+
+def test_project_browser_filters_and_anchors_the_selection(tmp_path: Path) -> None:
+    # C-t hides quiet projects, keeps the highlight on the same one, and says so.
+    registry = tmp_path / "registry"
+    for name, tasks in (
+        ("alpha", "** TODO t0001 One\n"),
+        ("bravo", "** DONE t0001 Finished\n"),
+        ("zulu", "** TODO t0001 One\n"),
+    ):
+        project = tmp_path / "src" / name
+        write(project / "tasks.org", f"* Tasks\n{tasks}")
+        register(registry, name, project)
+    (registry / manager.PROJECTS_INDEX_NAME).write_text(
+        manager.PROJECTS_INDEX_HEADER + "* alpha\n* bravo\n* zulu\n",
+        encoding="utf-8",
+    )
+
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+    view = browser.view()
+    assert view.instruction.startswith("Priority sort")
+    assert "C-t filter" in view.instruction
+    assert view.actions["c-t"] == projmgr.PROJECT_FILTER_ACTION
+    assert [row.text[4:].split()[0] for row in view.rows] == [
+        "alpha",
+        "bravo",
+        "zulu",
+    ]
+
+    class FakeSession:
+        def __init__(self, current_view) -> None:
+            self.current_view = current_view
+            self.message = ""
+
+        def replace_view(self, replacement) -> None:
+            self.current_view = replacement
+
+        def set_transient_message(self, message: str) -> None:
+            self.message = message
+
+    session = FakeSession(view)
+    view.selected_index = 2
+    view.on_result(session, menu.MenuResult("filter", 2))
+
+    assert browser.view_state.filter == "open"
+    assert session.message == "Showing: open only"
+    assert session.current_view.instruction.startswith("open only · Priority sort")
+    assert [row.text[4:].split()[0] for row in session.current_view.rows] == [
+        "alpha",
+        "zulu",
+    ]
+    # zulu was selected before bravo was hidden, so it is still selected after.
+    assert session.current_view.selected_index == 1
+
+    session.current_view.on_result(session, menu.MenuResult("filter", 1))
+    assert browser.view_state.filter == "all"
+    assert session.message == "Showing: all projects"
+    assert len(session.current_view.rows) == 3
 
 
 def test_project_browser_buffers_priority_undo_redo_and_save(tmp_path: Path) -> None:

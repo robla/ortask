@@ -19,6 +19,7 @@ from pathlib import Path
 import orglib
 
 from . import core
+from . import viewstate
 
 DEFAULT_REGISTRY = "~/Projects"
 
@@ -750,14 +751,10 @@ class ProjectMetadata:
     warning: str | None = None
 
 
-PROJECT_SORT_PRIORITY = "priority"
-PROJECT_SORT_ALPHABETICAL = "alphabetical"
-PROJECT_SORT_MODIFIED = "modified"
-PROJECT_SORT_MODES = (
-    PROJECT_SORT_PRIORITY,
-    PROJECT_SORT_ALPHABETICAL,
-    PROJECT_SORT_MODIFIED,
-)
+PROJECT_SORT_PRIORITY = viewstate.SORT_PRIORITY
+PROJECT_SORT_ALPHABETICAL = viewstate.SORT_ALPHABETICAL
+PROJECT_SORT_MODIFIED = viewstate.SORT_MODIFIED
+PROJECT_SORT_MODES = viewstate.PROJECT_SORTS
 _PROJECT_PRIORITY_RANK = {"A": 0, "B": 1, "C": 2}
 PROJECT_PRIORITY_SCALE = (None, "C", "B", "A")
 
@@ -767,10 +764,8 @@ def project_name_sort_key(project: Project) -> tuple[str, str]:
     return project.name.casefold(), project.name
 
 
-def project_priority_sort_key(
-    project: Project, metadata: ProjectMetadata
-) -> tuple[int, str, str]:
-    """Org priority first, then the normal project-name ordering.
+def project_priority_rank(metadata: ProjectMetadata) -> int:
+    """Where one project's Org priority sorts, as a single comparable axis.
 
     ``ptui`` edits A through C. Other one-character Org priorities remain
     visible and sort after C but before an unset priority rather than being
@@ -778,25 +773,43 @@ def project_priority_sort_key(
     """
     priority = metadata.priority.upper() if metadata.priority else None
     if priority in _PROJECT_PRIORITY_RANK:
-        rank = _PROJECT_PRIORITY_RANK[priority]
-    elif priority is not None:
-        rank = len(_PROJECT_PRIORITY_RANK)
-    else:
-        rank = len(_PROJECT_PRIORITY_RANK) + 1
-    return rank, *project_name_sort_key(project)
+        return _PROJECT_PRIORITY_RANK[priority]
+    if priority is not None:
+        return len(_PROJECT_PRIORITY_RANK)
+    return len(_PROJECT_PRIORITY_RANK) + 1
+
+
+def project_priority_sort_key(
+    project: Project, metadata: ProjectMetadata
+) -> tuple[int, str, str]:
+    """Org priority first, then the normal project-name ordering."""
+    return project_priority_rank(metadata), *project_name_sort_key(project)
+
+
+def project_modified_ns(project: Project) -> int | None:
+    """The canonical task file's modification time, or ``None`` if unreadable."""
+    try:
+        org_file = canonical_org_file(project)
+        if org_file is None:
+            return None
+        with org_file.open("rb") as stream:
+            return os.fstat(stream.fileno()).st_mtime_ns
+    except (OSError, RuntimeError):
+        return None
+
+
+def project_unavailable(project: Project) -> int:
+    """1 for a project whose task file cannot be read, so it can be kept last.
+
+    Kept out of the recency axis on purpose: reversing the order must not
+    promote the projects a reader can learn the least from.
+    """
+    return 1 if project_modified_ns(project) is None else 0
 
 
 def project_modified_sort_key(project: Project) -> tuple[int, int, str, str]:
     """Newest canonical task file first; unavailable files sort last."""
-    try:
-        org_file = canonical_org_file(project)
-        if org_file is None:
-            modified_ns = None
-        else:
-            with org_file.open("rb") as stream:
-                modified_ns = os.fstat(stream.fileno()).st_mtime_ns
-    except (OSError, RuntimeError):
-        modified_ns = None
+    modified_ns = project_modified_ns(project)
     unavailable = 1 if modified_ns is None else 0
     newest_first = -modified_ns if modified_ns is not None else 0
     return unavailable, newest_first, *project_name_sort_key(project)
@@ -829,29 +842,91 @@ def sort_projects(
     projects: list[Project] | tuple[Project, ...],
     metadata: dict[str, ProjectMetadata],
     mode: str,
+    *,
+    reverse: bool = False,
 ) -> list[Project]:
-    """Return projects in one of the navigator's non-mutating display orders."""
+    """Return projects in one of the navigator's non-mutating display orders.
+
+    ``reverse`` inverts the mode's own axis and nothing else, so an unreadable
+    task file stays at the bottom and the project-name tie-break stays
+    ascending. ``viewstate.order_by`` is what enforces that.
+    """
     if mode == PROJECT_SORT_PRIORITY:
-        return sorted(
+        return viewstate.order_by(
             projects,
-            key=lambda project: project_priority_sort_key(
-                project, metadata.get(project.name, ProjectMetadata())
+            primary=lambda project: project_priority_rank(
+                metadata.get(project.name, ProjectMetadata())
             ),
+            tiebreak=project_name_sort_key,
+            reverse=reverse,
         )
     if mode == PROJECT_SORT_ALPHABETICAL:
-        return sorted(projects, key=project_name_sort_key)
+        return viewstate.order_by(
+            projects,
+            primary=lambda project: project.name.casefold(),
+            tiebreak=lambda project: project.name,
+            reverse=reverse,
+        )
     if mode == PROJECT_SORT_MODIFIED:
-        return sorted(projects, key=project_modified_sort_key)
+        return viewstate.order_by(
+            projects,
+            primary=lambda project: -(project_modified_ns(project) or 0),
+            tiebreak=project_name_sort_key,
+            unavailable=project_unavailable,
+            reverse=reverse,
+        )
     raise ValueError(f"unknown project sort mode: {mode}")
 
 
 def next_project_sort_mode(mode: str) -> str:
     """Cycle through the project sort modes currently implemented by ptui."""
     try:
-        index = PROJECT_SORT_MODES.index(mode)
+        return viewstate.next_position(PROJECT_SORT_MODES, mode)
     except ValueError as exc:
         raise ValueError(f"unknown project sort mode: {mode}") from exc
-    return PROJECT_SORT_MODES[(index + 1) % len(PROJECT_SORT_MODES)]
+
+
+def top_level_task_counts(project: Project) -> tuple[int, int] | None:
+    """``(open, total)`` top-level tasks, or ``None`` when they cannot be read.
+
+    Counts the same top-level tasks ``projmgr.py list`` shows, so the navigator
+    row, the project filter, and that listing never disagree.
+    """
+    if project.warning:
+        return None
+    org_file = canonical_org_file(project)
+    if org_file is None:
+        return None
+    try:
+        tasks = orglib.parse(org_file.read_text(encoding="utf-8")).tasks()
+    except OSError:
+        return None
+    if not tasks:
+        return 0, 0
+    root_level = min(task.level for task in tasks)
+    top_level = [task for task in tasks if task.level == root_level]
+    return sum(1 for task in top_level if task.state == "TODO"), len(top_level)
+
+
+def filter_projects(
+    projects: list[Project] | tuple[Project, ...], mode: str
+) -> list[Project]:
+    """Hide only what the navigator can prove is quiet.
+
+    A project whose task file is missing, broken, or unreadable stays visible:
+    ``docs/ptui.md`` requires warnings to survive filtering, and a project that
+    cannot be read is not a project with nothing left to do.
+    """
+    if mode == viewstate.FILTER_ALL:
+        return list(projects)
+    if mode != viewstate.FILTER_OPEN:
+        raise ValueError(f"unknown project filter: {mode}")
+    kept = []
+    for project in projects:
+        counts = top_level_task_counts(project)
+        if counts is None or counts[0] > 0:
+            kept.append(project)
+    return kept
 
 
 def shift_project_priority(priority: str | None, direction: int) -> str | None:
