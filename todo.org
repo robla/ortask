@@ -525,7 +525,7 @@ file to disk; it must never mean "apply view options." Render only supported
 axes and directions, so =orti= may initially expose only its filter until
 sibling-aware sorting lands. Numbered mode keeps its typed-letter quick toggles
 rather than growing a form. Update help/specs and add TTY integration coverage.
-*** TODO [#C] t0039.5 Sort the task tree by sibling, not by row
+*** DONE [#C] t0039.5 Sort the task tree by sibling, not by row
 Only after =t0039.1=. =orti= sorts by =line_num= because file order is what
 keeps children under their parents, so a priority or name order has to reorder
 siblings within each parent and never across them. Restate the keybinding

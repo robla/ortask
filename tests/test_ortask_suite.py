@@ -2519,12 +2519,14 @@ def test_view_state_cycles_only_the_axes_a_surface_offers() -> None:
     # A one-position axis is not a choice: no key, and nothing in the badge.
     tasks_view = taskui.TASK_VIEW_AXES.initial()
     assert (tasks_view.filter, tasks_view.sort) == ("all", "file")
-    assert tasks_view.axes.cycles_filter and not tasks_view.axes.cycles_sort
-    assert tasks_view.badge() == "all"
-    assert tasks_view.next_filter().badge() == "TODO"
-    assert tasks_view.next_filter().next_filter().badge() == "DONE+"
+    assert tasks_view.axes.cycles_filter and tasks_view.axes.cycles_sort
+    assert tasks_view.badge() == "all · File order"
+    assert tasks_view.next_filter().badge() == "TODO · File order"
+    assert tasks_view.next_filter().next_filter().badge() == "DONE+ · File order"
     assert tasks_view.next_filter().next_filter().next_filter().filter == "all"
-    assert tasks_view.next_sort().sort == "file"
+    assert tasks_view.next_sort().badge() == "all · Priority order"
+    assert tasks_view.next_sort().next_sort().badge() == "all · Title order"
+    assert tasks_view.next_sort().next_sort().next_sort().sort == "file"
 
     projects_view = projmgr.PROJECT_VIEW_AXES.initial()
     assert projects_view.badge() == "Priority sort"
@@ -2545,11 +2547,17 @@ def test_view_state_cycles_only_the_axes_a_surface_offers() -> None:
         viewstate.next_position(taskui.TASK_FILTERS, "open")
 
     # t0039.3.2: reversibility is declared per sort, not globally. File order
-    # cannot be inverted, so nothing can put a task list into that state.
+    # cannot be inverted, so nothing can put a task list into that state — even
+    # though the task list's other two orders can be.
     assert not tasks_view.reversible
     assert tasks_view.with_reverse(True) == tasks_view
     with pytest.raises(ValueError):
         viewstate.ViewState(taskui.TASK_VIEW_AXES, "all", "file", reverse=True)
+    by_title = tasks_view.next_sort().next_sort()
+    assert by_title.reversible
+    assert by_title.with_reverse(True).badge() == "all · Title order (Z-A)"
+    # Returning to file order drops a direction it cannot hold.
+    assert by_title.with_reverse(True).next_sort().reverse is False
     assert projects_view.reversible
     assert projects_view.direction_label == "highest first"
 
@@ -2916,8 +2924,8 @@ def test_view_options_screen_applies_live_and_leaves_save_alone(
     assert rendered(1) == "Order      [Modified]"
     assert rendered(2) == "Direction  [oldest first]"
 
-    # The task list offers only the axes it has: one filter, no order, no
-    # reverse, because file order is what holds its tree together.
+    # The task list offers its own three axes; its default order is the one
+    # that holds the tree together, and that one cannot be inverted.
     task_screen = viewui.view_options_screen(
         taskui.TASK_VIEW_AXES.initial(),
         lambda session, revised: applied.append(revised),
@@ -2925,8 +2933,24 @@ def test_view_options_screen_applies_live_and_leaves_save_alone(
         save=lambda session: saved.append("tasks.org"),
         save_help="Save the entire tasks.org file",
     )
-    assert len(task_screen.focus_targets) == 1
-    assert task_screen.summary == "Showing: all"
+    assert len(task_screen.focus_targets) == 3
+    assert task_screen.summary == "Showing: all · File order"
+
+    def task_row(index: int) -> str:
+        control = task_screen.focus_targets[index].content
+        return "".join(part[1] for part in control.text()).strip()
+
+    # File order has no opposite, so its direction field says so — and a
+    # refused choice must not leave the form showing a setting not in effect.
+    assert task_row(2) == "Direction  [n/a]"
+    task_screen.on_choice_change(session, 2, 1)
+    assert task_row(2) == "Direction  [n/a]"
+    assert applied[-1].reverse is False
+
+    task_screen.on_choice_change(session, 1, 1)
+    assert task_row(1) == "Order      [Priority]"
+    assert task_row(2) == "Direction  [highest first]"
+    assert applied[-1].reverse is False
 
 
 def test_project_browser_view_screen_changes_the_list_behind_it(
@@ -5687,6 +5711,155 @@ def test_local_task_normal_exit_contract_in_real_pty(tmp_path: Path) -> None:
         before_prompt,
     )
     assert after_prompt == b" "
+
+
+TREE_FIXTURE = (
+    "* Tasks\n"
+    "** TODO [#C] t0001 Zebra parent\n"
+    "*** TODO [#B] t0001.1 Middle child\n"
+    "*** TODO [#A] t0001.2 Alpha child\n"
+    "*** TODO t0001.3 Unranked child\n"
+    "** TODO [#A] t0002 Alpha parent\n"
+    "*** TODO t0002.1 Only child\n"
+)
+
+
+def _ordered_ids(buf, view) -> list[str]:
+    """Task ids in the order the list would render them under one view."""
+    items = taskui.load_menu_items(buf, filter_mode="all")
+    parent_ids, child_ids, _ = taskui._task_tree(items, buf.read())
+    ordered = taskui.sibling_ordered_items(items, parent_ids, child_ids, view)
+    return [item.task.id for item in ordered]
+
+
+def test_task_sorting_moves_siblings_and_never_crosses_parents(
+    tmp_path: Path,
+) -> None:
+    # t0039.5: a flat sort would put children above other families' parents.
+    buf = taskui.OrgBuffer(write(tmp_path / "tasks.org", TREE_FIXTURE))
+    view = taskui.TASK_VIEW_AXES.initial()
+
+    assert _ordered_ids(buf, view) == [
+        "t0001",
+        "t0001.1",
+        "t0001.2",
+        "t0001.3",
+        "t0002",
+        "t0002.1",
+    ]
+    # Priority reorders roots among roots and children among their own parent.
+    # An unset cookie ranks last; source order breaks ties.
+    assert _ordered_ids(buf, view.with_sort(taskui.TASK_SORT_PRIORITY)) == [
+        "t0002",
+        "t0002.1",
+        "t0001",
+        "t0001.2",
+        "t0001.1",
+        "t0001.3",
+    ]
+    assert _ordered_ids(buf, view.with_sort(taskui.TASK_SORT_TITLE)) == [
+        "t0002",
+        "t0002.1",
+        "t0001",
+        "t0001.2",
+        "t0001.1",
+        "t0001.3",
+    ]
+    reversed_titles = view.with_sort(taskui.TASK_SORT_TITLE).with_reverse(True)
+    assert _ordered_ids(buf, reversed_titles) == [
+        "t0001",
+        "t0001.3",
+        "t0001.1",
+        "t0001.2",
+        "t0002",
+        "t0002.1",
+    ]
+
+    # The structural invariant every reader of this list depends on: a parent is
+    # immediately followed by its own subtree, under every order.
+    for sort in taskui.TASK_SORTS:
+        for reverse in (False, True):
+            ids = _ordered_ids(buf, view.with_sort(sort).with_reverse(reverse))
+            assert sorted(ids) == sorted(_ordered_ids(buf, view))
+            for parent, child_count in (("t0001", 3), ("t0002", 1)):
+                found = [
+                    index
+                    for index, task_id in enumerate(ids)
+                    if task_id.startswith(parent + ".")
+                ]
+                first = ids.index(parent) + 1
+                assert found == list(range(first, first + child_count)), (
+                    f"{sort} reverse={reverse} split {parent}'s subtree: {ids}"
+                )
+
+
+def test_task_sorting_keeps_fold_navigation_and_anchoring(tmp_path: Path) -> None:
+    # t0039.5: a non-default order must not break the tree controls.
+    buf = taskui.OrgBuffer(write(tmp_path / "tasks.org", TREE_FIXTURE))
+    project = manager.Project("demo", tmp_path, org_file := buf.path)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.current_view = None
+            self.message = ""
+
+        def replace_view(self, replacement) -> None:
+            self.current_view = replacement
+
+        def set_transient_message(self, message: str) -> None:
+            self.message = message
+
+        def set_message(self, message) -> None:
+            self.message = message
+
+    session = FakeSession()
+    view = controller._task_view()
+    session.current_view = view
+    assert view.actions["s"].name == "sort"
+    assert "s sort" in view.instruction
+    assert view.instruction.startswith("all · File order · ")
+
+    def ids() -> list[str]:
+        return [
+            next(
+                token
+                for token in row.text.split()
+                if orglib.syntax.NUMERIC_ID_RE.match(token)
+            )
+            for row in session.current_view.rows
+        ]
+    # The overview shows roots only, in file order.
+    assert ids() == ["t0001", "t0002"]
+
+    # s cycles to Priority: the roots swap, the tree is still a tree.
+    view.on_result(session, menu.MenuResult("sort", 0))
+    assert controller.view_state.sort == taskui.TASK_SORT_PRIORITY
+    assert session.message == "Order: Priority"
+    assert session.current_view.instruction.startswith("all · Priority order · ")
+    assert ids() == ["t0002", "t0001"]
+
+    # Fold still expands the highlighted task, and its children arrive sorted
+    # under it rather than anywhere else in the list.
+    session.current_view.selected_index = 1
+    session.current_view.on_result(session, menu.MenuResult("fold", 1))
+    assert ids() == ["t0002", "t0001", "t0001.2", "t0001.1", "t0001.3"]
+
+    # Selection stays anchored to the same task across a state toggle, and the
+    # toggle does not move it: only the sort key it was ordered by can.
+    session.current_view.selected_index = 3
+    assert ids()[3] == "t0001.1"
+    session.current_view.on_result(session, menu.MenuResult("toggle", 3))
+    assert ids() == ["t0002", "t0001", "t0001.2", "t0001.1", "t0001.3"]
+    assert session.current_view.selected_index == 3
+    assert session.current_view.rows[3].status == "DONE"
+
+    # Raising a priority in a priority order deliberately moves the row, and
+    # the selection follows the task rather than the position.
+    session.current_view.on_result(session, menu.MenuResult("priority_up", 3))
+    assert ids() == ["t0002", "t0001", "t0001.1", "t0001.2", "t0001.3"]
+    assert session.current_view.selected_index == 2
+    assert ids()[2] == "t0001.1"
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")

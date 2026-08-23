@@ -182,6 +182,11 @@ def view_options_screen(
         value: str,
     ) -> None:
         live["view"] = live["view"].with_choice(spec.key, value)
+        # The state is the authority, not the field. A choice it refuses — a
+        # direction under an order that has none — must not leave the form
+        # showing a setting that is not in effect.
+        for choice in live["view"].choices():
+            values[choice.key] = choice.value
         screen.summary = summary()
         apply(session, live["view"])
 

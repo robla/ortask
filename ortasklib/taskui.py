@@ -327,19 +327,108 @@ TASK_FILTER_LABELS = {
 }
 TASK_TERMINAL_FILTER_DESCRIPTION = ", ".join(sorted(core.TERMINAL_STATES))
 
-#: ``t0039.5`` adds sibling-scoped orders here. Until then the task list has a
-#: sort axis with one position, which is not a choice and so is not offered —
-#: and file order is not reversible, because it is what keeps children under
-#: their parents.
+#: Every order here is sibling-scoped: it reorders children within one parent
+#: and never across parents, so the tree survives sorting. File order is the
+#: default and the final tie-break, and it alone is not reversible — reversing
+#: it would put children before the parents they belong to.
 TASK_SORT_FILE = "file"
-TASK_SORTS = (TASK_SORT_FILE,)
+TASK_SORT_PRIORITY = "priority"
+TASK_SORT_TITLE = "title"
+TASK_SORTS = (TASK_SORT_FILE, TASK_SORT_PRIORITY, TASK_SORT_TITLE)
+
+TASK_SORT_LABELS = {
+    TASK_SORT_FILE: "File",
+    TASK_SORT_PRIORITY: "Priority",
+    TASK_SORT_TITLE: "Title",
+}
+TASK_SORT_DIRECTIONS = {
+    TASK_SORT_PRIORITY: ("highest first", "lowest first"),
+    TASK_SORT_TITLE: ("A-Z", "Z-A"),
+}
 
 TASK_VIEW_AXES = viewstate.ViewAxes(
     TASK_FILTERS,
     TASK_SORTS,
     TASK_FILTER_LABELS,
-    {TASK_SORT_FILE: ""},
+    TASK_SORT_LABELS,
+    directions=TASK_SORT_DIRECTIONS,
+    sort_noun=" order",
 )
+
+
+_TASK_PRIORITY_RANK = {"A": 0, "B": 1, "C": 2}
+
+
+def _task_priority_rank(item: MenuItem) -> int:
+    """Where one task's Org priority sorts. An unset cookie ranks last."""
+    priority = item.task.priority if item.task is not None else None
+    normalized = priority.upper() if priority else None
+    if normalized in _TASK_PRIORITY_RANK:
+        return _TASK_PRIORITY_RANK[normalized]
+    if normalized is not None:
+        return len(_TASK_PRIORITY_RANK)
+    return len(_TASK_PRIORITY_RANK) + 1
+
+
+def _task_title_key(item: MenuItem) -> str:
+    return item.task.text.casefold() if item.task is not None else ""
+
+
+TASK_SORT_KEYS = {
+    TASK_SORT_PRIORITY: _task_priority_rank,
+    TASK_SORT_TITLE: _task_title_key,
+}
+
+
+def sibling_ordered_items(
+    items: list[MenuItem],
+    parent_ids: dict[str, str],
+    child_ids: dict[str, list[str]],
+    view: viewstate.ViewState,
+) -> list[MenuItem]:
+    """Reorder siblings within each parent, never across parents.
+
+    The task list is a tree rendered as a flat list, and every reader of that
+    list — fold, tree navigation, ancestor inclusion — assumes a parent is
+    immediately followed by its own subtree. A flat sort would satisfy none of
+    them: children would end up above other families' parents. So this walks
+    the tree depth-first and sorts only each sibling group, which leaves the
+    shape intact and moves rows only among the rows they belong with.
+
+    Source order is the final tie-break, and inversion applies to the chosen
+    key alone, so equal siblings never shuffle.
+    """
+    primary = TASK_SORT_KEYS.get(view.sort)
+    if primary is None:
+        return list(items)
+    if any(item.task is None for item in items):
+        # Read-only headings have no tree to sort within.
+        return list(items)
+
+    by_id = {item.task.id: item for item in items}
+    order = lambda group: viewstate.order_by(
+        group,
+        primary=primary,
+        tiebreak=lambda item: item.line_num,
+        reverse=view.reverse,
+    )
+
+    ordered: list[MenuItem] = []
+    pending = list(
+        reversed(
+            order([item for item in items if parent_ids.get(item.task.id) is None])
+        )
+    )
+    while pending:
+        item = pending.pop()
+        ordered.append(item)
+        children = [
+            by_id[child_id]
+            for child_id in child_ids.get(item.task.id, [])
+            if child_id in by_id
+        ]
+        pending.extend(reversed(order(children)))
+    return ordered
 
 
 def task_state_matches(state: str, position: str) -> bool:
@@ -605,11 +694,17 @@ def _open_editor(buf: OrgBuffer, line_num: int | None) -> None:
     buf.reload()
 
 
-def _task_menu_instruction(filter_mode: str) -> str:
+def _task_menu_instruction(view: viewstate.ViewState | str) -> str:
+    # Takes the whole view, not just the filter: rebuilding one from the filter
+    # would drop the order and direction, and the badge would quietly describe
+    # a list that is not the one on screen.
+    if isinstance(view, str):
+        view = task_view(True, view)
     return (
-        f"{task_view(True, filter_mode).badge()} · ↑↓/jk move · Tab fold · "
+        f"{view.badge()} · ↑↓/jk move · Tab fold · "
         "←/→ tree · S-Tab all · ↵ open · C-g help · "
-        "C-s save · C-/ undo · C-r redo · C-t filter · v view · Esc/b/q back"
+        "C-s save · C-/ undo · C-r redo · C-t filter · s sort · v view · "
+        "Esc/b/q back"
     )
 
 
@@ -658,6 +753,9 @@ TASK_MENU_ACTIONS = {
         "C-t",
         "Cycle visibility: all, TODO, then "
         f"DONE+ ({TASK_TERMINAL_FILTER_DESCRIPTION})",
+    ),
+    "s": menu.MenuAction(
+        "sort", "s", "Cycle task ordering: File, Priority, and Title"
     ),
     "v": menu.MenuAction("view", "v", "Open the view options screen"),
     "s-left": _TOGGLE_MENU_ACTION,
@@ -1032,6 +1130,9 @@ class InteractiveTaskController:
                 self.buf.read(),
             )
             included_ids = _include_task_ancestors(matched_items, parent_ids)
+            all_items = sibling_ordered_items(
+                all_items, parent_ids, child_ids, self.view_state
+            )
             items = _visible_task_items(
                 all_items,
                 included_ids,
@@ -1104,7 +1205,7 @@ class InteractiveTaskController:
             title=f"{self.project.name} tasks",
             title_right=self._file_context(),
             summary=f"Open: {todo}  Done: {done}  Total: {total}",
-            instruction=_task_menu_instruction(self.filter_mode),
+            instruction=_task_menu_instruction(self.view_state),
             actions=TASK_MENU_ACTIONS,
             select_help="Open the highlighted task's details",
             selected_index=start_index,
@@ -1234,6 +1335,11 @@ class InteractiveTaskController:
         if result.action == "filter":
             self.view_state = self.view_state.next_filter()
             session.replace_view(self._task_view(selected_id, fallback))
+            return
+        if result.action == "sort":
+            self.view_state = self.view_state.next_sort()
+            session.replace_view(self._task_view(selected_id, fallback))
+            session.set_transient_message(f"Order: {self.view_state.sort_label}")
             return
         if result.action == "view":
             def apply_view(

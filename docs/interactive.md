@@ -375,7 +375,9 @@ Recommended task-list bindings:
   behavior closely enough to transfer muscle memory.
 - Shift-Up raises priority through `none -> C -> B -> A`; Shift-Down lowers it
   through the reverse sequence. The scale stops rather than wrapping at both
-  ends, and changing priority never reorders the task list.
+  ends. In file order — the default — changing a priority never reorders the
+  task list. In Priority order it deliberately moves the task among its own
+  siblings, and the highlight follows the task rather than the row it was in.
 - `p` opens an explicit `A`/`B`/`C`/`none` picker. This is the discoverable path
   for users who do not want to memorize directional shortcuts.
 - `C-/` (`C-_` on the wire) undoes one buffered task-list transaction. `C-r`
@@ -420,10 +422,10 @@ Future TODO-state guidance:
 
 ### State of the work
 
-`t0039.1` through `t0039.4` are done. `ortasklib/viewstate.py` holds the model,
+`t0039.1` through `t0039.5` are done. `ortasklib/viewstate.py` holds the model,
 both surfaces run their quick toggles off it, `ptui` has the filter it was
-missing, and `v` opens the view screen on both. `t0039.5` (sibling-scoped task
-ordering) and `t0039.6` (tag filtering) stay open.
+missing, `orti` has the sort it was missing, and `v` opens the view screen on
+both. `t0039.6` (tag filtering) stays open.
 
 Direction is reachable now, and it is declared per sort rather than as a global
 Boolean. `ViewAxes.directions` maps each reversible order to the words for its
@@ -466,11 +468,11 @@ replaces the quick controls and persistent badge.
 No new key was introduced. Both existing cycles moved onto the shared model and
 each surface gained the one it lacked:
 
-| Key   | Meaning      | `orti`              | `ptui`                  |
-|-------|--------------|---------------------|-------------------------|
-| `s`   | sort cycle   | not offered yet     | Priority/Alpha/Mod      |
-| `C-t` | filter cycle | all/TODO/DONE+      | all/open only           |
-| `v`   | view screen  | Show                | Show, Order, Direction  |
+| Key   | Meaning      | `orti`                  | `ptui`                  |
+|-------|--------------|-------------------------|-------------------------|
+| `s`   | sort cycle   | File/Priority/Title     | Priority/Alpha/Mod      |
+| `C-t` | filter cycle | all/TODO/DONE+          | all/open only           |
+| `v`   | view screen  | Show, Order, Direction  | Show, Order, Direction  |
 
 `ptui`'s project filter hides only what the navigator can prove is quiet. A
 project whose task file is missing, broken, or unreadable stays in the list:
@@ -521,11 +523,16 @@ Showing: open only · Modified sort (oldest first)
 ```
 
 The offered positions differ per surface, and the screen renders the axes the
-surface declares rather than a union with dead options. `ptui` shows all three
-fields; `orti` shows only `Show`, because its sort axis has one position and no
-direction. `ViewState.choices()` decides, so a field appears the moment its axis
-has something to choose, and the screen grows into task sorting and tag
-filtering without changing its interaction model.
+surface declares rather than a union with dead options. Both surfaces now show all three
+fields, but not the same positions: `ptui` has no file order and no task states,
+`orti` has no modification time. `ViewState.choices()` decides, so a field
+appears the moment its axis has something to choose, and the screen grows into
+tag filtering without changing its interaction model.
+
+An order with no opposite reads `n/a` in the direction field rather than
+vanishing, so the field list does not reshuffle under the cursor — and because
+the state is the authority, a choice it refuses never leaves the form showing a
+setting that is not in effect.
 
 The direction field's words follow the selected order and track it live, so the
 screen never shows the labels that were true when it opened.
@@ -581,19 +588,29 @@ and the diagnostics all answer from it. That is not only cheaper: a row can no
 longer disagree with the filter that kept it, which is what a second read
 midway through a render would allow.
 
-### What `orti` cannot sort by yet
+### Sorting a tree without breaking it
 
-The task list is a tree. `_task_sort_key` returns `line_num` with the comment
-that file order is what preserves the hierarchy, and `_visible_task_items`
-renders parents and children from that order. A flat priority sort would detach
-children from their parents, and it would also break the guarantee stated in the
-keybinding section above that changing a priority never reorders the list.
+The task list is a tree rendered as a flat list, and every reader of that list —
+fold, tree navigation, ancestor inclusion — assumes a parent is immediately
+followed by its own subtree. A flat sort satisfies none of them: children end up
+above other families' parents. `ptui`'s list is flat and has none of this
+constraint, which is why only `orti` needed `t0039.5`.
 
-A priority or name order for `orti` therefore has to be sibling-scoped —
-reordering children within each parent, never across parents — and the
-"never reorders" guarantee has to be restated as applying to file order, which
-stays the default. That is a separate task, after the shared model exists.
-`ptui`'s list is flat and has none of this constraint.
+So `taskui.sibling_ordered_items()` walks the tree depth-first and sorts only
+each sibling group. Rows move only among the rows they belong with, the shape is
+untouched, and source order is the final tie-break so equal siblings never
+shuffle. Inversion applies to the chosen key alone.
+
+File order stays the default and is the one order that cannot be inverted:
+reversing it would put children before the parents they belong to. That is
+declared, not assumed — file order is absent from `TASK_SORT_DIRECTIONS`, so
+`ViewState` refuses a reversed task view and `with_sort` drops a direction the
+new order cannot hold.
+
+The one guarantee this changes is the keybinding section's "changing a priority
+never reorders the task list". That now applies to file order. In Priority order
+the edited task deliberately moves among its siblings, and the highlight follows
+the task rather than the row.
 
 ### Numbered fallback
 
