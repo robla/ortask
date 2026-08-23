@@ -231,4 +231,6 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Codex [2026-08-22 Sat 16:06 PDT]: made =pmgr add= register project-only entries when Org discovery is ambiguous, preserved explicit =--file= selection, stopped registry reads from guessing among candidates, and documented and tested the optional-task-file behavior.
 ** Codex [2026-08-22 Sat 16:58 PDT]: added explicit navigation and edit modes to shared workspaces so arrows traverse every field until Enter enables editing, applied the behavior and visual cues to task and project-metadata views, and updated interaction tests and documentation.
 ** Gemini [2026-08-22 Sat 22:28 PDT]: documented a hybrid sort and filter proposal in =docs/interactive.md= and =docs/gemini-ortask-design.org= combining inline quick-toggles with a dedicated view configurator.
+** Gemini [2026-08-22 Sat 22:37 PDT]: added task =t0039= with four subtasks to =todo.org= for staged implementation of the hybrid sort and filter interface.
+
 

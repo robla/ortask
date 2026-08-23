@@ -457,3 +457,27 @@ external-change detection, auto-save, exact-preimage saves, and rebasing.
 Require no Org or =prompt_toolkit= dependency and document how save observers
 and merge callbacks integrate. A single ortask consumer is not enough reason
 to create or version another package.
+** TODO [#B] t0039 Implement hybrid sort and filter interface across interactive views
+Implement the hybrid interaction model documented in =docs/interactive.md=,
+combining single-keystroke inline toggles with a dedicated bounded view
+configurator dialog for fine-grained multi-axis filtering and sorting.
+*** TODO [#B] t0039.1 Define pure sort/filter state models and ordering helpers
+Define structured dataclasses for view state (state filter, sort axis, and
+direction) in =ortasklib=. Implement pure helpers taking raw item lists and
+returning filtered and sorted results, preserving hierarchical ancestor paths
+for tasks and name anchoring across re-sorts. Add unit tests for pure logic.
+*** TODO [#B] t0039.2 Unify inline quick-toggles and persistent view state badges
+Implement quick cycling keys (=s= for sort cycle, =Tab=/=C-t= for state filter
+toggles) across =orti= task lists and =ptui= project lists. Render persistent,
+unobtrusive view badges (e.g. =[Filter: Open | Sort: Priority ↑]=) in header or
+footer context. Add regression tests for anchored cursor preservation.
+*** TODO [#B] t0039.3 Build the dedicated View Options overlay dialog (S / v)
+Build a compact, bounded modal overlay with radio/choice controls for State
+(=Open=, =All=, =Terminal=), Sort Column (=Priority=, =Natural/File=, =Name=,
+=Modified=), and Direction (=Ascending=, =Descending=). Support standard field
+navigation (arrows/Tab), Space to toggle, Enter to commit, and Esc to cancel.
+*** TODO [#B] t0039.4 Wire hybrid view controls and update documentation
+Hook the shared view model and dialog into =taskui.py= and =projmgr.py=. Update
+contextual help (=C-g=), keyboard references, and specs in =docs/interactive.md=
+and =docs/ptui.md=. Add integration coverage across TTY and numbered modes.
+
