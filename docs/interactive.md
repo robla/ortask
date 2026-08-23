@@ -494,16 +494,20 @@ through — see "What `orti` cannot sort by yet".
 
 Both surfaces already carried a mode word in the instruction line, so the badge
 extends that rather than adding a second status area. It names what is being
-shown and then how it is ordered — `all`, `TODO`, `DONE+` for tasks;
-`Priority sort`, `open only · Alphabetical sort`, `Modified sort ↓` for
-projects — and it is present always, not only when the view is non-default. The
-task terminal label becomes `DONE+` under `t0039.3.4`, with help spelling out
-`DONE`, `MOOT`, and `SUPERSEDED`. A reader who cannot see why a row is missing
-has no way to get it back.
+shown and then how it is ordered — `all · File order`, `TODO · Priority order`
+for tasks; `Priority sort`, `open only · Alphabetical sort`,
+`Modified sort (oldest first)` for projects — and it is present always, not only
+when the view is non-default. A reader who cannot see why a row is missing has
+no way to get it back.
+
+The same reasoning gives `ptui` a modification-age column. Naming the order in
+the footer says how the list is sorted; the column is what lets a reader check
+it, which is why it shows in every order and not only in Modified. See
+`docs/ptui.md`.
 
 An axis with a single position is not a choice: its key is not offered and it
-stays out of the badge. That is how the task list carries a sort axis today
-without `s` doing anything.
+stays out of the badge. Nothing has one today, but the rule is what let the task
+list carry a sort axis through `t0039.1`–`t0039.4` without `s` doing anything.
 
 ### View Options screen (`v`)
 

@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -214,6 +215,47 @@ def _project_tasks(
     return f"{reading.open_tasks} open"
 
 
+#: Shown when a project's task file cannot be read, so its age is unknowable.
+UNKNOWN_AGE = "-"
+
+_MINUTE = 60
+_HOUR = 60 * _MINUTE
+_DAY = 24 * _HOUR
+_WEEK = 7 * _DAY
+_YEAR = 365 * _DAY
+
+#: Largest unit that still reads as a whole number, from the last change.
+_AGE_UNITS = (
+    (_MINUTE, 1, ""),
+    (_HOUR, _MINUTE, "m"),
+    (_DAY, _HOUR, "h"),
+    (_WEEK, _DAY, "d"),
+    (_YEAR, _WEEK, "w"),
+)
+
+
+def _project_modified(
+    snapshot: manager.ProjectSnapshot | None = None,
+    *,
+    now_ns: int | None = None,
+) -> str:
+    """How long since the task file changed — the Modified sort, made visible.
+
+    Sorting by a key nobody can see is a guess, so this appears in every order
+    rather than only in the one that uses it. Relative age rather than a
+    timestamp: the question a reader has here is how stale a project is, not
+    exactly when it was touched.
+    """
+    if snapshot is None or snapshot.modified_ns is None:
+        return UNKNOWN_AGE
+    now = time.time_ns() if now_ns is None else now_ns
+    seconds = max((now - snapshot.modified_ns) // 1_000_000_000, 0)
+    for limit, size, unit in _AGE_UNITS:
+        if seconds < limit:
+            return f"{seconds // size}{unit}" if unit else "now"
+    return f"{seconds // _YEAR}y"
+
+
 def _project_priority(metadata: manager.ProjectMetadata) -> str:
     """Compact priority text for a navigator row; blank means deliberately unset."""
     return metadata.priority.upper() if metadata.priority else " "
@@ -243,11 +285,19 @@ def _navigator_row(
     project: manager.Project,
     metadata: manager.ProjectMetadata,
     snapshot: manager.ProjectSnapshot | None = None,
+    *,
+    now_ns: int | None = None,
 ) -> str:
-    """Priority, name, workload, and description for one interactive row."""
-    prefix = (
-        f"[{_project_priority(metadata)}] {project.name:<12}  "
-        f"{_project_tasks(project, snapshot):<14}"
+    """Priority, name, workload, age, and description for one interactive row."""
+    # Joined rather than concatenated so an overflowing column — a broken
+    # project's warning lands in the workload one — still cannot run into the
+    # next field.
+    prefix = "  ".join(
+        (
+            f"[{_project_priority(metadata)}] {project.name:<12}",
+            f"{_project_tasks(project, snapshot):<12}",
+            f"{_project_modified(snapshot, now_ns=now_ns):<4}",
+        )
     )
     suffix = "  ".join(
         part
@@ -264,11 +314,17 @@ def _navigator_dashboard_detail(
     project: manager.Project,
     metadata: manager.ProjectMetadata,
     snapshot: manager.ProjectSnapshot | None = None,
+    *,
+    now_ns: int | None = None,
 ) -> str:
     """Fallback rows carry context that the highlight summary normally supplies."""
-    parts = [
-        f"{_project_location(project)}  ({_project_tasks(project, snapshot)})"
-    ]
+    # Age is omitted rather than shown as unknown: a project whose file cannot
+    # be read is already saying so in the workload column.
+    facts = [_project_tasks(project, snapshot)]
+    age = _project_modified(snapshot, now_ns=now_ns)
+    if age != UNKNOWN_AGE:
+        facts.append(age)
+    parts = [f"{_project_location(project)}  ({', '.join(facts)})"]
     if metadata.description:
         parts.append(metadata.description)
     note = _project_metadata_note(project, metadata)

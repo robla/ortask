@@ -22,11 +22,21 @@ description without hiding the canonical project and task-file paths. A
 representative row is:
 
 ```text
-▶  1  PROJ  [A] ortask     4 open  Org-backed task and project tools
+▶  1  PROJ  [A] ortask        4 open        29m   Org-backed task and project tools
 ```
 
 An unset priority is shown less prominently than `A`, `B`, or `C`. Broken
 projects and warnings remain visible regardless of sorting or metadata.
+
+The fourth column is how long ago the task file changed — the Modified sort key,
+made visible. It is present in every order, not only that one: a list ordered by
+something the reader cannot see is a list they have to take on faith. The value
+is a relative age (`now`, `9m`, `5h`, `3d`, `5w`, `2y`) because the question
+here is how stale a project is, not exactly when it was touched; two projects in
+the same bucket can still sort apart. A project whose task file cannot be read
+shows `-`, and the columns are joined rather than concatenated so an overflowing
+workload column — a broken project's warning lands there — cannot run into the
+age beside it.
 
 ## Sorting
 
@@ -60,9 +70,9 @@ declares the words for its two ends rather than a Boolean — `highest first` /
 screen is where direction is chosen, while `s` remains the fast sort cycle.
 
 Every render reads each project's task file once, through
-`manager.snapshot_projects()`. Sorting, filtering, the open-task column, and the
-mirror diagnostics all answer from that one snapshot, so a row cannot contradict
-the filter that kept it.
+`manager.snapshot_projects()`. Sorting, filtering, the open-task column, the age
+column, and the mirror diagnostics all answer from that one snapshot, so a row
+cannot contradict the filter that kept it or the order it was placed in.
 
 ## Filtering
 

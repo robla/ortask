@@ -2619,6 +2619,75 @@ def test_reversed_project_sorts_keep_unreadable_projects_last(
     ]
 
 
+def test_project_rows_show_the_modification_age(tmp_path: Path) -> None:
+    # Sorting by a key nobody can see is a guess, so Modified has a column.
+    now_ns = 1_000_000 * 1_000_000_000
+    second = 1_000_000_000
+    ages = {
+        "now": 30 * second,
+        "9m": 9 * 60 * second,
+        "5h": 5 * 60 * 60 * second,
+        "3d": 3 * 24 * 60 * 60 * second,
+        "5w": 40 * 24 * 60 * 60 * second,
+        "2y": 800 * 24 * 60 * 60 * second,
+    }
+    for expected, age in ages.items():
+        snapshot = manager.ProjectSnapshot(1, 2, now_ns - age)
+        assert projmgr._project_modified(snapshot, now_ns=now_ns) == expected
+    # A clock that ran backwards must not print a negative age.
+    assert projmgr._project_modified(
+        manager.ProjectSnapshot(1, 2, now_ns + second), now_ns=now_ns
+    ) == "now"
+    assert projmgr._project_modified(manager.ProjectSnapshot(1, 2, None)) == (
+        projmgr.UNKNOWN_AGE
+    )
+    assert projmgr._project_modified(None) == projmgr.UNKNOWN_AGE
+
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "alpha"
+    task_file = write(project / "tasks.org", "* Tasks\n** TODO t0001 One\n")
+    os.utime(task_file, ns=(now_ns - ages["3d"], now_ns - ages["3d"]))
+    register(registry, "alpha", project)
+    broken = registry / "gone"
+    broken.mkdir(parents=True)
+    (broken / "gone").symlink_to(tmp_path / "missing")
+
+    projects = manager.discover_projects(registry)
+    snapshots = manager.snapshot_projects(projects)
+    by_name = {one.name: one for one in projects}
+
+    row = projmgr._navigator_row(
+        by_name["alpha"],
+        manager.ProjectMetadata(priority="A", description="Steady work"),
+        snapshots["alpha"],
+        now_ns=now_ns,
+    )
+    assert row == "[A] alpha         1 open        3d    Steady work"
+
+    # An overflowing workload column cannot run into the age beside it.
+    crowded = projmgr._navigator_row(
+        by_name["gone"],
+        manager.ProjectMetadata(),
+        snapshots["gone"],
+        now_ns=now_ns,
+    )
+    assert "  " + projmgr.UNKNOWN_AGE in crowded
+    assert ")" + projmgr.UNKNOWN_AGE not in crowded
+
+    # The numbered table has no column to hold open, so an unknown age is left
+    # out rather than printed as a dash.
+    detail = projmgr._navigator_dashboard_detail(
+        by_name["alpha"], manager.ProjectMetadata(), snapshots["alpha"],
+        now_ns=now_ns,
+    )
+    assert detail.endswith("(1 open, 3d)")
+    broken_detail = projmgr._navigator_dashboard_detail(
+        by_name["gone"], manager.ProjectMetadata(), snapshots["gone"],
+        now_ns=now_ns,
+    )
+    assert f", {projmgr.UNKNOWN_AGE})" not in broken_detail
+
+
 def test_project_render_reads_each_task_file_once(
     tmp_path: Path, monkeypatch
 ) -> None:
