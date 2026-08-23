@@ -234,3 +234,4 @@ repo evolution rather than trying to capture every prompt or revision.
 ** Gemini [2026-08-22 Sat 22:37 PDT]: added task =t0039= with four subtasks to =todo.org= for staged implementation of the hybrid sort and filter interface.
 
 
+** Claude [2026-08-22 Sat 22:48 PDT]: revised Gemini's hybrid sort and filter section in =docs/interactive.md= against the shipped bindings — dropped =Tab= (fold), kept the three-way filter cycle, put the view screen on the existing =WorkspaceView=, moved direction inside the sort key, and deferred =orti= sorting for the tree invariant — and reworked =t0039= into six staged subtasks.

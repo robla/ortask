@@ -402,51 +402,151 @@ Future TODO-state guidance:
   Emacs-style multi-key sequences such as `C-c t` or `C-c / t`. This keeps state
   changes separate from visibility changes and avoids overloading plain `t`.
 
-## Proposal: Hybrid Sort & Filter Interface (Gemini)
+## Sort and Filter Interface (hybrid quick-toggle plus view screen)
 
-> **Attribution Note:** Gemini recommends this design. It is documented here for peer review and critique by other LLMs and human contributors. It should not be treated as a user-mandated constraint.
+> Gemini proposed the hybrid model below. Claude revised it against the shipped
+> bindings and the task-tree invariant; the corrections are listed at the end of
+> the section. This is a design direction for review, not a user-mandated
+> constraint.
 
-As lists in `ortask` (`orti`) and `projmgr` (`ptui`) grow across multiple dimensions (states, priorities, dates, tags, and project attributes), the interactive interface needs a clean balance between single-keystroke speed and multi-dimensional configurability.
+### What already exists
 
-### The Problem
+The hybrid model is not new machinery. Each surface has one half of it:
 
-- **Inline-only cycling** (e.g., repeatedly pressing `s` or `C-t` to cycle through every permutation) becomes cumbersome when there are more than 3–4 sort columns or multiple filter combinations.
-- **Dedicated-only modal screens** add unnecessary interaction friction to the 90% use case (e.g., quickly toggling "Open tasks only" vs "All tasks", or toggling Priority vs Alphabetical order).
+- `orti` cycles a visibility filter on `C-t`: `all -> TODO -> DONE`
+  (`taskui.TASK_FILTERS`). The `DONE` position matches `core.TERMINAL_STATES`,
+  so it also selects `MOOT`; the footer label saying `DONE` understates that.
+  `orti` has no sort control, deliberately — `load_menu_items` sorts by
+  `line_num` so the hierarchy survives.
+- `ptui` cycles a sort mode on `s`: Priority -> Alphabetical -> Modified
+  (`manager.PROJECT_SORT_MODES`), reported in the footer, selection anchored by
+  name across the change. `ptui` has no filter control.
+- Both already print the active mode in the instruction line
+  (`_task_menu_instruction`, `_project_menu_instruction`).
 
-### The Proposed Hybrid Model
+So the work is: one shared model behind the two existing cycles, the missing
+half on each surface, and one screen for the axes a cycle key cannot reach.
 
-Gemini recommends combining **inline quick-toggles** with a **dedicated view configurator**:
+### The problem
 
-#### 1. Inline Quick Toggles (Daily Flow)
-For the most frequent 1-key operations directly on the list:
-- **`s` (Sort Cycle):** Rapidly cycles through the primary 2–3 sort modes (e.g. `Priority` $\rightarrow$ `Alphabetical / Natural` $\rightarrow$ `Modified`).
-- **`Tab` or `t` / `C-t` (Filter Toggle):** Rapidly toggles the primary task state filter (`Incomplete / Open` $\leftrightarrow$ `All`).
-- **Header / Footer Badge:** Always displays the currently active view state (e.g. `[Filter: Open | Sort: Priority ↑]`), ensuring the user is never confused about why an item is hidden or where it is positioned.
+Cycling is the right control for two or three positions on one axis and the
+wrong one for a combination — pressing `s` eleven times to reach "name order,
+descending, open only" is worse than a form. A form is the wrong control for
+the ninety-percent case of "hide the finished ones". Keep both, and make the
+active view state visible at all times so no row is ever mysteriously absent.
 
-#### 2. Dedicated View Configurator (`S` or `v`)
-Pressing `S` (Shift-S) or `v` (View Options) opens a compact, bounded overlay/form for fine-grained multi-axis selection:
+### Inline quick toggles
+
+This stage introduces no new key. It puts both existing cycles on the shared
+model and gives each surface the one it lacks:
+
+| Key   | Meaning      | Today          | After              |
+|-------|--------------|----------------|--------------------|
+| `s`   | sort cycle   | `ptui`         | `ptui`             |
+| `C-t` | filter cycle | `orti`         | `orti`, `ptui`     |
+| `v`   | view screen  | —              | both               |
+
+Keys that are not available for this:
+
+- `Tab` is fold and `S-Tab` is fold-all in the task list
+  (`taskui.TASK_MENU_ACTIONS`). It cannot become a filter toggle.
+- Plain `t` is ruled out by the keybinding section above.
+- `S` (Shift-S) is one glyph away from the `S-↑`/`S-↓` priority family that
+  both surfaces bind, so `v` carries the view screen instead.
+
+`s` reaches `orti` only once the task list has more than one order to cycle
+through — see "What `orti` cannot sort by yet".
+
+### The view badge
+
+Both surfaces already carry a mode word in the instruction line. Extend that
+rather than adding a second status area: one bracketed badge showing filter and
+sort together, present whenever either is off its default, e.g.
+`[open · name ↑]`. The badge is the thing that makes a non-default view safe to
+leave running; it is not optional polish.
+
+### The View Options screen (`v`)
+
+Build it as a `menu.WorkspaceView`, not as a new modal widget. That type already
+supplies bounded field navigation, choice fields (`choice_focus_indices` /
+`on_choice_change`, changed with ←/→), a dirty indicator, `C-s`, `Esc`, `C-g`
+help, and the explicit navigation-versus-edit modes added for the metadata
+workspace. Reuse its conventions exactly — do not introduce Space-to-toggle or
+Enter-to-apply, which would give ortask two form idioms that disagree.
 
 ```text
-┌─ View Options ──────────────────────────────────────────────┐
-│ Filter State:  (•) Open/Incomplete   ( ) All   ( ) Terminal │
-│ Filter Tags:   [                      ] (comma-separated)   │
-│ Sort Column:   (•) Priority   ( ) ID/Natural   ( ) Modified │
-│ Direction:     (•) Ascending  ( ) Descending                │
-│                                                             │
-│ [Space] Toggle · [Tab/↑↓] Navigate · [Enter] Apply · [Esc]  │
-└─────────────────────────────────────────────────────────────┘
+┌─ View options ── ortask ────────────────────────────┐
+│   Show     ◀ open ▶        all · open · closed      │
+│   Order    ◀ file ▶        file · priority · name   │
+│   Reverse  ◀ no ▶                                   │
+│                                                     │
+│ ↑↓ field · ←/→ change · C-s apply · Esc cancel      │
+└─────────────────────────────────────────────────────┘
 ```
 
-- **Radio / Choice Groups:**
-  - **Filter State:** `Incomplete / Open` (TODO), `All`, `Terminal` (DONE / MOOT).
-  - **Sort Axis:** `Priority`, `Natural / File Order`, `Task / Project Name`, `Modified Time`.
-  - **Order:** `Ascending / Normal` vs `Descending / Inverted`.
-- **Keyboard Navigation:** Standard arrow keys or `Tab`/`Shift-Tab` to navigate controls; `Space` to toggle radio selections; `Enter` to commit and re-render the list; `Esc` to cancel without changing active settings.
+The offered positions differ per surface: `ptui` has no `file` order and no
+task states, `orti` has no `modified`. The screen renders the axes the surface
+declares; it does not present a union with dead options.
 
-### Surface Applicability
+### Vocabulary
 
-- **Task Lists (`orti` / `ortask.py -i`):** Focuses on state (`Open` vs `All`), priority (`A`/`B`/`C`), tag filtering, and natural heading order.
-- **Project Navigator (`ptui` / `projmgr.py -i`):** Focuses on project priority, alphabetical name, task count, and modified time.
+One set of words in the code, the badge, the screen, and the CLI flags. The
+code's triple is `all` / `todo` / `done` and the CLI flag is `--todo`; keep
+those as the wire values rather than introducing "Incomplete" and "Terminal"
+alongside them. Fix the display label for the third position so it names what it
+matches (`DONE` also selects `MOOT`).
+
+### Direction is part of the key, not `reverse=True`
+
+`manager.project_modified_sort_key` returns
+`(unavailable, -mtime, name, name)`: unreadable task files sort last, and the
+name tie-break is ascending. Passing `reverse=True` to `sorted` would hoist the
+unreadable projects to the top and flip the tie-break too. Inversion has to live
+inside the key model — invert the primary axis only, keep "unavailable last" and
+the ascending name tie-break fixed.
+
+### What `orti` cannot sort by yet
+
+The task list is a tree. `_task_sort_key` returns `line_num` with the comment
+that file order is what preserves the hierarchy, and `_visible_task_items`
+renders parents and children from that order. A flat priority sort would detach
+children from their parents, and it would also break the guarantee stated in the
+keybinding section above that changing a priority never reorders the list.
+
+A priority or name order for `orti` therefore has to be sibling-scoped —
+reordering children within each parent, never across parents — and the
+"never reorders" guarantee has to be restated as applying to file order, which
+stays the default. That is a separate task, after the shared model exists.
+`ptui`'s list is flat and has none of this constraint.
+
+### Numbered fallback
+
+The metadata workspace is prompt_toolkit-only; the numbered project loop offers
+`s=sort`, digits, and `q`. Follow that precedent: the quick toggles work in
+numbered mode as typed letters, and `v` is simply not offered there. Numbered
+mode must stay a typed-letter prompt, not grow a form.
+
+### Not in the first iteration
+
+- **Tag filtering.** There is no tag index, and a tag filter interacts with
+  ancestor inclusion in a way no current filter does. Its own task.
+- **Multi-column sort.** One axis plus direction covers the cases named here.
+- **Persistence.** View state is session-only. It is deliberately not written to
+  `ortask.ini` or `projects.org`; `ptui`'s write path is bounded by `t0037` and
+  a view preference is not worth widening it. `--todo` seeds the initial filter
+  and nothing writes back.
+
+### Revisions to the original proposal
+
+1. `Tab` for the filter toggle — dropped; it is fold.
+2. Two-way `Open ↔ All` toggle — kept as the shipped three-way cycle, which the
+   two-way version would regress.
+3. A new modal overlay — replaced by the existing `WorkspaceView` and its keys.
+4. Sorting in `orti` — deferred to its own task, for the tree invariant.
+5. The tag field — moved out of the first iteration.
+6. Direction — moved inside the sort key rather than a `reverse` flag.
+7. Multi-column sort (named in `docs/gemini-ortask-design.org`) — out of scope;
+   the dialog sketch was already single-column.
 
 ## Workspace Discovery
 

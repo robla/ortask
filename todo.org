@@ -458,26 +458,55 @@ Require no Org or =prompt_toolkit= dependency and document how save observers
 and merge callbacks integrate. A single ortask consumer is not enough reason
 to create or version another package.
 ** TODO [#B] t0039 Implement hybrid sort and filter interface across interactive views
-Implement the hybrid interaction model documented in =docs/interactive.md=,
-combining single-keystroke inline toggles with a dedicated bounded view
-configurator dialog for fine-grained multi-axis filtering and sorting.
-*** TODO [#B] t0039.1 Define pure sort/filter state models and ordering helpers
-Define structured dataclasses for view state (state filter, sort axis, and
-direction) in =ortasklib=. Implement pure helpers taking raw item lists and
-returning filtered and sorted results, preserving hierarchical ancestor paths
-for tasks and name anchoring across re-sorts. Add unit tests for pure logic.
-*** TODO [#B] t0039.2 Unify inline quick-toggles and persistent view state badges
-Implement quick cycling keys (=s= for sort cycle, =Tab=/=C-t= for state filter
-toggles) across =orti= task lists and =ptui= project lists. Render persistent,
-unobtrusive view badges (e.g. =[Filter: Open | Sort: Priority ↑]=) in header or
-footer context. Add regression tests for anchored cursor preservation.
-*** TODO [#B] t0039.3 Build the dedicated View Options overlay dialog (S / v)
-Build a compact, bounded modal overlay with radio/choice controls for State
-(=Open=, =All=, =Terminal=), Sort Column (=Priority=, =Natural/File=, =Name=,
-=Modified=), and Direction (=Ascending=, =Descending=). Support standard field
-navigation (arrows/Tab), Space to toggle, Enter to commit, and Esc to cancel.
-*** TODO [#B] t0039.4 Wire hybrid view controls and update documentation
-Hook the shared view model and dialog into =taskui.py= and =projmgr.py=. Update
-contextual help (=C-g=), keyboard references, and specs in =docs/interactive.md=
-and =docs/ptui.md=. Add integration coverage across TTY and numbered modes.
-
+Give each interactive surface the view control the other already has, behind one
+shared model: =orti= cycles a visibility filter on =C-t= but has no sort, and
+=ptui= cycles a sort mode on =s= but has no filter. Add one =v= view screen for
+the combinations a cycle key cannot reach. See the sort-and-filter section of
+=docs/interactive.md=, which revises Gemini's original proposal against the
+shipped bindings. This is mostly a unification, not new machinery; treat the
+existing =TASK_FILTERS= and =PROJECT_SORT_MODES= cycles and their tests as the
+behavior to preserve.
+*** TODO [#B] t0039.1 Define the shared view-state model
+Define view state (filter position, sort axis, direction) and pure filter/sort
+helpers in =ortasklib=, by extracting what =taskui.load_menu_items= and
+=manager.sort_projects= already do rather than adding a parallel model. Let each
+surface declare the axes it offers, so the screen never presents a dead option.
+Direction inverts the primary axis only: keep =project_modified_sort_key='s
+unavailable-last term and its ascending name tie-break fixed, since =reverse=True=
+would flip both. Keep =all=/=todo=/=done= as the wire vocabulary, matching the
+=--todo= flag. Preserve ancestor inclusion and name anchoring. Unit tests only;
+no UI change.
+*** TODO [#B] t0039.2 Put both quick toggles on the shared model, with a badge
+Move =C-t= and =s= onto the shared model and give each surface the cycle it
+lacks, introducing no new key: =Tab= is fold, =S-Tab= is fold-all, plain =t= is
+reserved by the keybinding section, and =S= collides visually with the
+=S-↑=/=S-↓= priority family. Extend the existing instruction line into one
+badge showing filter and sort together rather than adding a second status area.
+Fix the =DONE= filter label, which also selects =MOOT=. Keep the shipped cycle
+orders; the existing sort-mode and filter tests pin them.
+*** TODO [#B] t0039.3 Build the View Options screen on the existing workspace
+Add =v= as a =menu.WorkspaceView= instance, reusing its choice fields
+(=choice_focus_indices=, ←/→ to change), navigation-versus-edit modes, =C-s=,
+=Esc=, and =C-g= help. Do not introduce Space-to-toggle or Enter-to-apply; the
+metadata workspace is the working precedent and ortask should have one form
+idiom. Follow that precedent for degradation too: the screen is prompt_toolkit
+only, and numbered mode keeps its typed-letter prompt.
+*** TODO [#B] t0039.4 Wire the controls and update the specs
+Hook the model and screen into =taskui.py= and =projmgr.py=. Update contextual
+=C-g= help, the keyboard reference in =docs/interactive.md=, and the sorting
+section of =docs/ptui.md=. View state stays session-only: nothing is written to
+=ortask.ini= or =projects.org=, and =--todo= only seeds the initial filter. Add
+integration coverage for both TTY and numbered modes.
+*** TODO [#C] t0039.5 Sort the task tree by sibling, not by row
+Only after =t0039.1=. =orti= sorts by =line_num= because file order is what
+keeps children under their parents, so a priority or name order has to reorder
+siblings within each parent and never across them. Restate the keybinding
+section's "changing priority never reorders the task list" as applying to file
+order, which stays the default, and confirm the fold, tree-navigation, and
+state-toggle row stability tests still hold under a non-default order.
+*** TODO [#C] t0039.6 Filter tasks by tag
+Only after =t0039.1=. Gemini's original mockup carried a comma-separated tag
+field; it is deferred because there is no tag index and because a tag filter
+interacts with ancestor inclusion in a way no current filter does — a matching
+subtask must keep its non-matching ancestors visible. Decide whether tags are an
+additional axis or a separate query before adding the field.
