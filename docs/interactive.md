@@ -402,6 +402,52 @@ Future TODO-state guidance:
   Emacs-style multi-key sequences such as `C-c t` or `C-c / t`. This keeps state
   changes separate from visibility changes and avoids overloading plain `t`.
 
+## Proposal: Hybrid Sort & Filter Interface (Gemini)
+
+> **Attribution Note:** Gemini recommends this design. It is documented here for peer review and critique by other LLMs and human contributors. It should not be treated as a user-mandated constraint.
+
+As lists in `ortask` (`orti`) and `projmgr` (`ptui`) grow across multiple dimensions (states, priorities, dates, tags, and project attributes), the interactive interface needs a clean balance between single-keystroke speed and multi-dimensional configurability.
+
+### The Problem
+
+- **Inline-only cycling** (e.g., repeatedly pressing `s` or `C-t` to cycle through every permutation) becomes cumbersome when there are more than 3–4 sort columns or multiple filter combinations.
+- **Dedicated-only modal screens** add unnecessary interaction friction to the 90% use case (e.g., quickly toggling "Open tasks only" vs "All tasks", or toggling Priority vs Alphabetical order).
+
+### The Proposed Hybrid Model
+
+Gemini recommends combining **inline quick-toggles** with a **dedicated view configurator**:
+
+#### 1. Inline Quick Toggles (Daily Flow)
+For the most frequent 1-key operations directly on the list:
+- **`s` (Sort Cycle):** Rapidly cycles through the primary 2–3 sort modes (e.g. `Priority` $\rightarrow$ `Alphabetical / Natural` $\rightarrow$ `Modified`).
+- **`Tab` or `t` / `C-t` (Filter Toggle):** Rapidly toggles the primary task state filter (`Incomplete / Open` $\leftrightarrow$ `All`).
+- **Header / Footer Badge:** Always displays the currently active view state (e.g. `[Filter: Open | Sort: Priority ↑]`), ensuring the user is never confused about why an item is hidden or where it is positioned.
+
+#### 2. Dedicated View Configurator (`S` or `v`)
+Pressing `S` (Shift-S) or `v` (View Options) opens a compact, bounded overlay/form for fine-grained multi-axis selection:
+
+```text
+┌─ View Options ──────────────────────────────────────────────┐
+│ Filter State:  (•) Open/Incomplete   ( ) All   ( ) Terminal │
+│ Filter Tags:   [                      ] (comma-separated)   │
+│ Sort Column:   (•) Priority   ( ) ID/Natural   ( ) Modified │
+│ Direction:     (•) Ascending  ( ) Descending                │
+│                                                             │
+│ [Space] Toggle · [Tab/↑↓] Navigate · [Enter] Apply · [Esc]  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **Radio / Choice Groups:**
+  - **Filter State:** `Incomplete / Open` (TODO), `All`, `Terminal` (DONE / MOOT).
+  - **Sort Axis:** `Priority`, `Natural / File Order`, `Task / Project Name`, `Modified Time`.
+  - **Order:** `Ascending / Normal` vs `Descending / Inverted`.
+- **Keyboard Navigation:** Standard arrow keys or `Tab`/`Shift-Tab` to navigate controls; `Space` to toggle radio selections; `Enter` to commit and re-render the list; `Esc` to cancel without changing active settings.
+
+### Surface Applicability
+
+- **Task Lists (`orti` / `ortask.py -i`):** Focuses on state (`Open` vs `All`), priority (`A`/`B`/`C`), tag filtering, and natural heading order.
+- **Project Navigator (`ptui` / `projmgr.py -i`):** Focuses on project priority, alphabetical name, task count, and modified time.
+
 ## Workspace Discovery
 
 `docs/projects.md` defines what a project is and how the registry is read. The
