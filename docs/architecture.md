@@ -77,14 +77,14 @@ adding more conditionals to `manager.py`, `taskui.py`, or the already-large
 `core` for task-state policy, declares both task and project positions, and is
 imported by `manager` for project ordering.
 
-Before adding a View Options screen, keep the generic state machinery
-dependency-free and move domain policy to its owner: task-state predicates
-belong with task presentation, project sort/filter policy belongs with project
-presentation, and each surface declares its own axes and labels. `viewstate.py`
-must not import `prompt_toolkit`, parse Org, read files, or become a general
-dumping ground for list policy. It is not `orglib` material. If another
-application later needs the same model, that is evidence for extracting it into
-Handrail; one ortask consumer is not.
+As a prerequisite to the planned View Options screen, keep the generic state
+machinery dependency-free and move domain policy to its owner: task-state
+predicates belong with task presentation, project sort/filter policy belongs
+with project presentation, and each surface declares its own axes and labels.
+`viewstate.py` must not import `prompt_toolkit`, parse Org, read files, or become
+a general dumping ground for list policy. It is not `orglib` material. If
+another application later needs the same model, that is evidence for extracting
+it into Handrail; one ortask consumer is not.
 
 `manager` and `projmgr.py` also import `orglib` directly, for the read paths
 already routed through the `Document` boundary. That is the direction new

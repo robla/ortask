@@ -461,11 +461,11 @@ to create or version another package.
 Give each interactive surface the view control the other already has, behind one
 shared model: =orti= cycles a visibility filter on =C-t= but has no sort, and
 =ptui= cycles a sort mode on =s= but has no filter. Keep the quick toggles as the
-primary interface and add a =v= screen only after another axis makes it more
-useful than the controls it wraps. See the sort-and-filter section of
-=docs/interactive.md=. Treat the existing =TASK_FILTERS= and
-=PROJECT_SORT_MODES= cycles and their tests as behavior to preserve, and do not
-turn shared view state into a new dependency hub inside =ortasklib=.
+fast path and add a discoverable =v= screen after hardening the shared-state
+boundary. See the sort-and-filter section of =docs/interactive.md=. Treat the
+existing =TASK_FILTERS= and =PROJECT_SORT_MODES= cycles and their tests as
+behavior to preserve, and do not turn shared view state into a new dependency
+hub inside =ortasklib=.
 *** DONE [#B] t0039.1 Define the shared view-state model
 Define view state (filter position, sort axis, direction) and pure filter/sort
 helpers in =ortasklib=, by extracting what =taskui.load_menu_items= and
@@ -515,18 +515,16 @@ The =done= wire value matches =DONE=, =MOOT=, and =SUPERSEDED=, but the current
 in the persistent badge and spell out all matched states in contextual help.
 Keep the wire value and cycle order unchanged, and include =SUPERSEDED= in the
 regression fixture so the test proves both selection and truthful labeling.
-*** TODO [#C] t0039.4 Reassess and, if justified, build the View Options screen
-Do not build =v= merely to wrap the current quick toggles: =ptui='s existing
-filter/sort combinations are already reached independently, and =orti= has only
-one real axis. Reassess after =t0039.5=, =t0039.6=, or an explicit user need.
-If retained, keep the prompt_toolkit adapter separate from =viewstate.py= and
-avoid enlarging =menu.py=; a small provisional =viewui.py= is preferable.
-Choices are session-only and take effect live. =Esc= returns to the parent view,
-while =C-s= retains its suite-wide meaning of saving the backing file to disk;
-it must never mean "apply view options." Render only supported axes and
-directions. Numbered mode keeps its typed-letter quick toggles rather than
-growing a form. Update help/specs and add TTY integration coverage only when
-the screen is actually accepted.
+*** TODO [#B] t0039.4 Build and wire the View Options screen
+Add =v= to the prompt_toolkit task and project lists as the discoverable,
+explicit companion to the quick toggles. Keep its adapter separate from
+=viewstate.py= and avoid enlarging =menu.py=; a small provisional =viewui.py= is
+preferable. Choices are session-only and take effect live. =Esc= returns to the
+parent view, while =C-s= retains its suite-wide meaning of saving the backing
+file to disk; it must never mean "apply view options." Render only supported
+axes and directions, so =orti= may initially expose only its filter until
+sibling-aware sorting lands. Numbered mode keeps its typed-letter quick toggles
+rather than growing a form. Update help/specs and add TTY integration coverage.
 *** TODO [#C] t0039.5 Sort the task tree by sibling, not by row
 Only after =t0039.1=. =orti= sorts by =line_num= because file order is what
 keeps children under their parents, so a priority or name order has to reorder

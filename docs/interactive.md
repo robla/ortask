@@ -410,17 +410,15 @@ Future TODO-state guidance:
 
 > Gemini proposed the hybrid model below. Claude revised it against the shipped
 > bindings and the task-tree invariant; the corrections are listed at the end of
-> the section. This is a design direction for review, not a user-mandated
-> constraint.
+> the section. The quick toggles and dedicated view screen are both part of the
+> adopted direction.
 
 ### State of the work
 
 `t0039.1` and `t0039.2` are done: `ortasklib/viewstate.py` holds the model, both
 surfaces run their quick toggles off it, and `ptui` has the filter it was
-missing. Those changes are useful without a configurator. `t0039.3` now hardens
-the dependency and capability boundaries before more UI is added; the `v`
-screen is deferred to `t0039.4` and must justify itself after `t0039.5`,
-`t0039.6`, or a concrete user need. `t0039.3.4` also corrects the current
+missing. `t0039.3` now hardens the dependency and capability boundaries before
+the `v` screen is added by `t0039.4`. `t0039.3.4` also corrects the current
 `DONE+MOOT` badge, which still omits matched `SUPERSEDED` tasks from its name.
 
 The current model carries a direction Boolean that no key reaches. Project
@@ -441,13 +439,11 @@ extraction more than speculation.
 
 ### The problem
 
-Cycling is the right control for two or three positions on one axis. Because
-filter and sort have independent keys, every currently implemented `ptui`
-filter/sort combination is already only a few presses away; `orti` still has
-only its filter axis. A form becomes worthwhile when direction, sibling sorts,
-tags, or another real axis creates combinations the quick controls cannot
-express clearly. Until then, keep the quick controls and visible badge without
-building a second interface around them.
+Cycling is the fastest control for two or three positions on one axis, but it
+does not expose the available choices or make the current combination easy to
+set deliberately. The `v` screen provides that discoverable, explicit control
+and a stable home for direction and later axes. It complements rather than
+replaces the quick controls and persistent badge.
 
 ### Inline quick toggles
 
@@ -458,7 +454,7 @@ each surface gained the one it lacked:
 |-------|--------------|---------------------|----------------------|
 | `s`   | sort cycle   | not offered yet     | Priority/Alpha/Mod   |
 | `C-t` | filter cycle | all/TODO/DONE+MOOT  | all/open only        |
-| `v`   | view screen  | deferred            | deferred             |
+| `v`   | view screen  | planned (`t0039.4`) | planned (`t0039.4`)  |
 
 `ptui`'s project filter hides only what the navigator can prove is quiet. A
 project whose task file is missing, broken, or unreadable stays in the list:
@@ -491,13 +487,13 @@ An axis with a single position is not a choice: its key is not offered and it
 stays out of the badge. That is how the task list carries a sort axis today
 without `s` doing anything.
 
-### Deferred View Options screen (`v`)
+### View Options screen (`v`)
 
-Do not build this screen merely because the state model can describe it. If the
-usefulness threshold is met, preserve the shared navigation/edit vocabulary but
-do not force the feature into `WorkspaceView` if its transaction semantics are
-wrong. Put a small prompt_toolkit adapter in its own provisional module rather
-than adding view policy to `viewstate.py` or more branches to `menu.py`.
+Build this screen after the `t0039.3` boundary cleanup. Preserve the shared
+navigation/edit vocabulary, but do not force the feature into `WorkspaceView`
+if its transaction semantics are wrong. Put a small prompt_toolkit adapter in
+its own provisional module rather than adding view policy to `viewstate.py` or
+more branches to `menu.py`.
 
 View choices are session presentation, not file edits. They take effect live;
 Esc returns to the parent list with the chosen view. `C-s` must retain its
@@ -519,8 +515,9 @@ existing field-navigation idiom.
 The offered positions differ per surface: `ptui` has no `file` order and no
 task states, while `orti` has no `modified`. The screen renders only axes the
 surface declares and only a direction supported by the selected sort. Until
-sibling-aware sorting lands, `orti` would show only its existing filter and is
-therefore not a useful screen.
+sibling-aware sorting lands, `orti` shows only its existing filter; the screen
+can grow without changing its interaction model when task sorting and tag
+filtering arrive.
 
 ### Vocabulary
 
@@ -563,7 +560,7 @@ stays the default. That is a separate task, after the shared model exists.
 ### Numbered fallback
 
 The numbered project loop offers `s=sort`, `t=filter`, digits, and `q`. Keep
-those quick toggles as typed letters. If `v` is eventually accepted, it remains
+those quick toggles as typed letters. The `v` screen remains
 prompt_toolkit-only; numbered mode must not grow a form.
 
 ### Not in the first iteration
@@ -581,8 +578,9 @@ prompt_toolkit-only; numbered mode must not grow a form.
 1. `Tab` for the filter toggle — dropped; it is fold.
 2. Two-way `Open ↔ All` toggle — kept as the shipped three-way cycle, which the
    two-way version would regress.
-3. A new modal overlay — deferred; matching the workspace key vocabulary does
-   not require reusing a transaction-oriented class with the wrong save model.
+3. A new modal overlay — retained, but matching the workspace key vocabulary
+   does not require reusing a transaction-oriented class with the wrong save
+   model.
 4. Sorting in `orti` — deferred to its own task, for the tree invariant.
 5. The tag field — moved out of the first iteration.
 6. Direction — the sort implementation inverts only its primary key, but UI

@@ -56,8 +56,9 @@ The sort implementation can invert a mode's primary axis without inverting its
 tie-break or availability rule: an unreadable task file stays at the bottom of
 a reversed Modified list, and project-name ties stay ascending. No key exposes
 direction yet. Before one does, `t0039.3` must declare which sorts are
-reversible and give their directions meaningful labels; a possible `v` screen
-is deferred to `t0039.4` and is not required by the current quick toggles.
+reversible and give their directions meaningful labels. The planned `v` screen
+then exposes those explicit choices under `t0039.4`, while `s` remains the fast
+sort cycle.
 
 ## Filtering
 

@@ -63,6 +63,5 @@ Gemini recommends combining **inline quick-toggles** with a **dedicated view con
 
 Amended: the quick-toggle keys and single-axis scope are settled in
 =docs/interactive.md=; =Tab= and multi-column sort did not survive review. The
-dedicated configurator is deferred until it has enough distinct work to justify
-another UI, and reusing the transaction-oriented workspace is no longer a
-requirement.
+dedicated configurator remains planned after the view-state boundary cleanup,
+but reusing the transaction-oriented workspace is no longer a requirement.
