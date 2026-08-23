@@ -2689,7 +2689,7 @@ def test_project_rows_show_the_modification_age(tmp_path: Path) -> None:
         snapshots["alpha"],
         now_ns=now_ns,
     )
-    assert row == "[A] alpha         1 open        3d    Steady work"
+    assert row == "[A] alpha           1 open        3d    Steady work"
 
     # An overflowing workload column cannot run into the age beside it.
     crowded = projmgr._navigator_row(
@@ -2713,6 +2713,61 @@ def test_project_rows_show_the_modification_age(tmp_path: Path) -> None:
         now_ns=now_ns,
     )
     assert f", {projmgr.UNKNOWN_AGE})" not in broken_detail
+
+
+def test_project_name_column_holds_a_realistic_name(tmp_path: Path) -> None:
+    """A name as long as the ones people actually use must not shift the row.
+
+    Both listings pad to the same width so a project sits in the same place in
+    the navigator and the cdproj picker.
+    """
+    registry = tmp_path / "registry"
+    names = ("a", "bashfuncs2023", "ortask")
+    for name in names:
+        project = tmp_path / "src" / name
+        write(project / "tasks.org", "* Tasks\n** TODO t0001 One\n")
+        register(registry, name, project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    index.write_text(
+        manager.PROJECTS_INDEX_HEADER
+        + "".join(
+            f"* {name}\n** Directories\n*** file:{tmp_path / 'src' / name}\n"
+            for name in names
+        ),
+        encoding="utf-8",
+    )
+
+    projects = manager.discover_projects(registry)
+    snapshots = manager.snapshot_projects(projects)
+    by_name = {one.name: one for one in projects}
+    assert len(max(names, key=len)) < projmgr.PROJECT_NAME_WIDTH
+
+    workload = [
+        projmgr._navigator_row(
+            by_name[name], manager.ProjectMetadata(), snapshots[name]
+        ).index("1 open")
+        for name in names
+    ]
+    assert len(set(workload)) == 1
+
+    for listing in (projmgr.NAVIGATOR, projmgr.CDPROJ):
+        rows = projmgr._project_rows(projects, listing, {}, snapshots)
+        starts = {row.text.index(listing.detail(by_name[name])) for row, name in zip(rows, sorted(names))}
+        assert len(starts) == 1
+
+    # A name past the width still pushes its own row right; nothing is cut.
+    long_name = "x" * (projmgr.PROJECT_NAME_WIDTH + 3)
+    project = tmp_path / "src" / long_name
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 One\n")
+    register(registry, long_name, project)
+    overflowing = manager.discover_projects(registry)
+    stretched = projmgr._navigator_row(
+        next(one for one in overflowing if one.name == long_name),
+        manager.ProjectMetadata(),
+        manager.snapshot_projects(overflowing)[long_name],
+    )
+    assert long_name in stretched
+    assert stretched.index("1 open") > workload[0]
 
 
 def test_project_render_reads_each_task_file_once(

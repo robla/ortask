@@ -218,6 +218,11 @@ def _project_tasks(
 #: Shown when a project's task file cannot be read, so its age is unknowable.
 UNKNOWN_AGE = "-"
 
+#: Padding for the project name in the navigator and the cdproj picker, which
+#: share it so a project sits in the same place in both. A longer name still
+#: pushes the row right rather than being cut.
+PROJECT_NAME_WIDTH = 14
+
 _MINUTE = 60
 _HOUR = 60 * _MINUTE
 _DAY = 24 * _HOUR
@@ -294,7 +299,7 @@ def _navigator_row(
     # next field.
     prefix = "  ".join(
         (
-            f"[{_project_priority(metadata)}] {project.name:<12}",
+            f"[{_project_priority(metadata)}] {project.name:<{PROJECT_NAME_WIDTH}}",
             f"{_project_tasks(project, snapshot):<12}",
             f"{_project_modified(snapshot, now_ns=now_ns):<4}",
         )
@@ -412,7 +417,7 @@ def _project_rows(
                     _snapshot(project, snapshots),
                 )
                 if listing.metadata_rows
-                else f"{project.name:<12}  {listing.detail(project)}"
+                else f"{project.name:<{PROJECT_NAME_WIDTH}}  {listing.detail(project)}"
             ),
         )
         for index, project in enumerate(projects)
