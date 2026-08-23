@@ -52,10 +52,12 @@ Priority and Alphabetical were implemented by `t0035.2`; `t0035.5` adds
 Modified to the same cycle. Help derives its description from the implemented
 mode ring.
 
-Any mode can be inverted, and inversion applies to that mode's own axis only:
-an unreadable task file stays at the bottom of a reversed Modified list, and the
-project-name tie-break stays ascending. `t0039.1` put that in
-`viewstate.order_by`; no key reaches it until the `v` view screen (`t0039.3`).
+The sort implementation can invert a mode's primary axis without inverting its
+tie-break or availability rule: an unreadable task file stays at the bottom of
+a reversed Modified list, and project-name ties stay ascending. No key exposes
+direction yet. Before one does, `t0039.3` must declare which sorts are
+reversible and give their directions meaningful labels; a possible `v` screen
+is deferred to `t0039.4` and is not required by the current quick toggles.
 
 ## Filtering
 
@@ -68,8 +70,9 @@ disagree.
 The filter hides only what the navigator can prove is quiet. A project whose
 task file is missing, broken, or unreadable stays visible: warnings survive
 filtering, and a project that cannot be read is not a project with nothing left
-to do. The selection stays anchored by name, so hiding a project never moves the
-highlight off the one the user was looking at.
+to do. Selection stays anchored by project name when that project remains
+visible. If the selected project is itself filtered out, selection falls back
+to the nearest surviving row.
 
 ## Metadata in `projects.org`
 

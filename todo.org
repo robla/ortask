@@ -460,12 +460,12 @@ to create or version another package.
 ** TODO [#B] t0039 Implement hybrid sort and filter interface across interactive views
 Give each interactive surface the view control the other already has, behind one
 shared model: =orti= cycles a visibility filter on =C-t= but has no sort, and
-=ptui= cycles a sort mode on =s= but has no filter. Add one =v= view screen for
-the combinations a cycle key cannot reach. See the sort-and-filter section of
-=docs/interactive.md=, which revises Gemini's original proposal against the
-shipped bindings. This is mostly a unification, not new machinery; treat the
-existing =TASK_FILTERS= and =PROJECT_SORT_MODES= cycles and their tests as the
-behavior to preserve.
+=ptui= cycles a sort mode on =s= but has no filter. Keep the quick toggles as the
+primary interface and add a =v= screen only after another axis makes it more
+useful than the controls it wraps. See the sort-and-filter section of
+=docs/interactive.md=. Treat the existing =TASK_FILTERS= and
+=PROJECT_SORT_MODES= cycles and their tests as behavior to preserve, and do not
+turn shared view state into a new dependency hub inside =ortasklib=.
 *** DONE [#B] t0039.1 Define the shared view-state model
 Define view state (filter position, sort axis, direction) and pure filter/sort
 helpers in =ortasklib=, by extracting what =taskui.load_menu_items= and
@@ -477,38 +477,70 @@ would flip both. Keep =all=/=todo=/=done= as the wire vocabulary, matching the
 =--todo= flag. Preserve ancestor inclusion and name anchoring. Unit tests only;
 no UI change.
 *** DONE [#B] t0039.2 Put both quick toggles on the shared model, with a badge
-Move =C-t= and =s= onto the shared model and give each surface the cycle it
-lacks, introducing no new key: =Tab= is fold, =S-Tab= is fold-all, plain =t= is
-reserved by the keybinding section, and =S= collides visually with the
+Move =orti='s =C-t= and =ptui='s =s= onto the shared model, add the missing
+=C-t= project filter, and introduce no new key. =orti= still has no sort cycle
+until sibling-aware sorting exists. =Tab= is fold, =S-Tab= is fold-all, plain
+=t= is reserved by the keybinding section, and =S= collides visually with the
 =S-↑=/=S-↓= priority family. Extend the existing instruction line into one
-badge showing filter and sort together rather than adding a second status area.
-Fix the =DONE= filter label, which also selects =MOOT=. Keep the shipped cycle
-orders; the existing sort-mode and filter tests pin them.
-*** TODO [#B] t0039.3 Build the View Options screen on the existing workspace
-Add =v= as a =menu.WorkspaceView= instance, reusing its choice fields
-(=choice_focus_indices=, ←/→ to change), navigation-versus-edit modes, =C-s=,
-=Esc=, and =C-g= help. Render the axes the surface declares rather than a union:
-=viewstate.ViewAxes= already answers which positions exist, and =ViewState=
-already carries the direction axis that nothing reaches yet. Do not introduce Space-to-toggle or Enter-to-apply; the
-metadata workspace is the working precedent and ortask should have one form
-idiom. Follow that precedent for degradation too: the screen is prompt_toolkit
-only, and numbered mode keeps its typed-letter prompt.
-*** TODO [#B] t0039.4 Wire the controls and update the specs
-Hook the model and screen into =taskui.py= and =projmgr.py=. Update contextual
-=C-g= help, the keyboard reference in =docs/interactive.md=, and the sorting
-section of =docs/ptui.md=. View state stays session-only: nothing is written to
-=ortask.ini= or =projects.org=, and =--todo= only seeds the initial filter. Add
-integration coverage for both TTY and numbered modes.
+badge showing filter and sort together. Fix the =DONE= filter label, which also
+selects =MOOT=. The shipped =DONE+MOOT= label still omits =SUPERSEDED=;
+=t0039.3.4= closes that remaining display gap. Keep the shipped cycle orders;
+existing tests pin them.
+*** TODO [#B] t0039.3 Harden the view-state boundary before adding more UI
+Keep the useful =ViewState=/=ViewAxes= extraction, but make its generic core
+stdlib-only and independent of =core=, task states, projects, Org, and
+=prompt_toolkit=. Each surface should own its domain positions, labels, and
+predicates; =manager= should not depend on badge or form policy. Do not move the
+code to =orglib=. Keep it in-tree until a second application provides evidence
+for a Handrail extraction.
+**** TODO [#B] t0039.3.1 Separate generic state from task and project policy
+Leave immutable transitions, validation, and generic stable ordering in the
+small shared seam. Move =task_state_matches= and task axes beside task
+presentation; move project axes beside project presentation while keeping
+registry facts and sort/filter mechanics out of TUI code. Add dependency tests
+so the generic layer cannot import =ortasklib.core= or =prompt_toolkit=.
+**** TODO [#B] t0039.3.2 Declare reversible sorts and their user vocabulary
+Replace the unconstrained global reverse switch with an explicit per-sort
+capability. File order is not reversible before sibling-aware tree sorting.
+Give each reversible sort meaningful direction labels, such as newest/oldest
+or A-Z/Z-A, rather than exposing an unexplained Boolean =Reverse= field.
+**** TODO [#B] t0039.3.3 Build one project presentation snapshot per render
+Read each project's task summary and modification time at most once per render,
+then reuse that snapshot for filtering, sorting, row counts, and diagnostics.
+Do not let =open only= add a second Org parse per project or let Modified sort
+stat the same file in separate primary and availability passes.
+**** TODO [#B] t0039.3.4 Correct the terminal-filter display boundary
+The =done= wire value matches =DONE=, =MOOT=, and =SUPERSEDED=, but the current
+=DONE+MOOT= badge and its test still omit the third state. Use concise =DONE+=
+in the persistent badge and spell out all matched states in contextual help.
+Keep the wire value and cycle order unchanged, and include =SUPERSEDED= in the
+regression fixture so the test proves both selection and truthful labeling.
+*** TODO [#C] t0039.4 Reassess and, if justified, build the View Options screen
+Do not build =v= merely to wrap the current quick toggles: =ptui='s existing
+filter/sort combinations are already reached independently, and =orti= has only
+one real axis. Reassess after =t0039.5=, =t0039.6=, or an explicit user need.
+If retained, keep the prompt_toolkit adapter separate from =viewstate.py= and
+avoid enlarging =menu.py=; a small provisional =viewui.py= is preferable.
+Choices are session-only and take effect live. =Esc= returns to the parent view,
+while =C-s= retains its suite-wide meaning of saving the backing file to disk;
+it must never mean "apply view options." Render only supported axes and
+directions. Numbered mode keeps its typed-letter quick toggles rather than
+growing a form. Update help/specs and add TTY integration coverage only when
+the screen is actually accepted.
 *** TODO [#C] t0039.5 Sort the task tree by sibling, not by row
 Only after =t0039.1=. =orti= sorts by =line_num= because file order is what
 keeps children under their parents, so a priority or name order has to reorder
 siblings within each parent and never across them. Restate the keybinding
 section's "changing priority never reorders the task list" as applying to file
-order, which stays the default, and confirm the fold, tree-navigation, and
-state-toggle row stability tests still hold under a non-default order.
+order, which stays the default; a non-default priority order may deliberately
+move the edited task among its siblings. Preserve source order as the final tie
+breaker and confirm fold, tree-navigation, selection anchoring, and state-toggle
+tests under every non-default order.
 *** TODO [#C] t0039.6 Filter tasks by tag
 Only after =t0039.1=. Gemini's original mockup carried a comma-separated tag
-field; it is deferred because there is no tag index and because a tag filter
-interacts with ancestor inclusion in a way no current filter does — a matching
-subtask must keep its non-matching ancestors visible. Decide whether tags are an
-additional axis or a separate query before adding the field.
+field. Treat tags as a query facet rather than a finite axis: define AND/OR
+semantics and whether matches use only heading tags or Org-inherited/file tags.
+A matching subtask must keep non-matching ancestors as context without making
+those ancestors look like matches. Route the required tag semantics through
+=orglib= before adding UI; no separate tag index is required until measurement
+shows parsing the current file is too slow.

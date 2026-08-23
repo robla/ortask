@@ -33,6 +33,7 @@ ortasklib/
   manager.py
   menu.py
   taskui.py
+  viewstate.py
 ortask.py
 projmgr.py
 ```
@@ -46,32 +47,44 @@ scripts are later moved under `bin/` or renamed, the package can be renamed to
 ## Dependency Graph
 
 ```text
-orglib (stdlib only)       textbuffer.py (stdlib + injected hooks)
-  ^                                      ^
-  |                                      |
-core                                     |
-  ^ ^ ^                                  |
-  | | |                                  |
-tasks manager menu                       |
-  ^     ^      ^                         |
-  |     |      |                         |
-  +--- taskui -+-------------------------+
-        ^   ^
-        |   |
- ortask.py  projmgr.py
+orglib <- core <- tasks
+               <- manager
+               <- viewstate (transitional core dependency)
+
+menu <--------- taskui ---------> textbuffer.py
+                  |  \
+                  |   +--------> viewstate
+                  +------------> manager
+
+ortask.py ---------------------> core / tasks / taskui
+projmgr.py --------------------> manager / menu / taskui / viewstate
 ```
 
 No script imports another script. `orglib` sits at the bottom and imports
 nothing at all — not `ortasklib`, not any third-party package. `core` depends
-only on `orglib`; `tasks`, `manager`, and `viewstate` depend on `core`; `taskui`
-composes `core`, `tasks`, `menu`, `viewstate`, the `Project` record from
-`manager`, and the format-neutral buffer from `textbuffer.py`. `viewstate` is
-the leaf of that group: it holds what an interactive list shows and in what
-order, and imports `core` only for ortask's task-state names, so the two
-surfaces cannot drift apart on filtering, ordering, or how they name the active
-view. `textbuffer.py` imports only the
+only on `orglib`; `tasks` and `manager` depend on `core`; `taskui` composes
+`core`, `tasks`, `menu`, the `Project` record from `manager`, and the
+format-neutral buffer from `textbuffer.py`. `textbuffer.py` imports only the
 standard library; callers inject atomic writing, auto-save location, and save
 notification.
+
+### Presentation-state seam
+
+`t0039.1` introduced `viewstate.py` for immutable filter/sort/direction state,
+labels, and stable primary-axis ordering. A focused module is preferable to
+adding more conditionals to `manager.py`, `taskui.py`, or the already-large
+`menu.py`, but its current dependency boundary is transitional: it imports
+`core` for task-state policy, declares both task and project positions, and is
+imported by `manager` for project ordering.
+
+Before adding a View Options screen, keep the generic state machinery
+dependency-free and move domain policy to its owner: task-state predicates
+belong with task presentation, project sort/filter policy belongs with project
+presentation, and each surface declares its own axes and labels. `viewstate.py`
+must not import `prompt_toolkit`, parse Org, read files, or become a general
+dumping ground for list policy. It is not `orglib` material. If another
+application later needs the same model, that is evidence for extracting it into
+Handrail; one ortask consumer is not.
 
 `manager` and `projmgr.py` also import `orglib` directly, for the read paths
 already routed through the `Document` boundary. That is the direction new
