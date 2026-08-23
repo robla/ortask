@@ -1178,16 +1178,24 @@ def test_show_expands_descendants_and_resolves_shorthand(tmp_path: Path, capsys)
 def test_interactive_uses_resolved_local_org_file(tmp_path: Path, monkeypatch) -> None:
     # This test keeps ortask.py -i scoped to the current directory's task file.
     org_file = write(tmp_path / "todo.org", "* Tasks\n** TODO t0001 Local task\n")
-    called: list[tuple[Path, bool]] = []
+    called: list[tuple[Path, str | None]] = []
 
     monkeypatch.setattr(
         taskui,
         "local_file_menu",
-        lambda path, include_done=False: called.append((path, include_done)) or 0,
+        lambda path, *, filter_mode=None: called.append((path, filter_mode)) or 0,
     )
 
+    # Bare -i takes the same starting visibility as `list`: open work only.
     assert ortask.cmd_interactive(argparse.Namespace(file=org_file)) == 0
-    assert called == [(org_file, True)]
+    assert called == [(org_file, "todo")]
+
+    # A state chosen on the command line still wins over that default.
+    called.clear()
+    assert ortask.cmd_interactive(
+        argparse.Namespace(file=org_file, state="all")
+    ) == 0
+    assert called == [(org_file, "all")]
 
 
 def test_cli_smoke_tests(tmp_path: Path) -> None:
@@ -1237,8 +1245,24 @@ def test_cli_smoke_tests(tmp_path: Path) -> None:
     assert interactive_result.returncode == 0
     assert f"ortask — reading {org_file}" in interactive_result.stdout
     assert "Open: 2" in interactive_result.stdout
-    assert "Done: 1" in interactive_result.stdout
-    assert "Finished parent" in interactive_result.stdout
+    # -i starts on open work, so the DONE task is filtered out of the list.
+    assert "Done: 0" in interactive_result.stdout
+    assert "Finished parent" not in interactive_result.stdout
+
+    all_states = subprocess.run(
+        [
+            sys.executable, str(ROOT / "ortask.py"), "-i",
+            "--file", str(org_file), "list", "--all",
+        ],
+        cwd=ROOT,
+        input="q\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert all_states.returncode == 0
+    assert "Done: 1" in all_states.stdout
+    assert "Finished parent" in all_states.stdout
 
     projmgr_result = subprocess.run(
         [sys.executable, str(ROOT / "projmgr.py"), "--registry", str(workspace), "list"],

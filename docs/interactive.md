@@ -682,8 +682,9 @@ Default display order is the order of headings in the Org file. This preserves
 the visible parent/child hierarchy, keeps authored weekly workflows readable,
 and matches what an Emacs Org user expects after arranging a tree by hand.
 The highlight-bar list initially shows only top-level tasks. Expansion reveals
-children in file order without changing counts or task order. `TODO` and `DONE`
-qualify by default; `C-t` cycles the filter through `all -> TODO -> DONE`.
+children in file order without changing counts or task order. Only `TODO`
+qualifies by default, matching what `ortask.py list` selects without flags;
+`C-t` cycles the filter through `all -> TODO -> DONE+`.
 Filtering retains a nonmatching ancestor when it provides the path to a
 matching descendant, rather than promoting the descendant to a false root.
 Org priorities such as `[#A]` remain visible metadata; they do not move rows.

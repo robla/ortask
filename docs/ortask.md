@@ -19,7 +19,7 @@ ortask.py [--file FILE] log [--since WHEN] [--until WHEN] [--all] [--limit N] [-
 ortask.py open <id> [--file FILE]
 ortask.py repair [--dry-run | --fix] [--file FILE]
 ortask.py show <id> [--file FILE]
-ortask.py -i | --interactive [--file FILE]
+ortask.py -i | --interactive [--file FILE] [list --todo | --done | --all]
 ```
 
 ## DESCRIPTION
@@ -266,9 +266,16 @@ deadlines, and any subtasks.
 **-i, --interactive**
 :   Open the shared `taskui` task menu for the resolved local Org file instead of
     listing tasks. This bypasses the global project registry and uses the same
-    file lookup rules as other `ortask.py` commands. Interactive task views
-    show TODO and DONE rows by default; use `C-t` in the menu to cycle visibility
-    through `all -> TODO -> DONE`.
+    file lookup rules as other `ortask.py` commands.
+
+    The menu starts on open tasks, the same selection `list` makes by default: a
+    task file is mostly finished work, and the reason to open it is what is
+    left. `C-t` cycles visibility through `all -> TODO -> DONE+` and `v` opens
+    the view options screen, so the other states are one keystroke away.
+
+    `list`'s state flags also reach the menu when both are given —
+    `ortask.py -i list --all` starts showing every state, and `--done` starts on
+    terminal ones.
 
 ## TASK ID FORMAT
 

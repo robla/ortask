@@ -773,7 +773,14 @@ def task_menu(
     *,
     dashboard: bool = True,
     registry: Path | None = None,
+    filter_mode: str | None = None,
 ) -> None:
+    """Open one project's task list.
+
+    ``filter_mode`` names the starting visibility outright and wins over
+    ``include_done``, which can only say "all" or "TODO" and so cannot express
+    the third position.
+    """
     org_file = canonical_org_file(project)
     if org_file is None:
         # A registered project need not have a task file yet; see
@@ -786,12 +793,14 @@ def task_menu(
         registry=registry,
     )
     if menu.interactive_select_available():
-        _interactive_task_menu(project, buf, include_done)
+        _interactive_task_menu(project, buf, include_done, filter_mode=filter_mode)
         return
 
     _maybe_recover(buf)
     while True:
-        _numbered_task_menu(project, buf, include_done, dashboard=dashboard)
+        _numbered_task_menu(
+            project, buf, include_done, dashboard=dashboard, filter_mode=filter_mode
+        )
         # The menu loop returned, so the user is leaving this file's context.
         # If they Esc the save prompt, stay and re-enter the menu unsaved.
         if _resolve_buffer(buf):
@@ -1001,10 +1010,12 @@ class InteractiveTaskController:
         project: Project,
         buf: OrgBuffer,
         include_done: bool,
+        *,
+        filter_mode: str | None = None,
     ) -> None:
         self.project = project
         self.buf = buf
-        self.view_state = task_view(include_done)
+        self.view_state = task_view(include_done, filter_mode)
         self.expanded_task_ids: set[str] = set()
         self.session: menu.InlineMenuSession | None = None
 
@@ -2076,14 +2087,27 @@ class InteractiveTaskController:
         )
 
 
-def _interactive_task_menu(project: Project, buf: OrgBuffer, include_done: bool) -> None:
-    InteractiveTaskController(project, buf, include_done).run()
+def _interactive_task_menu(
+    project: Project,
+    buf: OrgBuffer,
+    include_done: bool,
+    *,
+    filter_mode: str | None = None,
+) -> None:
+    InteractiveTaskController(
+        project, buf, include_done, filter_mode=filter_mode
+    ).run()
 
 
 def _numbered_task_menu(
-    project: Project, buf: OrgBuffer, include_done: bool, *, dashboard: bool = True
+    project: Project,
+    buf: OrgBuffer,
+    include_done: bool,
+    *,
+    dashboard: bool = True,
+    filter_mode: str | None = None,
 ) -> None:
-    filter_mode = _task_filter_mode(include_done)
+    filter_mode = _task_filter_mode(include_done, filter_mode)
     while True:
         try:
             items = load_menu_items(buf, filter_mode=filter_mode)
@@ -2115,14 +2139,19 @@ def _numbered_task_menu(
         focus_menu(buf, item)
 
 
-def local_file_menu(org_file: Path, include_done: bool = True) -> int:
+def local_file_menu(
+    org_file: Path,
+    include_done: bool = True,
+    *,
+    filter_mode: str | None = None,
+) -> int:
     project_path = org_file.parent.resolve()
     project = Project(
         name=project_path.name or str(project_path),
         path=project_path,
         org_file=org_file,
     )
-    task_menu(project, include_done, dashboard=True)
+    task_menu(project, include_done, dashboard=True, filter_mode=filter_mode)
     return 0
 
 

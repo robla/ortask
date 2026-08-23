@@ -393,9 +393,18 @@ def cmd_apply(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_interactive(args: argparse.Namespace) -> int:
+    """Open the interactive task menu, showing open work by default.
+
+    Same starting visibility as ``list``: a task file is mostly finished work,
+    and the reason to open it is what is left. ``C-t`` and the ``v`` screen
+    change it live. ``state`` is absent unless a ``list`` subcommand supplied
+    it, so bare ``-i`` takes the same default ``list`` does.
+    """
     from ortasklib import taskui
 
-    return taskui.local_file_menu(args.file, include_done=True)
+    return taskui.local_file_menu(
+        args.file, filter_mode=getattr(args, "state", "todo")
+    )
 
 
 # ---------------------------------------------------------------------------
