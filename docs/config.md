@@ -69,6 +69,7 @@ in Org where the user can see them.
 | `ORTASK_FILE` | The task file `ortask.py` acts on. Beats the upward walk; loses to `--file`. |
 | `ORTASK_LOG` | `on` or `off`; overrides `[log] enabled`. |
 | `ORTASK_LOG_DIR` | Override `<registry>/log` for event reads and writes. |
+| `ORTASK_ESC_TIMEOUT` | Seconds the interactive UI waits before ruling a bare `\x1b` to be `Esc` rather than the start of an arrow or Meta key. Defaults to 0.05; raise it on a link slow enough to split one escape sequence across reads. |
 | `XDG_CONFIG_HOME` | Relocates `ortask.ini` (to `$XDG_CONFIG_HOME/ortask/`). |
 | `ORTASK_PROJMGR` | Path to `projmgr.py` for `misc/cdproj.func.sh` and the completion script, when it is not on `PATH`. Shell-side only; no Python reads it. |
 | `VISUAL`, `EDITOR` | Which editor `ortask.py open` launches, `VISUAL` first. |

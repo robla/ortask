@@ -24,7 +24,7 @@ resolution, supported commands, and data-safety rules.
 Measure input-to-repaint latency for navigation, view transitions, filtering,
 large task files, and terminal resize. Add focused regression measurements for
 repeatable bottlenecks rather than relying only on subjective timing.
-*** TODO t0013.1 Eliminate the standalone Esc delay when leaving task details
+*** DONE t0013.1 Eliminate the standalone Esc delay when leaving task details
 Compare =Esc= with =b=/=q= to confirm prompt_toolkit's escape-sequence timeout
 is responsible, then reduce the delay without breaking arrow keys, Meta keys,
 or slower terminal connections.

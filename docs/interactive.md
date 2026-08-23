@@ -413,6 +413,17 @@ Future TODO-state guidance:
   Emacs-style multi-key sequences such as `C-c t` or `C-c / t`. This keeps state
   changes separate from visibility changes and avoids overloading plain `t`.
 
+### Esc arrives on a timer
+
+`Esc` is the one key above that a terminal cannot report plainly. It sends
+`\x1b`, the same byte that opens an arrow or a Meta chord, so the reader has to
+wait to learn whether anything follows. prompt_toolkit waits half a second by
+default, which is long enough that `Esc` reads as a hang beside the `b` and `q`
+that leave the same view at once. The suite waits 50ms: short enough to feel
+immediate, wide enough to still assemble a sequence a slow link tore in two.
+`ORTASK_ESC_TIMEOUT` widens the wait for links where that is not enough, at the
+cost of making `Esc` sluggish again.
+
 ## Sort and Filter Interface (hybrid quick-toggle plus view screen)
 
 > Gemini proposed the hybrid model below. Claude revised it against the shipped

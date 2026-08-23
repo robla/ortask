@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -214,6 +215,35 @@ class ContextCancelled(Exception):
     """Raised when Esc cancels the current menu context."""
 
 
+# A terminal reports Esc as "\x1b", which is also how an arrow or Meta key
+# starts, so prompt_toolkit holds the byte for `ttimeoutlen` before ruling out
+# a longer sequence. Its 0.5s default is long enough that Esc reads as a hang
+# next to the b and q that leave the same view instantly. 50ms stays under the
+# span where a keystroke still feels immediate, and is still far wider than the
+# gap between bytes of one sequence, which a terminal emits in a single write.
+ESCAPE_FLUSH_SECONDS = 0.05
+ESCAPE_FLUSH_ENV = "ORTASK_ESC_TIMEOUT"
+
+
+def escape_flush_seconds() -> float:
+    """How long to wait for the rest of an escape sequence before calling it Esc.
+
+    A link slow enough to split one sequence across reads needs a wider window
+    than a local terminal, and only the person on that link can say how wide,
+    hence the override. An unusable value leaves the default in place rather
+    than disabling arrow keys.
+    """
+    override = os.environ.get(ESCAPE_FLUSH_ENV)
+    if override:
+        try:
+            seconds = float(override)
+        except ValueError:
+            return ESCAPE_FLUSH_SECONDS
+        if seconds > 0:
+            return seconds
+    return ESCAPE_FLUSH_SECONDS
+
+
 RICH_CONSOLE = Console() if Console is not None else None
 PROMPT_STYLE = (
     Style.from_dict(
@@ -275,7 +305,7 @@ def _prompt_session() -> PromptSession:
     if hasattr(output, "enable_cpr"):
         output.enable_cpr = False
     session = PromptSession(style=PROMPT_STYLE, output=output)
-    session.app.ttimeoutlen = 0.01
+    session.app.ttimeoutlen = escape_flush_seconds()
     return session
 
 
@@ -876,6 +906,9 @@ class InlineMenuSession:
             input=input,
             output=output,
         )
+        # Not an Application() argument; prompt_toolkit only exposes it as an
+        # attribute. Esc is a first-class key here, so it cannot wait 0.5s.
+        self.application.ttimeoutlen = escape_flush_seconds()
 
     @property
     def current_view(self) -> InlineView:

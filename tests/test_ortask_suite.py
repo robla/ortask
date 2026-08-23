@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import io
 import json
 import os
@@ -1378,7 +1379,10 @@ def test_projmgr_interactive_uses_registry_project_menu(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     # pmgr -i (ptui) is the public registry-scoped entry point for the navigator.
-    calls: list[tuple[Path, str, bool]] = []
+    calls: list[tuple[Path, str]] = []
+    # Task views reached from here start where orti starts them, on open work.
+    parameters = inspect.signature(projmgr.project_menu).parameters
+    assert parameters["include_done"].default is False
 
     monkeypatch.setattr(
         manager,
@@ -1388,11 +1392,10 @@ def test_projmgr_interactive_uses_registry_project_menu(
     monkeypatch.setattr(
         projmgr,
         "project_menu",
-        lambda workspace, display, include_done: (
-            calls.append((workspace, display, include_done)) or 0
-        ),
+        lambda workspace, display: calls.append((workspace, display)) or 0,
     )
 
+    # --todo-only is inert: the navigator no longer passes a visibility flag.
     assert projmgr.cmd_interactive(
         argparse.Namespace(registry=None, todo_only=True)
     ) == 0
@@ -1400,7 +1403,7 @@ def test_projmgr_interactive_uses_registry_project_menu(
     captured = capsys.readouterr()
     assert captured.out == "Finding project in ~/Projects\n"
     assert captured.err == ""
-    assert calls == [(tmp_path, "~/Projects", False)]
+    assert calls == [(tmp_path, "~/Projects")]
 
 
 def test_bash_completion_for_ortask_and_alias() -> None:
@@ -6166,6 +6169,96 @@ def test_inline_menu_session_never_enters_alternate_screen() -> None:
     assert "\x1b[?47h" not in rendered
 
 
+def test_escape_flush_window_falls_back_on_an_unusable_override(monkeypatch) -> None:
+    """A slow link can widen the window; nothing can shrink it to unusable."""
+    monkeypatch.delenv(menu.ESCAPE_FLUSH_ENV, raising=False)
+    assert menu.escape_flush_seconds() == menu.ESCAPE_FLUSH_SECONDS
+
+    monkeypatch.setenv(menu.ESCAPE_FLUSH_ENV, "0.5")
+    assert menu.escape_flush_seconds() == 0.5
+
+    for unusable in ("", "soon", "0", "-1"):
+        monkeypatch.setenv(menu.ESCAPE_FLUSH_ENV, unusable)
+        assert menu.escape_flush_seconds() == menu.ESCAPE_FLUSH_SECONDS
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_escape_leaves_a_menu_without_the_stock_flush_wait() -> None:
+    """Esc exits about as promptly as the q beside it, not half a second later.
+
+    prompt_toolkit's stock ttimeoutlen is 0.5s, so a session that never sets it
+    cannot pass this; the ceiling is generous enough that a loaded machine can
+    still make it.
+    """
+    import time
+
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    def handle(_session: menu.InlineMenuSession, _result: menu.MenuResult) -> None:
+        return
+
+    def elapsed(keys: str) -> float:
+        view = menu.MenuView([menu.MenuRow(1, "TODO", "t0001 task")], handle)
+        with create_pipe_input() as pin:
+            with create_app_session(input=pin, output=DummyOutput()):
+                pin.send_text(keys)
+                session = menu.InlineMenuSession(view)
+                start = time.perf_counter()
+                session.run()
+                return time.perf_counter() - start
+
+    assert min(elapsed("\x1b") for _ in range(3)) < 0.25
+    assert min(elapsed("q") for _ in range(3)) < 0.25
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_split_arrow_sequence_still_moves_within_the_flush_window() -> None:
+    """Shortening the wait must not turn a straggling arrow key into an Esc."""
+    import threading
+    import time
+
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    def handle(_session: menu.InlineMenuSession, _result: menu.MenuResult) -> None:
+        return
+
+    def selection_after(gap: float) -> int:
+        view = menu.MenuView(
+            [menu.MenuRow(n, "TODO", f"t000{n} task") for n in (1, 2)],
+            handle,
+        )
+        with create_pipe_input() as pin:
+            with create_app_session(input=pin, output=DummyOutput()):
+                session = menu.InlineMenuSession(view)
+
+                def drive() -> None:
+                    # Down arrow, torn in half the way a slow link tears it.
+                    time.sleep(0.05)
+                    pin.send_text("\x1b")
+                    time.sleep(gap)
+                    pin.send_text("[B")
+                    time.sleep(0.05 + gap)
+                    pin.send_text("q")
+
+                driver = threading.Thread(target=drive)
+                driver.start()
+                session.run()
+                driver.join()
+        return view.selected_index
+
+    # Arriving inside the window, the two halves are still one arrow key.
+    # The 10ms tear is absolute on purpose: shrinking the window until a
+    # plausible tear no longer fits is the way this fix could go wrong.
+    assert selection_after(0.0) == 1
+    assert selection_after(0.01) == 1
+    # Past any sane window the lone byte is Esc, which leaves without moving.
+    assert selection_after(0.4) == 0
+
+
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_inline_text_input_preserves_shortcut_letters_and_help() -> None:
     # Text focus should type menu shortcut letters and survive a Help round trip.
@@ -6242,7 +6335,6 @@ def test_inline_text_input_escape_restores_parent_without_accepting() -> None:
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             session = menu.InlineMenuSession(parent)
-            session.application.ttimeoutlen = 0.01
 
             def drive() -> None:
                 pin.send_text("\r changed\x1b")
