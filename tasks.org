@@ -643,3 +643,45 @@ in a second set of parentheses. A dangling entry renders as
 Only the numbered fallback is affected; the highlight-bar rows call the two
 halves separately. Decide which half owns the warning — the location reads
 better — and have the other yield when =project.warning= is set.
+** TODO [#A] t0043 repair refuses to run when it has nothing to fix
+=t0032.3= built the confirmation path, but the refusal is unconditional: with
+problems present and no TTY, both tools print "interactive confirmation requires
+a TTY; use --dry-run or --force" and exit 1 (=ortask.py:463=,
+=projmgr.py:2437=), even though no automated fix exists in either tool yet. So
+=ort repair= in a script or CI is now a hard error where it previously reported
+and exited 0, and the guard fires on the one kind of run it was never meant to
+cover — reporting is not an interactive act. Gate it on there being an
+applicable fix; with the fix registry empty, that means never. Two consequences
+worth fixing in the same pass: exit 1 currently means both "could not read the
+subject" and "would not act without asking", which a caller cannot tell apart
+(see the exit table in =docs/projmgr.md=); and =repair --force= exits 2 in
+silence having applied nothing, where it should say there was nothing to apply.
+The spec was ambiguous here and has been corrected — see "Asking first" in
+=docs/projmgr.md=. Keep the =t0032.3= non-TTY tests, and add one asserting a
+non-interactive report still succeeds.
+** TODO [#B] t0044 pmgr info states unknowns as facts, and its JSON contradicts its text
+Two ways the same slip shows up. A bare =except Exception: pass= around
+=manager.directory_candidates= (=projmgr.py:1922=) turns an unreadable index
+into =Directories: none (0 entries)=, so on an unmigrated registry =info= says
+there are no directories while =repair= on that same registry says "registry not
+migrated; run pmgr migrate". The heading line has the same problem: it is
+rebuilt from the project name and priority (=projmgr.py:1932=) and printed as
+=Registry: ... (heading: * alpha)= even when no =projects.org= exists at all, so
+a reader can go looking for a line that was never in a file. Distinguish
+"nothing there" from "could not tell", and catch =manager.RegistryIndexError=
+rather than everything. Separately, a task file that exists but cannot be read
+prints =Tasks: unreadable= in plain text and ={"open": 0, "completed": 0,
+"total": 0}= in JSON — the machine-readable form is the one that guesses, and it
+is the form nobody reads before trusting. Absences must survive into JSON as
+=null=. =docs/projmgr.md= now states both rules.
+** TODO [#C] t0045 ort info keeps Org vocabulary of its own
+=cmd_info= counts =TODO=, =DONE=, and =MOOT= by name and buckets everything else
+into =other=, so a =SUPERSEDED= task — a state =core.TERMINAL_STATES= knows
+about, and the compatibility alias =ortask.py= supports — is reported as an
+unlabelled =other: 1=. Drive the counts from that set instead. In the same
+function, heading depth comes from a local =re.match(r"^(\*+)", ...)= and the
+=#+TODO:= line from a local =^#\+(?:TODO|TYP_TODO):= regex, both in the
+front-end script; =docs/architecture.md= puts Org syntax in =orglib=, and
+=t0023= will need a real reader for that keyword line anyway. Move both into
+=orglib.syntax= and have =ort info= ask for them, which is the same direction
+=t0020= is already taking the parse call sites.

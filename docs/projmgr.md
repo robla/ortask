@@ -243,9 +243,17 @@ task file has no answer, so that is the no-match case, exit 1.
 - **Directory** — the real project path, collapsed to `~`.
 - **Task file** — the canonical task file, and whether the entry's link agrees
   with discovery (`manager.task_file_mirror_mismatch`).
-- **Registry** — the registry location and this project's index heading, with
-  its priority cookie if it has one (`* [#A] ortask`).
-- **Directories** — which source defines the stack and how many entries it has.
+- **Registry** — the registry location and this project's index heading as the
+  index actually spells it, with its priority cookie if it has one
+  (`* [#A] ortask`). Report the heading only when one was read: a project with
+  no section, or a registry with no index at all, has no heading, and printing
+  a plausible reconstruction of one invites a reader to go looking for a line
+  that is not there.
+- **Directories** — which source defines the stack and how many entries it has,
+  or `unknown` when the index could not be read. "No directories" and "could
+  not tell" are different answers and must print differently: an unmigrated
+  registry has no readable stack, and reporting `none` there states as fact
+  something `repair` correctly calls a problem.
   Name the source with the words the rest of the suite uses: **`private`** for
   the section in the registry index and **`project`** for the one in the task
   file, matching `manager.DirectorySource.label` and "Which list wins" in
@@ -255,7 +263,10 @@ task file has no answer, so that is the no-match case, exit 1.
   disagree.
 
 `--format json` prints the same fields as one JSON object with those names
-lowercased, so a caller never has to parse the plain form.
+lowercased, so a caller never has to parse the plain form. "The same fields"
+includes the same *absences*: whatever the plain form reports as unreadable or
+unknown is `null` in JSON, never a zero. JSON is the form a script trusts
+without a human reading it, so it is the worse of the two places to guess.
 
 ### What `info` is not
 
@@ -437,9 +448,21 @@ word rather than inventing `--fix`.
 what makes it safe in a script and the right target for the deprecated `doctor`
 alias.
 
-**Without a TTY and without `--force`, `repair` refuses and exits 1** rather
-than hanging on a prompt nobody can answer or silently deciding to write. A
-non-interactive caller must say which it wants: `--dry-run` or `--force`.
+**When it has a fix to offer and cannot ask** — no TTY, no `--force` — `repair`
+refuses and exits 1 rather than hanging on a prompt nobody can answer or
+silently deciding to write. A non-interactive caller must then say which it
+wants: `--dry-run` or `--force`.
+
+The refusal is conditional on there being something to confirm, and that
+condition is the whole point of it. A run with no applicable fix has nothing to
+prompt about, so it reports and exits on the normal rule — never 1. Today no
+automated fix exists in either tool, so `repair` should never refuse; when the
+first one lands, the refusal starts applying to exactly the runs that could use
+it. Reporting is not an interactive act, and a command that only reports must
+stay usable from a script.
+
+For the same reason `--force` says so when it had nothing to apply, rather than
+exiting silently on a non-zero code.
 
 ### Exit status
 
@@ -450,6 +473,13 @@ One rule, shared with `ortask.py repair`:
 | No problems found | 0 |
 | Problems remain when the command finishes | 2 |
 | The registry itself could not be read | 1 |
+| A fix needed confirming and none could be asked for | 1 |
+
+Exit 1 covers both "I could not read the subject" and "I would not act without
+asking", which a caller cannot tell apart. That is tolerable only because the
+second is reachable only when a fix exists and was declined the chance to run;
+if callers turn out to need the distinction, split it rather than overloading
+further.
 
 "Remain" is what makes `--force` honest: a run that fixes everything exits 0, and
 one that fixes four of five problems exits 2, because something is still wrong.

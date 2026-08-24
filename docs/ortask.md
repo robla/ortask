@@ -157,8 +157,10 @@ Output includes:
   `resolve_org_file()` returns a bare path today and will have to carry that
   provenance.
 - **Tasks subtree** — the heading depth of `* Tasks` and the line range it spans.
-- **Counts** — `TODO`, `DONE`, and `MOOT` totals, using `core.TERMINAL_STATES`
-  rather than a second list of state names.
+- **Counts** — one total per state actually present, driven by
+  `core.TERMINAL_STATES` rather than a second list of state names. `SUPERSEDED`
+  is in that set as a compatibility alias, so it is named like the others; a
+  known state reported as an unlabelled "other" tells the reader nothing.
 - **IDs** — which allocation schemes the file uses (numeric `tNNNN`, weekly
   `twYYWNN`) and the highest assigned ID in each.
 - **Keywords** — the `#+TODO:` line the file declares. No task file declares one
@@ -261,10 +263,10 @@ Change a task's keyword from DONE back to TODO.
 
 ### repair
 
-**Status: reporting is implemented; fixing, the prompt, and `--force` are
-specified but not built (`t0032`, and `t0004`/`t0008` for the fixes
-themselves).** Today `repair` reports and stops, and its subparser help still
-claims "find and fix ID problems".
+**Status: reporting, the exit-code rule, and `--force` are implemented
+(`t0032`); no automated fix exists yet (`t0004`, `t0008`), so every form still
+only reports.** Because nothing is fixable, the confirmation path below has
+nothing to confirm — see `t0043` for the refusal it currently triggers anyway.
 
 ```
 ortask.py repair
@@ -284,9 +286,12 @@ subject, one a task file and one a registry.
     confirmed.
 
 **--force**
-:   Apply every available fix without prompting. Without a TTY and without
-    `--force`, `repair` refuses and exits 1 rather than hanging on a prompt or
-    silently deciding to write.
+:   Apply every available fix without prompting, and say so when there was
+    none to apply. When a fix needs confirming and none can be asked for — no
+    TTY, no `--force` — `repair` refuses and exits 1 rather than hanging on a
+    prompt or silently deciding to write. That refusal is conditional on having
+    a fix to offer: a run that can only report must stay usable from a script.
+    See "Asking first" in `docs/projmgr.md`; the rule is shared.
 
 **--dry-run**
 :   Report and stop. Never prompts, never writes.
