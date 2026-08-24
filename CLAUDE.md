@@ -116,7 +116,10 @@ like a project root?"
   call sites in `tasks.py`, `taskui.py`, and `ortask.py` still name `core`;
   route new read paths through `orglib.parse()` instead. `t0023` — task files
   do not yet declare `#+TODO:`, so other Org parsers read `MOOT` as ordinary
-  heading text.
+  heading text. `t0032` — `docs/projmgr.md` and `docs/ortask.md` now spec
+  `pmgr repair` (replacing `doctor`) and an `info` verb in both tools; those two
+  sections are marked `**Status: specified, not implemented**` and everything
+  else still says `doctor`, which is what ships.
 
 ## Key files
 

@@ -13,7 +13,7 @@ ortask.py apply [--template NAME] [--week WEEK] [--date YYYY-MM-DD] [--dry-run] 
 ortask.py archive [<id>] [--file FILE]
 ortask.py done <id> [--file FILE]
 ortask.py help
-ortask.py [--file FILE] info [--file | --path | --name | --format FORMAT]
+ortask.py [--file FILE] info [--file | --format FORMAT]
 ortask.py [--file FILE] init
 ortask.py list [--todo | --done | --all] [--root-only] [--items N] [--format FORMAT] [--file FILE]
 ortask.py [--file FILE] log [--since WHEN] [--until WHEN] [--all] [--limit N] [--day-start HH:MM] [--format FORMAT]
@@ -134,42 +134,46 @@ use `ortask.py help` or `ortask.py --help` to display the command inventory.
 
 ### info
 
+**Status: specified, not implemented (`t0032`).**
+
 ```
 ortask.py info
 ortask.py info --file
-ortask.py info --path
-ortask.py info --name
 ortask.py info --format json
 ```
 
-Display metadata and database status for the active Org task file and its
-detected project context.
+Report what `ortask.py` knows about the active task file, and change nothing.
+
+`ort info` answers about *a file*; `pmgr info` answers about *a project*. That
+split follows the layering in `docs/architecture.md`, and it is the reason
+`ort info` deliberately does **not** report a project name: the registry is the
+project layer's subject, and two commands printing the same string would leave a
+caller guessing which to call. Use `pmgr info --name` for that.
 
 Output includes:
 
-- **Task file**: Resolved canonical path and discovery source (`--file`,
-  `$ORTASK_FILE`, or probed ancestor).
-- **Project**: Associated project name if the task file belongs to a registered
-  project in the active registry (`projects.org`).
-- **Tasks Range**: Heading depth and line range of the `* Tasks` subtree.
-- **Task Counts**: Summary of `TODO`, `DONE`, and `MOOT` tasks.
-- **ID Status**: Allocation scheme (numeric `tNNNN` vs weekly `twYYWNN`) and
-  highest assigned ID (e.g. `t0039`).
-- **Keywords**: Declared `#+TODO:` workflow keywords in the file.
-- **Archive**: Stock archive file path (e.g. `tasks.org_archive`).
+- **Task file** — the canonical path, and how it was found: `--file`,
+  `$ORTASK_FILE`, or the upward walk (naming the directory the walk stopped in).
+  `resolve_org_file()` returns a bare path today and will have to carry that
+  provenance.
+- **Tasks subtree** — the heading depth of `* Tasks` and the line range it spans.
+- **Counts** — `TODO`, `DONE`, and `MOOT` totals, using `core.TERMINAL_STATES`
+  rather than a second list of state names.
+- **IDs** — which allocation schemes the file uses (numeric `tNNNN`, weekly
+  `twYYWNN`) and the highest assigned ID in each.
+- **Keywords** — the `#+TODO:` line the file declares. No task file declares one
+  yet (`t0023`), so until that lands this reports "none declared" rather than
+  looking broken.
+- **Archive** — the stock archive path (`<file>_archive`), and whether it exists.
 
 **--file**
-:   Print only the canonical task file path and exit 0.
-
-**--path**
-:   Print only the parent directory of the active task file and exit 0.
-
-**--name**
-:   Print only the registered project name (if detected from `projects.org` /
-    registry) and exit 0.
+:   Print only the canonical task file path, one line, and exit 0. Prints
+    nothing and exits 1 when no file resolves. The single-field rules in
+    `docs/projmgr.md` under "The single-field forms" apply here too: one bare
+    line on stdout, silence on stderr, and mutually exclusive with `--format`.
 
 **--format** *FORMAT*
-:   Output format: `plain` (default) or `json`.
+:   `plain` (default) or `json`.
 
 ### init
 
@@ -257,21 +261,43 @@ Change a task's keyword from DONE back to TODO.
 
 ### repair
 
+**Status: reporting is implemented; fixing, the prompt, and `--force` are
+specified but not built (`t0032`, and `t0004`/`t0008` for the fixes
+themselves).** Today `repair` reports and stops, and its subparser help still
+claims "find and fix ID problems".
+
 ```
 ortask.py repair
+ortask.py repair --force
 ortask.py repair --dry-run
-ortask.py repair --fix
 ```
 
-Scan the task tree for problems — duplicate IDs, gaps in numbering,
-subtask IDs that don't match their parent heading, or headings under
-`* Tasks` that are missing IDs — and fix them.
+Scan the task tree for problems — duplicate IDs, subtask IDs that do not match
+their parent heading, headings under `* Tasks` missing an ID — then repair what
+it safely can, asking first.
 
-**--fix**
-:   Apply repairs to the file (default).
+The contract matches `projmgr.py repair` exactly; the two verbs differ only in
+subject, one a task file and one a registry.
+
+**(no flag)**
+:   Report every problem, then prompt before each fix and apply only what was
+    confirmed.
+
+**--force**
+:   Apply every available fix without prompting. Without a TTY and without
+    `--force`, `repair` refuses and exits 1 rather than hanging on a prompt or
+    silently deciding to write.
 
 **--dry-run**
-:   Report what would be changed without modifying the file.
+:   Report and stop. Never prompts, never writes.
+
+Exit status is 0 when no problems are found, 2 when problems remain once the
+command finishes, and 1 when the file cannot be read. A run that fixes
+everything exits 0; one that fixes some exits 2, because something is still
+wrong. `--dry-run` fixes nothing, so any problem leaves it at 2.
+
+> This replaces the earlier behavior where bare `repair` exited 0 with problems
+> outstanding while `--dry-run` exited 2 — the same condition reported two ways.
 
 ### show
 

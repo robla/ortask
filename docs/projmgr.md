@@ -183,40 +183,85 @@ when explicitly asked to edit the private list.
 
 ## `info`
 
-`projmgr.py info [PROJECT | DIRECTORY]` displays the resolved project context and metadata from the registry and `projects.org`.
+**Status: specified, not implemented (`t0032`).**
+
+`projmgr.py info [PROJECT | DIRECTORY]` reports the resolved project context —
+what the registry knows about one project — and changes nothing.
 
 ```sh
-projmgr.py info                                  # infer project from $PWD
-projmgr.py info ortask                           # by registered project name
-projmgr.py info ~/src/elusync                    # by project directory path
-projmgr.py info --name                           # print ONLY the project name
-projmgr.py info --path                           # print ONLY the project directory
-projmgr.py info --file                           # print ONLY the task file path
-projmgr.py info --format json                    # machine-readable JSON output
+projmgr.py info                       # infer the project from $PWD
+projmgr.py info ortask                # by registered project name
+projmgr.py info ~/src/elusync         # by project directory path
+projmgr.py info --name                # print only the project name
+projmgr.py info --path                # print only the project directory
+projmgr.py info --file                # print only the task file path
+projmgr.py info --format json         # machine-readable
 ```
 
-Options:
+### Selecting the project
 
-- `PROJECT | DIRECTORY`: optional project name or filesystem path. If omitted,
-  `info` walks upward from `$PWD` to locate the active project root and matches
-  it against the registry (`projects.org` / registry symlinks). If no project
-  matches, or if multiple matches are ambiguous, it exits 1 with an explanatory
-  error.
-- `--name`, `-n`: print only the detected project name and exit 0 (ideal for
-  shell prompts like `PS1`, Starship, or scripts).
-- `--path`, `-p`: print only the canonical project root path and exit 0.
-- `--file`, `-f`: print only the canonical task file path and exit 0.
-- `--format plain|json`: `plain` (default) prints a formatted summary; `json`
-  outputs structured metadata.
+The optional argument is a registered project name or a filesystem path. A name
+that matches a registry entry wins; otherwise the argument is treated as a path.
+With no argument, `info` resolves the project the way `add` does — it walks
+upward from `$PWD` with `manager.project_root_for`, then matches that root
+against the registry.
 
-Human-readable output includes:
+Three outcomes are distinct and must stay distinct, because callers act on them
+differently:
 
-- **Project**: registered name in `<registry>/projects.org`
-- **Directory**: real filesystem path (collapsed to `~`)
-- **Task file**: canonical task file path and mirror status
-- **Registry**: registry location and index section heading (e.g. `* [#A] ortask`)
-- **Dirstack**: active directory stack source (`custom` in `projects.org` vs `project` in task file) and effective directory count
-- **Tasks**: summary counts of open and completed top-level tasks
+| Outcome | Exit | stdout |
+|---|---|---|
+| One project matched | 0 | the report, or the single field |
+| No project matched | 1 | nothing |
+| The path matched more than one entry | 1 | nothing |
+
+### The single-field forms
+
+`--name`, `--path`, and `--file` exist for shell prompts, window titles, and
+scripts. That use imposes rules the full report does not need:
+
+- **Print one line to stdout, and nothing else, ever.** No label, no trailing
+  commentary, no `~` collapsing (a path here is meant to be used, not read).
+- **Say nothing on stderr when there is no answer.** A `PS1` that prints
+  `no project matched` on every `cd /tmp` is unusable. Diagnose through the exit
+  status alone; the full report is where a human goes to find out why.
+- **They are mutually exclusive with each other and with `--format`.** Declare
+  them in one `argparse` mutually exclusive group so a second flag is a usage
+  error rather than a silent precedence rule nobody can predict.
+
+`--name` prints the registry entry name — the `<registry>` subdirectory, which
+is also the `projects.org` heading. `--path` prints the real project directory
+(`manager.real_project_path`), resolved through the entry symlink. `--file`
+prints the canonical task file (`manager.canonical_org_file`); a project with no
+task file has no answer, so that is the no-match case, exit 1.
+
+### The report
+
+`--format plain` (the default) prints:
+
+- **Project** — the registry entry name.
+- **Directory** — the real project path, collapsed to `~`.
+- **Task file** — the canonical task file, and whether the entry's link agrees
+  with discovery (`manager.task_file_mirror_mismatch`).
+- **Registry** — the registry location and this project's index heading, with
+  its priority cookie if it has one (`* [#A] ortask`).
+- **Directories** — which source defines the stack and how many entries it has.
+  Name the source with the words the rest of the suite uses: **`private`** for
+  the section in the registry index and **`project`** for the one in the task
+  file, matching `manager.DirectorySource.label` and "Which list wins" in
+  `docs/cdproj.md`. Do not introduce a third word for this.
+- **Tasks** — open and completed top-level counts, from the same
+  `manager.ProjectSnapshot` the navigator uses, so `info` and `ptui` cannot
+  disagree.
+
+`--format json` prints the same fields as one JSON object with those names
+lowercased, so a caller never has to parse the plain form.
+
+### What `info` is not
+
+`info` is read-only and reports; `repair` diagnoses and can fix. Anything that
+is *wrong* rather than merely true belongs in `repair`, so that a script can
+rely on `info` never having an opinion.
 
 ## `init`
 
@@ -351,33 +396,66 @@ contract.
 
 ## `repair`
 
-`projmgr.py repair [--dry-run | --fix]` diagnoses registry health, broken symlinks, task file discoverability, and index consistency.
+**Status: the rename is specified, not implemented (`t0032`); today this
+command is `doctor` and only reports.** Nothing in the registry layer can fix
+anything yet, so every form below currently reports and exits.
+
+`projmgr.py repair` diagnoses the registry — broken symlinks, task-file
+discoverability, index consistency — and repairs what it safely can, asking
+first.
 
 ```sh
-projmgr.py repair
-projmgr.py repair --dry-run
-projmgr.py repair --fix
+projmgr.py repair                              # report, then ask before each fix
+projmgr.py repair --force                      # repair without asking
+projmgr.py repair --dry-run                    # report only; never asks, never writes
 projmgr.py --registry ~/tmpsorta/proj2026 repair
 ```
 
-It checks and reports two kinds of lines:
+### What it reports
 
 - A **note** is informational: a project with no task file, or a registry
   subdirectory that is not a project entry and is therefore ignored.
-- A **problem** is an inconsistency: a broken or ambiguous project symlink, an
+- A **problem** is something to fix: a broken or ambiguous project link, an
   unreadable task file, a file with no parseable task headings, duplicate task
-  IDs, or a missing/malformed `projects.org` index.
+  IDs, or a missing or malformed registry index.
 
-Options:
+Notes alone never affect the exit status.
 
-- `--dry-run`: report problems and proposed corrections without making any
-  modifications. Exits 2 if problems are found, 0 if clean.
-- `--fix`: apply automated fixes where safe (default when fixing capabilities are
-  supported, matching `ortask.py repair`).
+### Asking first
 
-Exit status is 0 when no problems are found and 2 when any are detected,
-matching `ortask.py repair --dry-run`. Notes alone do not trigger an exit code of
-2.
+A verb named `repair` should repair — it just must not do it behind your back.
+So the bare form reports everything, then prompts before each fix it is prepared
+to make, and applies only what was confirmed. This mirrors the subtraction
+prompt `set-dirs` already shows.
+
+**`--force`** skips the prompts and applies every available fix. `--force` is
+the suite's existing word for "skip the safety" (`add --force` repoints links in
+an existing entry; `rm --force` removes a whole entry), so `repair` uses the same
+word rather than inventing `--fix`.
+
+**`--dry-run`** reports and stops. It never prompts and never writes, which is
+what makes it safe in a script and the right target for the deprecated `doctor`
+alias.
+
+**Without a TTY and without `--force`, `repair` refuses and exits 1** rather
+than hanging on a prompt nobody can answer or silently deciding to write. A
+non-interactive caller must say which it wants: `--dry-run` or `--force`.
+
+### Exit status
+
+One rule, shared with `ortask.py repair`:
+
+| Condition | Exit |
+|---|---|
+| No problems found | 0 |
+| Problems remain when the command finishes | 2 |
+| The registry itself could not be read | 1 |
+
+"Remain" is what makes `--force` honest: a run that fixes everything exits 0, and
+one that fixes four of five problems exits 2, because something is still wrong.
+`--dry-run` fixes nothing, so any problem leaves it at 2.
+
+### Index and migration state
 
 With the registry index in place (`t0026`), `repair` also diagnoses migration
 and index state. A missing index is a `run pmgr migrate` problem; so are an
@@ -516,7 +594,9 @@ in the middle of the prompt.
 ## Deprecated aliases
 
 - `projadd` still dispatches to `add`; new documentation should use `add`.
-- `doctor` is a deprecated alias for `repair --dry-run`.
+- `doctor` is a deprecated alias for `repair --dry-run`. It is the read-only
+  form on purpose: `doctor` never wrote anything, so the alias must not
+  become a way to reach a command that does.
 
 ## Not planned
 
@@ -527,14 +607,15 @@ friction is answered by `add` instead.
 
 ## Safety
 
-`list`, `log`, `info`, and `repair --dry-run` are read-only. `add` creates
-directories and symlinks only inside the registry; `rm` removes only a registry
-entry, and only its symlinks unless `--force` is given. `init` writes only
-`ortask.ini`. `migrate` atomically writes `projects.org` before removing
-validated legacy files. `set-dirs` edits only one bounded section in that index.
-`cdproj` writes the file named by `--out`, and can open or initialize a project's
-section in an already-migrated index when asked to edit it; it never writes Org
-task content.
+`list`, `log`, `info`, and `repair --dry-run` are read-only. `repair` without
+`--dry-run` may write, but only after confirming each fix, and it refuses to run
+unattended without `--force`. `add` creates directories and symlinks only inside
+the registry; `rm` removes only a registry entry, and only its symlinks unless
+`--force` is given. `init` writes only `ortask.ini`. `migrate` atomically writes
+`projects.org` before removing validated legacy files. `set-dirs` edits only one
+bounded section in that index. `cdproj` writes the file named by `--out`, and can
+open or initialize a project's section in an already-migrated index when asked to
+edit it; it never writes Org task content.
 `docs/projects.md` states the general rule these follow: the registry,
 `ortask.ini`, and files named by an explicit `--out` are the only things the
 project layer writes.

@@ -221,12 +221,82 @@ mapping its optional project argument to =set-dirs --project=. Complete project
 names after =-s= in =misc/ortask-completion.bash=. The =--out= protocol is
 untouched: this path writes no stack file and does not =cd=.
 ** TODO t0032 Settle the repair/doctor naming and whether both should exist
-Unified on =repair= across both tools: =pmgr doctor= is replaced by =pmgr repair=
-(=doctor= retained as a deprecated alias for =repair --dry-run=), aligning
-semantics with =ort repair=. Added =info= subcommands to both =ortask.py= and
-=projmgr.py= in =docs/ortask.md= and =docs/projmgr.md= to inspect task and
-project metadata, including active project detection from =projects.org= via
-=--name=. Implementation follows in code and CLI parsers.
+=ort repair= and =pmgr doctor= are the same kind of command — check a thing,
+report what is wrong — on two different subjects, under two unrelated names, and
+neither repairs anything (=ortask.py:332=; its subparser help at
+=ortask.py:528= still claims "find and fix ID problems"). The naming is now
+decided; what remains is written down in =docs/projmgr.md= and =docs/ortask.md=
+and staged below. Unblocks the question in =docs/logging.md= of whether these
+findings are logged, and settles what =repair= promises before =t0004= and
+=t0008= build on it.
+
+Decisions, so nobody has to re-litigate them:
+
+- Unify on =repair= in both tools. =doctor= survives as a deprecated alias for
+  =repair --dry-run= — the read-only form, because =doctor= never wrote
+  anything and the alias must not become a way to reach a command that does.
+- A verb named =repair= should repair, but never behind your back: the bare form
+  reports, then asks before each fix. =--force= skips the asking. Not =--fix=:
+  =--force= is already this suite's word for "skip the safety" in =add= and
+  =rm=. Without a TTY and without =--force=, refuse and exit 1 rather than hang
+  on a prompt or silently decide to write.
+- One exit rule for both tools: 0 clean, 2 when problems remain once the command
+  finishes, 1 when the subject cannot be read. Today =ort repair= exits 0 with
+  problems outstanding while =ort repair --dry-run= and =pmgr doctor= exit 2 —
+  the same condition reported two ways.
+- Add =info= to both tools, read-only, reporting what is *true*; anything that is
+  *wrong* belongs in =repair=, so a script can rely on =info= having no opinion.
+  =ort info= answers about a file, =pmgr info= about a project. =ort info=
+  deliberately has no =--name=: the registry is the project layer's subject and
+  two commands printing the same string leaves a caller guessing.
+- The single-field forms (=--name=, =--path=, =--file=) are a scripting
+  interface for prompts and window titles. One bare line on stdout, silence on
+  stderr when there is no answer, mutually exclusive with each other and with
+  =--format=. See "The single-field forms" in =docs/projmgr.md=.
+*** TODO t0032.1 Rename pmgr doctor to pmgr repair with no behavior change
+Pure rename first, so the risky part lands alone. Rename =cmd_doctor= to
+=cmd_repair= and leave =doctor= alive only in the argparse table and the
+dispatch dict — one alias at the CLI surface, no second name inside the program.
+Register it alphabetically, between =migrate= and =rm=. Update the ~12
+=projmgr.cmd_doctor= call sites in =tests/test_ortask_suite.py= and
+=tests/test_logging.py=, and add =repair= to =misc/ortask-completion.bash=
+(subcommand list, the =doctor_opts= variable, and the =case= arm) keeping
+=doctor= completable. Nine files still say =doctor= and must move together, or
+the next reader implements the old name: =docs/config.md= (4), =docs/logging.md=
+(4), =docs/roadmap.md= (3), =docs/projects.md= (2), =docs/llm-assessments.md=
+(2), =docs/architecture.md=, =docs/ecosystem.md=, =CLAUDE.md=, =GEMINI.md=.
+*** TODO t0032.2 Unify the repair exit-code rule across both tools
+0 clean, 2 problems remain, 1 unreadable subject — in =ort repair=,
+=ort repair --dry-run=, and =pmgr repair=. Fix =ortask.py:342-348=, where the
+bare form returns 0 after printing problems. Make the =ortask.py= =repair=
+subparser help honest while there. Test the matrix in both tools rather than one
+case each; the point of the shared rule is that a caller can stop caring which
+tool it called.
+*** TODO t0032.3 Make repair ask before repairing, and add --force
+Only after =t0032.2=. The prompt has no fixes to offer yet — no registry-layer
+code repairs anything, and =ort repair='s auto-fix is =t0004=/=t0008= — so build
+the confirmation path, =--force=, and the no-TTY refusal against a fix registry
+that starts empty, and prove the refusal with a non-TTY test. Reuse the
+subtraction prompt =set-dirs= already shows rather than inventing a second
+confirmation style. Do not let =--force= imply a fix exists.
+*** TODO t0032.4 Add ort info
+Three fields have no implementation behind them yet and are the real cost.
+Discovery provenance: =resolve_org_file()= returns a bare path, so =--file= vs
+=$ORTASK_FILE= vs the upward walk has to be carried out of it. The =* Tasks=
+subtree line range: =orglib= tracks per-task line numbers, not a subtree span.
+Declared =#+TODO:= keywords: no task file has one until =t0023=, so report "none
+declared" rather than something that looks broken. Counts come from
+=core.TERMINAL_STATES=, not a second list of state names.
+*** TODO t0032.5 Add pmgr info
+Resolve the project the way =add= does, through =manager.project_root_for=, then
+match against the registry. Keep the three outcomes distinct — matched, no
+match, ambiguous — because callers act on them differently. Reuse
+=manager.real_project_path=, =manager.canonical_org_file=,
+=manager.task_file_mirror_mismatch=, and the same =manager.ProjectSnapshot= the
+navigator uses, so =info= and =ptui= cannot disagree about a count. Name the
+directory-stack source =private= or =project=, matching
+=manager.DirectorySource.label= and "Which list wins" in =docs/cdproj.md=; the
+draft spec said =custom=, which would have been a third word for one thing.
 ** DONE t0033 Implement the ortask event log
 The event log specified in =docs/logging.md=: an append-only JSON Lines record
 of what the tools did, at =<registry>/log/YYYY-MM.jsonl= beside =projects.org=,
@@ -538,3 +608,38 @@ A matching subtask must keep non-matching ancestors as context without making
 those ancestors look like matches. Route the required tag semantics through
 =orglib= before adding UI; no separate tag index is required until measurement
 shows parsing the current file is too slow.
+** TODO [#B] t0040 cdproj's picker never tells the shell which project it chose
+=cdproj ortask= puts the name in =$1=, which =misc/cdproj.func.sh= forwards to
+the positional at =projmgr.py:2687=. =cdproj= with no argument does not: the
+picker selects, and the shell gets back only the =--out= file of directories. So
+one command hands back two different amounts of information depending on how it
+was invoked, and anything shell-side keyed to the project — a window title, a
+prompt, a hook — works in one form and silently does the wrong thing in the
+other. The name is not unavailable: =_CdprojSession.write_selection=
+(=projmgr.py:2386=) already writes =project.name= to the event log, so it is
+known and already leaves the process. The =--out= doctrine does not forbid
+fixing this. "Never a mode, never a file to edit" prohibits the picker
+*commanding* the shell; a project name describes the selection, exactly as the
+directory list does. Add a second output path (=--out-name FILE=) so both
+invocation forms return the same facts, and make =$1= a fallback that is never
+needed. Note that =pmgr info --name= cannot substitute: it infers from =$PWD=,
+so after =cdproj elweek= lands in =~/src/ortask= it answers =ortask=. The tmux
+window rename in =misc/cdproj.func.sh= currently uses the landing directory's
+basename and inherits exactly that wrong answer.
+** TODO [#C] t0041 pmgr --todo-only is accepted but does nothing
+=projmgr.py:2645= still declares =--todo-only=, and nothing reads =args.todo_only=
+any more: =cmd_interactive= dropped it when =project_menu='s =include_done=
+started defaulting to false, so task views opened from =ptui= already show only
+open work. The flag is now a no-op that argparse accepts silently, and
+=docs/projmgr.md:84= still advertises it. Either remove both, or keep the flag
+and give it the inverse meaning (=--all=) if starting on everything is still
+worth one keystroke. =C-t= and =v= already change it live either way.
+** TODO [#C] t0042 A broken project's warning prints twice in the numbered dashboard
+=_project_location_and_tasks= (=projmgr.py:359=) composes =_project_location=,
+which appends the warning through =_project_note=, with =_project_tasks=, which
+returns the same warning as its whole value for a broken project — and wraps it
+in a second set of parentheses. A dangling entry renders as
+=~/registry/gone  (broken project link: gone -> ...)  ((broken project link: gone -> ...))=.
+Only the numbered fallback is affected; the highlight-bar rows call the two
+halves separately. Decide which half owns the warning — the location reads
+better — and have the other yield when =project.warning= is set.
