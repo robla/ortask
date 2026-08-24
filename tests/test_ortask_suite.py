@@ -1338,6 +1338,7 @@ def test_cli_subcommands_are_registered_alphabetically() -> None:
             "archive",
             "done",
             "help",
+            "info",
             "init",
             "list",
             "log",
@@ -1350,11 +1351,13 @@ def test_cli_subcommands_are_registered_alphabetically() -> None:
             "cdproj",
             "doctor",
             "help",
+            "info",
             "init",
             "list",
             "log",
             "migrate",
             "projadd",
+            "repair",
             "rm",
             "set-dirs",
         ],
@@ -1416,7 +1419,8 @@ def test_bash_completion_for_ortask_and_alias() -> None:
         ("_ortask_complete", "COMP_WORDS=(ort --in); COMP_CWORD=1", "--interactive"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py app); COMP_CWORD=1", "apply"),
         ("_ortask_complete", "COMP_WORDS=(ort ar); COMP_CWORD=1", "archive"),
-        ("_ortask_complete", "COMP_WORDS=(ort in); COMP_CWORD=1", "init"),
+        ("_ortask_complete", "COMP_WORDS=(ort inf); COMP_CWORD=1", "info"),
+        ("_ortask_complete", "COMP_WORDS=(ort ini); COMP_CWORD=1", "init"),
         ("_ortask_complete", "COMP_WORDS=(ort lo); COMP_CWORD=1", "log"),
         ("_ortask_complete", "COMP_WORDS=(ort log --si); COMP_CWORD=2", "--since"),
         ("_ortask_complete", "COMP_WORDS=(ortask.py list --fo); COMP_CWORD=2", "--format"),
@@ -1560,6 +1564,7 @@ def test_bash_completion_lists_subcommands_alphabetically() -> None:
                 "archive",
                 "done",
                 "help",
+                "info",
                 "init",
                 "list",
                 "log",
@@ -1576,11 +1581,13 @@ def test_bash_completion_lists_subcommands_alphabetically() -> None:
                 "cdproj",
                 "doctor",
                 "help",
+                "info",
                 "init",
                 "list",
                 "log",
                 "migrate",
                 "projadd",
+                "repair",
                 "rm",
                 "set-dirs",
             ],
@@ -3819,15 +3826,15 @@ def test_projmgr_doctor_reports_problems_and_exits_two(
         manager.PROJECTS_INDEX_HEADER, encoding="utf-8"
     )
 
-    args = argparse.Namespace(registry=None)
-    assert projmgr.cmd_doctor(args) == 0
+    args = argparse.Namespace(registry=None, dry_run=True, force=False)
+    assert projmgr.cmd_repair(args) == 0
     assert "no problems found" in capsys.readouterr().out
 
     (registry / "gone").mkdir()
     (registry / "gone" / "gone").symlink_to(tmp_path / "src" / "gone")
     write(registry / "docs" / "notes.org", "* Notes\n")
 
-    assert projmgr.cmd_doctor(args) == 2
+    assert projmgr.cmd_repair(args) == 2
     out = capsys.readouterr().out
     assert "problem: gone: broken project link" in out
     assert "note: docs: not a project entry, ignored" in out
@@ -3836,23 +3843,23 @@ def test_projmgr_doctor_reports_problems_and_exits_two(
     (registry / "healthy" / "tasks.org").unlink()
     (registry / "healthy" / "tasks.org").symlink_to(tmp_path / "src" / "vanished.org")
 
-    assert projmgr.cmd_doctor(args) == 2
+    assert projmgr.cmd_repair(args) == 2
     out = capsys.readouterr().out
     assert "problem: healthy: dangling link tasks.org -> " in out
 
 
-def test_projmgr_doctor_reports_registry_index_states(
+def test_projmgr_repair_reports_registry_index_states(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    # Doctor diagnoses missing, mixed, unreadable, stale, and ambiguous indexes.
+    # Repair diagnoses missing, mixed, unreadable, stale, and ambiguous indexes.
     registry, _ = _cdproj_registry(
         tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
     )
-    args = argparse.Namespace(registry=str(registry))
+    args = argparse.Namespace(registry=str(registry), dry_run=True, force=False)
     index = registry / manager.PROJECTS_INDEX_NAME
 
     index.unlink()
-    assert projmgr.cmd_doctor(args) == 2
+    assert projmgr.cmd_repair(args) == 2
     assert "problem: registry not migrated; run pmgr migrate" in capsys.readouterr().out
 
     index.write_text(
@@ -3861,25 +3868,25 @@ def test_projmgr_doctor_reports_registry_index_states(
         + "* vanished\n** Directories\n",
         encoding="utf-8",
     )
-    assert projmgr.cmd_doctor(args) == 2
+    assert projmgr.cmd_repair(args) == 2
     out = capsys.readouterr().out
     assert "duplicate Directories heading for project 'myproj'" in out
     assert "stale project section 'vanished'" in out
 
     index.write_text("* myproj\n* MYPROJ\n", encoding="utf-8")
-    assert projmgr.cmd_doctor(args) == 2
+    assert projmgr.cmd_repair(args) == 2
     assert "duplicate project heading for 'myproj'" in capsys.readouterr().out
 
     index.unlink()
     index.mkdir()
-    assert projmgr.cmd_doctor(args) == 2
+    assert projmgr.cmd_repair(args) == 2
     assert "cannot read" in capsys.readouterr().out
     index.rmdir()
 
     index.write_text(manager.PROJECTS_INDEX_HEADER, encoding="utf-8")
     legacy = registry / "myproj" / manager.DIRECTORIES_PRIVATE_NAME
     legacy.write_text("* Directories\n", encoding="utf-8")
-    assert projmgr.cmd_doctor(args) == 2
+    assert projmgr.cmd_repair(args) == 2
     assert "registry migration incomplete" in capsys.readouterr().out
 
 
@@ -4088,7 +4095,7 @@ def test_doctor_accepts_a_cookied_project_section(
         manager.PROJECTS_INDEX_HEADER + "* [#A] myproj\n** Directories\n",
         encoding="utf-8",
     )
-    assert projmgr.cmd_doctor(argparse.Namespace(registry=str(registry))) == 0
+    assert projmgr.cmd_repair(argparse.Namespace(registry=str(registry), dry_run=True, force=False)) == 0
     assert "stale project section" not in capsys.readouterr().out
 
     # A section that really matches nothing is still reported, by its name.
@@ -4097,7 +4104,7 @@ def test_doctor_accepts_a_cookied_project_section(
         + "* [#A] myproj\n** Directories\n* [#B] ghost\n",
         encoding="utf-8",
     )
-    assert projmgr.cmd_doctor(argparse.Namespace(registry=str(registry))) == 2
+    assert projmgr.cmd_repair(argparse.Namespace(registry=str(registry), dry_run=True, force=False)) == 2
     assert "stale project section 'ghost'" in capsys.readouterr().out
 
 
@@ -8196,3 +8203,208 @@ def test_maybe_recover_default_enter_keeps_autosave(tmp_path: Path, monkeypatch)
     taskui._maybe_recover(buf)
     assert buf.dirty is False
     assert autosave.exists()
+
+
+def test_repair_exit_code_matrix_and_safety(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # 0 clean, 2 problems remain, 1 unreadable subject; non-TTY requires --dry-run or --force (t0032.2, t0032.3).
+    # 1. Clean ort task file
+    clean_org = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 Task one\n")
+    assert ortask.cmd_repair(argparse.Namespace(file=clean_org, dry_run=False, force=False)) == 0
+    assert ortask.cmd_repair(argparse.Namespace(file=clean_org, dry_run=True, force=False)) == 0
+    assert ortask.cmd_repair(argparse.Namespace(file=clean_org, dry_run=False, force=True)) == 0
+
+    # 2. Task file with problems (duplicate IDs)
+    broken_org = write(
+        tmp_path / "broken.org",
+        "* Tasks\n** TODO t0001 Task one\n** TODO t0001 Task duplicate\n",
+    )
+    # Dry-run reports and exits 2
+    assert ortask.cmd_repair(argparse.Namespace(file=broken_org, dry_run=True, force=False)) == 2
+    assert "duplicate ID t0001" in capsys.readouterr().err
+
+    # Bare form without TTY and without --force refuses with exit 1
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: False)
+    assert ortask.cmd_repair(argparse.Namespace(file=broken_org, dry_run=False, force=False)) == 1
+    assert "interactive confirmation requires a TTY" in capsys.readouterr().err
+
+    # Force skips safety but exits 2 because problems remain unfixed
+    assert ortask.cmd_repair(argparse.Namespace(file=broken_org, dry_run=False, force=True)) == 2
+
+    # 3. Clean projmgr registry
+    registry, _ = _cdproj_registry(
+        tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
+    )
+    reg_str = str(registry)
+    assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=False, force=False)) == 0
+    assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=True, force=False)) == 0
+    assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=False, force=True)) == 0
+    # doctor alias sets dry_run=True by default
+    parser = projmgr.build_parser()
+    doc_args = parser.parse_args(["--registry", reg_str, "doctor"])
+    assert doc_args.dry_run is True
+    assert projmgr.cmd_repair(doc_args) == 0
+
+    # 4. Registry with problems
+    (registry / "dangling").mkdir()
+    (registry / "dangling" / "dangling").symlink_to(tmp_path / "src" / "nonexistent")
+    # Dry-run reports and exits 2
+    assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=True, force=False)) == 2
+    # doctor alias reports and exits 2 without TTY refusal
+    doc_broken_args = parser.parse_args(["--registry", reg_str, "doctor"])
+    assert projmgr.cmd_repair(doc_broken_args) == 2
+    capsys.readouterr()
+
+    # Bare form without TTY and without --force refuses with exit 1
+    assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=False, force=False)) == 1
+    assert "interactive confirmation requires a TTY" in capsys.readouterr().err
+
+    # Force skips safety but exits 2 because problems remain
+    assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=False, force=True)) == 2
+
+    # 5. Unreadable subject exits 1
+    assert projmgr.cmd_repair(argparse.Namespace(registry=str(tmp_path / "nosuchreg"), dry_run=False, force=False)) == 1
+    assert ortask.cmd_repair(argparse.Namespace(file=tmp_path / "nosuchfile.org", dry_run=False, force=False)) == 1
+
+
+def test_ort_info_reports_metadata_and_scripting_flags(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # ort info reports file metadata and supports --file and --format json (t0032.4).
+    proj_dir = tmp_path / "project"
+    proj_dir.mkdir()
+    org_file = write(
+        proj_dir / "tasks.org",
+        """#+TODO: TODO | DONE MOOT
+* Intro
+Some project notes.
+* Tasks
+** TODO [#A] t0001 First task :tag1:
+** DONE t0002.1 Subtask
+** MOOT tw26W24 Weekly task
+""",
+    )
+    # 1. Plain text format
+    args = argparse.Namespace(file=org_file, provenance="probed in .", format="plain", single_file=False)
+    assert ortask.cmd_info(args) == 0
+    out = capsys.readouterr().out
+    assert f"Task file:   {org_file.resolve()} (probed in .)" in out
+    assert "Tasks:       depth 1, lines 4–7" in out
+    assert "Counts:      TODO: 1, DONE: 1, MOOT: 1 (total: 3)" in out
+    assert "IDs:         numeric (highest: t0002), weekly (highest: tw26W24)" in out
+    assert "Keywords:    TODO | DONE MOOT" in out
+    assert "archive (does not exist)" in out
+
+    # 2. JSON format
+    args_json = argparse.Namespace(file=org_file, provenance="probed in .", format="json", single_file=False)
+    assert ortask.cmd_info(args_json) == 0
+    raw_json = capsys.readouterr().out
+    data = json.loads(raw_json)
+    assert data["task_file"] == str(org_file.resolve())
+    assert data["provenance"] == "probed in ."
+    assert data["tasks_subtree"]["depth"] == 1
+    assert data["tasks_subtree"]["start_line"] == 4
+    assert data["tasks_subtree"]["end_line"] == 7
+    assert data["counts"]["todo"] == 1
+    assert data["counts"]["done"] == 1
+    assert data["counts"]["moot"] == 1
+    assert data["counts"]["total"] == 3
+    assert data["ids"]["numeric"] == "t0002"
+    assert data["ids"]["weekly"] == "tw26W24"
+    assert data["keywords"] == "TODO | DONE MOOT"
+    assert data["archive"]["exists"] is False
+
+    # 3. CLI --file flag (prints canonical path and exits 0)
+    monkeypatch.chdir(proj_dir)
+    monkeypatch.setattr(sys, "argv", ["ortask.py", "info", "--file"])
+    assert ortask.main() == 0
+    assert capsys.readouterr().out.strip() == str(org_file.resolve())
+
+    # 4. CLI --file flag when no task file exists (silent stderr, exit 1)
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    monkeypatch.chdir(empty_dir)
+    monkeypatch.setattr(sys, "argv", ["ortask.py", "info", "--file"])
+    assert ortask.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_pmgr_info_reports_metadata_and_scripting_flags(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # pmgr info inspects project registry context and scripting flags (t0032.5).
+    registry, project_dir = _cdproj_registry(
+        tmp_path,
+        monkeypatch,
+        capsys,
+        "* Tasks\n** TODO t0001 task 1\n** DONE t0002 task 2\n",
+    )
+    reg_str = str(registry)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    index.write_text(
+        manager.PROJECTS_INDEX_HEADER + "* [#A] myproj\n** Directories\n   - ~/src/myproj\n",
+        encoding="utf-8",
+    )
+
+    # 1. Plain text format inferred from PWD inside project
+    monkeypatch.chdir(project_dir)
+    monkeypatch.setenv("PWD", str(project_dir))
+    args = argparse.Namespace(registry=reg_str, target=None, name=False, path=False, file=False, format="plain")
+    assert projmgr.cmd_info(args) == 0
+    out = capsys.readouterr().out
+    assert "Project:     myproj" in out
+    assert "Task file:" in out
+    assert "Registry:    " in out
+    assert "* [#A] myproj" in out
+    assert "Directories: private (1 entry)" in out
+    assert "Tasks:       open: 1, completed: 1, total: 2" in out
+
+    # 2. JSON format by project name target
+    args_json = argparse.Namespace(registry=reg_str, target="myproj", name=False, path=False, file=False, format="json")
+    assert projmgr.cmd_info(args_json) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["project"] == "myproj"
+    assert data["directory"] == str(project_dir.resolve())
+    assert data["heading"] == "* [#A] myproj"
+    assert data["directories"]["source"] == "private"
+    assert data["directories"]["count"] == 1
+    assert data["tasks"]["open"] == 1
+    assert data["tasks"]["completed"] == 1
+
+    # 3. Single-field flag --name
+    args_name = argparse.Namespace(registry=reg_str, target=None, name=True, path=False, file=False, format="plain")
+    assert projmgr.cmd_info(args_name) == 0
+    assert capsys.readouterr().out.strip() == "myproj"
+
+    # 4. Single-field flag --path
+    args_path = argparse.Namespace(registry=reg_str, target="myproj", name=False, path=True, file=False, format="plain")
+    assert projmgr.cmd_info(args_path) == 0
+    assert capsys.readouterr().out.strip() == str(project_dir.resolve())
+
+    # 5. Single-field flag --file
+    args_file = argparse.Namespace(registry=reg_str, target="myproj", name=False, path=False, file=True, format="plain")
+    assert projmgr.cmd_info(args_file) == 0
+    assert capsys.readouterr().out.strip() == str((project_dir / "TODO.org").resolve())
+
+    # 6. Single-field flag in unregistered directory: exits 1 with silent stderr
+    unreg_dir = tmp_path / "unregistered"
+    unreg_dir.mkdir()
+    monkeypatch.chdir(unreg_dir)
+    monkeypatch.setenv("PWD", str(unreg_dir))
+    args_unreg = argparse.Namespace(registry=reg_str, target=None, name=True, path=False, file=False, format="plain")
+    assert projmgr.cmd_info(args_unreg) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+    # 7. Human report in unregistered directory: exits 1 with error on stderr
+    args_human_unreg = argparse.Namespace(registry=reg_str, target=None, name=False, path=False, file=False, format="plain")
+    assert projmgr.cmd_info(args_human_unreg) == 1
+    err_out = capsys.readouterr().err
+    assert "no registered project matches" in err_out
+
+

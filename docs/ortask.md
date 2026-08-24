@@ -134,7 +134,7 @@ use `ortask.py help` or `ortask.py --help` to display the command inventory.
 
 ### info
 
-**Status: specified, not implemented (`t0032`).**
+**Status: implemented (`t0032`).**
 
 ```
 ortask.py info

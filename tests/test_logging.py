@@ -439,7 +439,7 @@ def test_doctor_ignores_reserved_log_directory_and_readers_emit_nothing(
     events: list[dict] = []
     eventlog.set_sink(events.append)
 
-    assert projmgr.cmd_doctor(argparse.Namespace(registry=str(registry))) == 0
+    assert projmgr.cmd_repair(argparse.Namespace(registry=str(registry))) == 0
 
     output = capsys.readouterr().out
     assert "log: not a project entry" not in output

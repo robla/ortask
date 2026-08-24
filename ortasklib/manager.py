@@ -1272,7 +1272,7 @@ def read_project_metadata(
 
     Every project gets an entry, so a caller can build a row without checking
     first. A registry with no index yields metadata for none of them and no
-    warnings: an unmigrated registry is ``doctor``'s business, not a reason to
+    warnings: an unmigrated registry is ``repair``'s business, not a reason to
     refuse to list projects. A section that cannot be read warns on that
     project alone, leaving the rest of the list intact.
 

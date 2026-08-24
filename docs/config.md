@@ -233,7 +233,7 @@ Notes on the shape:
   resolved.
 - **`* Tasks` is reserved**, and so is `* Template`. They are the index's own
   task section, the thing that makes standing in the registry and running `ort`
-  useful. A registry entry named `Tasks` would collide; `doctor` should say so
+  useful. A registry entry named `Tasks` would collide; `repair` should say so
   rather than the reader silently taking one for the other.
 - **A tool that writes the file writes list items** — `   - ~/src/ortask` — and
   writes `~` for paths under `$HOME`. Reading accepts all four entry forms;
@@ -257,11 +257,11 @@ Three consequences worth deciding deliberately:
    Silent and normal — the same as having no private file today.
 2. **A project in the index but not in the registry** is a stale section.
    Deleting an entry no longer deletes its private config with it, so `pmgr
-   doctor` reports the stale section.
+   repair` reports the stale section.
 3. **Duplicate headings for one project** should be a reported error, not a
    silent first-wins.
 
-`pmgr doctor` performs the checks that go with those: a section matching no
+`pmgr repair` performs the checks that go with those: a section matching no
 registry entry, duplicate sections for one entry, duplicate direct-child
 `Directories` sections, an index that cannot be read or parsed, and a
 `directories-private.org` left behind after the index was created.
@@ -282,7 +282,7 @@ and never fall back to `directories-private.org`:
   `registry not migrated; run pmgr migrate` when the index is absent.
 - A leftover legacy file beside an index is an incomplete migration, not a
   second source. Those commands stop and direct the user back to `pmgr migrate`.
-- `pmgr doctor` remains usable and reports either state as a problem, exiting 2.
+- `pmgr repair` remains usable and reports either state as a problem, exiting 2.
 - `list`, `add`, `rm`, and `init` continue to work because they do not consume
   private directory settings.
 

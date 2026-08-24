@@ -220,7 +220,7 @@ arguments rather than on stdin, so the subtraction prompt still has a terminal,
 mapping its optional project argument to =set-dirs --project=. Complete project
 names after =-s= in =misc/ortask-completion.bash=. The =--out= protocol is
 untouched: this path writes no stack file and does not =cd=.
-** TODO t0032 Settle the repair/doctor naming and whether both should exist
+** DONE t0032 Settle the repair/doctor naming and whether both should exist
 =ort repair= and =pmgr doctor= are the same kind of command — check a thing,
 report what is wrong — on two different subjects, under two unrelated names, and
 neither repairs anything (=ortask.py:332=; its subparser help at
@@ -253,7 +253,7 @@ Decisions, so nobody has to re-litigate them:
   interface for prompts and window titles. One bare line on stdout, silence on
   stderr when there is no answer, mutually exclusive with each other and with
   =--format=. See "The single-field forms" in =docs/projmgr.md=.
-*** TODO t0032.1 Rename pmgr doctor to pmgr repair with no behavior change
+*** DONE t0032.1 Rename pmgr doctor to pmgr repair with no behavior change
 Pure rename first, so the risky part lands alone. Rename =cmd_doctor= to
 =cmd_repair= and leave =doctor= alive only in the argparse table and the
 dispatch dict — one alias at the CLI surface, no second name inside the program.
@@ -265,21 +265,21 @@ Register it alphabetically, between =migrate= and =rm=. Update the ~12
 the next reader implements the old name: =docs/config.md= (4), =docs/logging.md=
 (4), =docs/roadmap.md= (3), =docs/projects.md= (2), =docs/llm-assessments.md=
 (2), =docs/architecture.md=, =docs/ecosystem.md=, =CLAUDE.md=, =GEMINI.md=.
-*** TODO t0032.2 Unify the repair exit-code rule across both tools
+*** DONE t0032.2 Unify the repair exit-code rule across both tools
 0 clean, 2 problems remain, 1 unreadable subject — in =ort repair=,
 =ort repair --dry-run=, and =pmgr repair=. Fix =ortask.py:342-348=, where the
 bare form returns 0 after printing problems. Make the =ortask.py= =repair=
 subparser help honest while there. Test the matrix in both tools rather than one
 case each; the point of the shared rule is that a caller can stop caring which
 tool it called.
-*** TODO t0032.3 Make repair ask before repairing, and add --force
+*** DONE t0032.3 Make repair ask before repairing, and add --force
 Only after =t0032.2=. The prompt has no fixes to offer yet — no registry-layer
 code repairs anything, and =ort repair='s auto-fix is =t0004=/=t0008= — so build
 the confirmation path, =--force=, and the no-TTY refusal against a fix registry
 that starts empty, and prove the refusal with a non-TTY test. Reuse the
 subtraction prompt =set-dirs= already shows rather than inventing a second
 confirmation style. Do not let =--force= imply a fix exists.
-*** TODO t0032.4 Add ort info
+*** DONE t0032.4 Add ort info
 Three fields have no implementation behind them yet and are the real cost.
 Discovery provenance: =resolve_org_file()= returns a bare path, so =--file= vs
 =$ORTASK_FILE= vs the upward walk has to be carried out of it. The =* Tasks=
@@ -287,7 +287,7 @@ subtree line range: =orglib= tracks per-task line numbers, not a subtree span.
 Declared =#+TODO:= keywords: no task file has one until =t0023=, so report "none
 declared" rather than something that looks broken. Counts come from
 =core.TERMINAL_STATES=, not a second list of state names.
-*** TODO t0032.5 Add pmgr info
+*** DONE t0032.5 Add pmgr info
 Resolve the project the way =add= does, through =manager.project_root_for=, then
 match against the registry. Keep the three outcomes distinct — matched, no
 match, ambiguous — because callers act on them differently. Reuse

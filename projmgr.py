@@ -1823,6 +1823,176 @@ def _replace_symlink(link_path: Path, target: Path) -> None:
     link_path.symlink_to(target)
 
 
+def _resolve_current_pwd() -> Path:
+    pwd_env = os.environ.get("PWD")
+    if pwd_env:
+        return Path(pwd_env).expanduser()
+    return Path.cwd()
+
+
+def cmd_info(args: argparse.Namespace) -> int:
+    """Display resolved project context and metadata."""
+    is_single_field = (
+        getattr(args, "name", False)
+        or getattr(args, "path", False)
+        or getattr(args, "file", False)
+    )
+    registry, registry_display = manager.resolve_registry(
+        getattr(args, "registry", None)
+    )
+    if not registry.is_dir():
+        if not is_single_field:
+            print(f"project directory not found: {registry}", file=sys.stderr)
+        return 1
+
+    projects = manager.discover_projects(registry)
+    target = getattr(args, "target", None)
+
+    project = None
+    if target:
+        # 1. Exact match by registered project name
+        for p in projects:
+            if p.name == target:
+                project = p
+                break
+        # 2. Match by filesystem path
+        if project is None:
+            target_path = Path(target).expanduser().resolve()
+            for p in projects:
+                real_p = manager.real_project_path(p)
+                if (real_p and real_p.resolve() == target_path) or p.entry_path.resolve() == target_path:
+                    project = p
+                    break
+        if project is None:
+            if not is_single_field:
+                print(f"info: project not found in registry: {target}", file=sys.stderr)
+            return 1
+    else:
+        # Infer from PWD / project_root_for
+        pwd = _resolve_current_pwd()
+        try:
+            root = manager.project_root_for(pwd)
+        except Exception as exc:
+            if not is_single_field:
+                print(f"info: {exc}", file=sys.stderr)
+            return 1
+
+        matches = [p for p in projects if manager.real_project_path(p) == root]
+        if len(matches) == 1:
+            project = matches[0]
+        elif len(matches) == 0:
+            if not is_single_field:
+                print(f"info: no registered project matches {manager.friendly_path(root)}", file=sys.stderr)
+            return 1
+        else:
+            if not is_single_field:
+                names = ", ".join(p.name for p in matches)
+                print(f"info: multiple registered projects match {manager.friendly_path(root)}: {names}", file=sys.stderr)
+            return 1
+
+    real_path = manager.real_project_path(project)
+    task_file = manager.canonical_org_file(project)
+
+    if getattr(args, "name", False):
+        print(project.name)
+        return 0
+
+    if getattr(args, "path", False):
+        if real_path is None:
+            return 1
+        print(str(real_path))
+        return 0
+
+    if getattr(args, "file", False):
+        if task_file is None or not task_file.exists():
+            return 1
+        print(str(task_file))
+        return 0
+
+    # Full report
+    snapshots = manager.snapshot_projects([project])
+    snapshot = snapshots.get(project.name)
+    metadata_map = manager.read_project_metadata(registry, [project])
+    metadata = metadata_map.get(project.name)
+
+    # Directories stack
+    dir_source_label = "none"
+    dir_count = 0
+    try:
+        candidates = manager.directory_candidates(project)
+        for c in candidates:
+            if c.defines_stack:
+                dir_source_label = c.label
+                dir_count = len(c.entries) if c.entries is not None else 0
+                break
+    except Exception:
+        pass
+
+    # Heading in projects.org
+    priority_part = f"[#{metadata.priority}] " if (metadata and metadata.priority) else ""
+    heading_str = f"* {priority_part}{project.name}"
+
+    open_count = snapshot.open_tasks if (snapshot and snapshot.readable) else 0
+    total_count = snapshot.total_tasks if (snapshot and snapshot.readable) else 0
+    completed_count = (
+        (total_count - open_count)
+        if (total_count is not None and open_count is not None)
+        else 0
+    )
+
+    fmt = getattr(args, "format", "plain")
+    if fmt == "json":
+        data = {
+            "project": project.name,
+            "directory": str(real_path) if real_path else None,
+            "task_file": str(task_file) if task_file else None,
+            "registry": str(registry),
+            "heading": heading_str,
+            "directories": {
+                "source": dir_source_label,
+                "count": dir_count,
+            },
+            "tasks": {
+                "open": open_count,
+                "completed": completed_count,
+                "total": total_count,
+            } if task_file else None,
+            "warning": project.warning,
+        }
+        print(json.dumps(data, indent=2))
+        return 0
+
+    # Plain text format
+    print(f"Project:     {project.name}")
+    dir_display = manager.friendly_path(real_path) if real_path else "(broken link)"
+    print(f"Directory:   {dir_display}")
+
+    task_file_display = manager.friendly_path(task_file) if task_file else "none"
+    mismatch = manager.task_file_mirror_mismatch(
+        project, metadata.task_file if metadata else None
+    )
+    if mismatch:
+        task_file_display += f" ({mismatch})"
+    print(f"Task file:   {task_file_display}")
+
+    reg_display = f"{manager.friendly_path(registry)} (heading: {heading_str})"
+    print(f"Registry:    {reg_display}")
+
+    dir_info = f"{dir_source_label} ({dir_count} {'entry' if dir_count == 1 else 'entries'})"
+    print(f"Directories: {dir_info}")
+
+    if task_file and snapshot and snapshot.readable:
+        tasks_info = f"open: {open_count}, completed: {completed_count}, total: {total_count}"
+    else:
+        tasks_info = "no task file" if not task_file else "unreadable"
+    print(f"Tasks:       {tasks_info}")
+
+    if project.warning:
+        print(f"Warning:     {project.warning}")
+
+    return 0
+
+
 def cmd_add(args: argparse.Namespace) -> int:
     """Register one project. With no path, register the project you are in."""
     registry, registry_display = manager.resolve_registry(args.registry)
@@ -2063,7 +2233,7 @@ def _set_dirs_project(
             raise ValueError(f"{requested}: {project.warning}")
         return project
 
-    pwd = Path(os.environ.get("PWD", str(Path.cwd()))).expanduser()
+    pwd = _resolve_current_pwd()
     root = manager.project_root_for(pwd)
     matches = [
         project
@@ -2208,9 +2378,9 @@ def cmd_set_dirs(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_doctor(args: argparse.Namespace) -> int:
-    """Report registry problems. Read-only; exits 2 when it finds any."""
-    registry, registry_display = manager.resolve_registry(args.registry)
+def cmd_repair(args: argparse.Namespace) -> int:
+    """Diagnose registry problems and repair what is safe (asking first)."""
+    registry, registry_display = manager.resolve_registry(getattr(args, "registry", None))
     if not registry.is_dir():
         print(f"project directory not found: {registry}", file=sys.stderr)
         return 1
@@ -2255,6 +2425,20 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if not problems:
         print("  no problems found")
         return 0
+
+    if getattr(args, "dry_run", False):
+        return 2
+
+    is_interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    force = getattr(args, "force", False)
+    if not is_interactive and not force:
+        print(
+            "repair: interactive confirmation requires a TTY; use --dry-run or --force",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Currently no auto-fixes exist in the registry layer; problems remain outstanding.
     return 2
 
 
@@ -2692,12 +2876,55 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_doctor = sub.add_parser(
         "doctor",
-        help="report broken, ambiguous, or unreadable registry entries",
+        help="deprecated alias for repair --dry-run",
     )
     p_doctor.add_argument("--registry", default=argparse.SUPPRESS,
                           help="registry directory to check")
+    p_doctor.set_defaults(dry_run=True, force=False)
 
     sub.add_parser("help", help="show this help message")
+
+    p_info = sub.add_parser(
+        "info",
+        help="display resolved project context and metadata",
+    )
+    p_info.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        metavar="PROJECT|PATH",
+        help="project name or directory (default: infer from PWD)",
+    )
+    group = p_info.add_mutually_exclusive_group()
+    group.add_argument(
+        "--name",
+        "-n",
+        action="store_true",
+        help="print only the registered project name",
+    )
+    group.add_argument(
+        "--path",
+        "-p",
+        action="store_true",
+        help="print only the project directory path",
+    )
+    group.add_argument(
+        "--file",
+        "-f",
+        action="store_true",
+        help="print only the canonical task file path",
+    )
+    group.add_argument(
+        "--format",
+        choices=["plain", "json"],
+        default="plain",
+        help="output format (plain or json)",
+    )
+    p_info.add_argument(
+        "--registry",
+        default=argparse.SUPPRESS,
+        help="registry directory to inspect",
+    )
 
     p_init = sub.add_parser(
         "init",
@@ -2755,6 +2982,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_projadd.add_argument("--registry", default=argparse.SUPPRESS)
     p_projadd.add_argument("--force", action="store_true")
     p_projadd.add_argument("--dry-run", action="store_true")
+
+    p_repair = sub.add_parser(
+        "repair",
+        help="diagnose registry problems and fix them (asking first)",
+    )
+    p_repair.add_argument("--registry", default=argparse.SUPPRESS,
+                          help="registry directory to check")
+    p_repair.add_argument("--dry-run", action="store_true",
+                          help="report problems without changing anything")
+    p_repair.add_argument("--force", action="store_true",
+                          help="apply all available fixes without prompting")
+    p_repair.set_defaults(dry_run=False, force=False)
 
     p_rm = sub.add_parser(
         "rm",
@@ -2817,12 +3056,14 @@ def main() -> int:
     dispatch = {
         "add": cmd_add,
         "cdproj": cmd_cdproj,
-        "doctor": cmd_doctor,
+        "doctor": cmd_repair,       # deprecated alias
+        "info": cmd_info,
         "init": cmd_init,
         "list": cmd_list,
         "log": cmd_log,
         "migrate": cmd_migrate,
         "projadd": cmd_add,         # deprecated alias
+        "repair": cmd_repair,
         "rm": cmd_rm,
         "set-dirs": cmd_set_dirs,
     }

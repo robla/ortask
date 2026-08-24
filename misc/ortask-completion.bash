@@ -24,12 +24,13 @@ _ortask_complete()
         cword=$COMP_CWORD
     fi
 
-    local subcommands="add apply archive done help init list log open repair show"
+    local subcommands="add apply archive done help info init list log open repair show"
     local global_opts="-i --interactive --file --help"
     local list_opts="--todo --done --all --root-only --items --format --file --help"
     local log_opts="--since --until --all --limit --day-start --format --file --help"
     local add_opts="--parent --file --help"
-    local repair_opts="--dry-run --file --help"
+    local info_opts="--file --format --help"
+    local repair_opts="--dry-run --force --file --help"
     local apply_opts="--template --week --date --dry-run --file --help"
     local id_opts="--file --help"
 
@@ -90,6 +91,9 @@ _ortask_complete()
             archive|done|init|open|show)
                 COMPREPLY=( $(compgen -W "$id_opts" -- "$cur") )
                 ;;
+            info)
+                COMPREPLY=( $(compgen -W "$info_opts" -- "$cur") )
+                ;;
             list)
                 COMPREPLY=( $(compgen -W "$list_opts" -- "$cur") )
                 ;;
@@ -147,11 +151,13 @@ _projmgr_complete()
         cword=$COMP_CWORD
     fi
 
-    # projadd remains a deprecated alias for add; migrate is a distinct verb.
-    local subcommands="add cdproj doctor help init list log migrate projadd rm set-dirs"
+    # projadd and doctor remain deprecated aliases.
+    local subcommands="add cdproj doctor help info init list log migrate projadd repair rm set-dirs"
     local global_opts="-i --interactive --registry --todo-only --help"
     local add_opts="--name --file --registry --force --dry-run --help"
     local doctor_opts="--registry --help"
+    local info_opts="--name --path --file --format --registry --help"
+    local repair_opts="--registry --dry-run --force --help"
     local init_opts="--registry --force --dry-run --help"
     local list_opts="--all --format --help"
     local log_opts="--since --until --project --limit --day-start --format --registry --help"
@@ -194,7 +200,7 @@ _projmgr_complete()
             --registry|--file|--name|--format|--project|--missing|--since|--until|--limit|--day-start)
                 ((i++))
                 ;;
-            -i|--interactive|--todo-only|--help|--all|--force|--dry-run|--stdin)
+            -i|--interactive|--todo-only|--help|--all|--force|--dry-run|--stdin|-n|-p|-f)
                 ;;
             -*)
                 ;;
@@ -225,6 +231,12 @@ _projmgr_complete()
             doctor)
                 COMPREPLY=( $(compgen -W "$doctor_opts" -- "$cur") )
                 ;;
+            info)
+                COMPREPLY=( $(compgen -W "$info_opts" -- "$cur") )
+                ;;
+            repair)
+                COMPREPLY=( $(compgen -W "$repair_opts" -- "$cur") )
+                ;;
             init)
                 COMPREPLY=( $(compgen -W "$init_opts" -- "$cur") )
                 ;;
@@ -249,7 +261,7 @@ _projmgr_complete()
         esac
     else
         case "$command" in
-            cdproj|rm)
+            cdproj|info|rm)
                 COMPREPLY=( $(compgen -W "$(_projmgr_projects)" -- "$cur") )
                 ;;
             set-dirs)

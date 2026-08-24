@@ -183,7 +183,7 @@ when explicitly asked to edit the private list.
 
 ## `info`
 
-**Status: specified, not implemented (`t0032`).**
+**Status: implemented (`t0032`).**
 
 `projmgr.py info [PROJECT | DIRECTORY]` reports the resolved project context —
 what the registry knows about one project — and changes nothing.
@@ -396,9 +396,9 @@ contract.
 
 ## `repair`
 
-**Status: the rename is specified, not implemented (`t0032`); today this
-command is `doctor` and only reports.** Nothing in the registry layer can fix
-anything yet, so every form below currently reports and exits.
+**Status: implemented (`t0032`).** `doctor` is preserved as a deprecated alias
+for `repair --dry-run`. Automated fixes for specific registry problems will be
+added as safe repairs are developed.
 
 `projmgr.py repair` diagnoses the registry — broken symlinks, task-file
 discoverability, index consistency — and repairs what it safely can, asking

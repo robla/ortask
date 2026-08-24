@@ -13,7 +13,9 @@ ID, and edit logic lives in ``ortasklib.core`` and ``ortasklib.tasks``.
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -22,6 +24,8 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
+import orglib
+from ortasklib import core
 from ortasklib import log as eventlog
 from ortasklib import manager, tasks
 from ortasklib.core import (  # noqa: F401 — re-exported for tooling/tests
@@ -321,6 +325,114 @@ def cmd_done(args: argparse.Namespace) -> int:
     return _change_state(args, "DONE")
 
 
+# ---------------------------------------------------------------------------
+# Subcommand: info
+# ---------------------------------------------------------------------------
+
+def cmd_info(args: argparse.Namespace) -> int:
+    try:
+        text = args.file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"cannot read task file {args.file}: {exc}", file=sys.stderr)
+        return 1
+
+    lines = text.splitlines()
+    start, end = orglib.syntax.find_tasks_range(lines)
+    depth = None
+    start_line = None
+    end_line = None
+    if start != -1:
+        m = re.match(r"^(\*+)", lines[start])
+        depth = len(m.group(1)) if m else 1
+        start_line = start + 1
+        end_line = end
+        tasks_desc = f"depth {depth}, lines {start_line}–{end_line}"
+    else:
+        tasks_desc = "none (entire file parsed)"
+
+    items = orglib.parse(text).tasks()
+    todo_count = sum(1 for t in items if t.state == "TODO")
+    done_count = sum(1 for t in items if t.state == "DONE")
+    moot_count = sum(1 for t in items if t.state == "MOOT")
+    other_count = sum(1 for t in items if t.state not in {"TODO", "DONE", "MOOT"})
+    total_count = len(items)
+
+    numeric_items = [t for t in items if core.NUMERIC_ID_RE.match(t.id)]
+    highest_numeric = None
+    if numeric_items:
+        max_num = max(int(t.id[1:].split(".")[0]) for t in numeric_items)
+        highest_numeric = f"t{max_num:04d}"
+
+    weekly_items = [t for t in items if core.WEEK_ID_RE.match(t.id)]
+    highest_weekly = None
+    if weekly_items:
+        highest_weekly = max(t.id for t in weekly_items)
+
+    id_parts = []
+    if highest_numeric:
+        id_parts.append(f"numeric (highest: {highest_numeric})")
+    if highest_weekly:
+        id_parts.append(f"weekly (highest: {highest_weekly})")
+    if not id_parts:
+        id_parts.append("none assigned")
+    ids_desc = ", ".join(id_parts)
+
+    keywords_val = None
+    for line in lines:
+        if orglib.syntax.ORG_HEADING_RE.match(line):
+            break
+        m = re.match(r"^#\+(?:TODO|TYP_TODO):\s*(.*)$", line, re.IGNORECASE)
+        if m:
+            keywords_val = m.group(1).strip()
+            break
+
+    archive_path = args.file.with_name(f"{args.file.name}_archive").resolve()
+    archive_exists = archive_path.exists()
+
+    fmt = getattr(args, "format", "plain")
+    if fmt == "json":
+        data = {
+            "task_file": str(args.file.resolve()),
+            "provenance": getattr(args, "provenance", None),
+            "tasks_subtree": {
+                "depth": depth,
+                "start_line": start_line,
+                "end_line": end_line,
+            } if start != -1 else None,
+            "counts": {
+                "todo": todo_count,
+                "done": done_count,
+                "moot": moot_count,
+                "total": total_count,
+            },
+            "ids": {
+                "numeric": highest_numeric,
+                "weekly": highest_weekly,
+            },
+            "keywords": keywords_val,
+            "archive": {
+                "path": str(archive_path),
+                "exists": archive_exists,
+            },
+        }
+        print(json.dumps(data, indent=2))
+        return 0
+
+    prov = getattr(args, "provenance", None)
+    provenance_suffix = f" ({prov})" if prov else ""
+    print(f"Task file:   {args.file.resolve()}{provenance_suffix}")
+    print(f"Tasks:       {tasks_desc}")
+    counts_str = f"TODO: {todo_count}, DONE: {done_count}, MOOT: {moot_count}"
+    if other_count:
+        counts_str += f", other: {other_count}"
+    print(f"Counts:      {counts_str} (total: {total_count})")
+    print(f"IDs:         {ids_desc}")
+    print(f"Keywords:    {keywords_val or 'none declared'}")
+    archive_status = "exists" if archive_exists else "does not exist"
+    print(f"Archive:     {archive_path} ({archive_status})")
+    return 0
+
+
 def cmd_open(args: argparse.Namespace) -> int:
     return _change_state(args, "TODO")
 
@@ -330,7 +442,12 @@ def cmd_open(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_repair(args: argparse.Namespace) -> int:
-    text = args.file.read_text(encoding="utf-8")
+    try:
+        text = args.file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"cannot read task file {args.file}: {exc}", file=sys.stderr)
+        return 1
+
     problems = _find_repair_problems(text)
 
     if not problems:
@@ -339,13 +456,21 @@ def cmd_repair(args: argparse.Namespace) -> int:
     for line_num, desc, _ in problems:
         print(f"line {line_num + 1}: {desc}", file=sys.stderr)
 
-    if args.dry_run:
+    if getattr(args, "dry_run", False):
         return 2
 
-    # For now, repair only reports. Full auto-fix of all problem types
-    # (renumbering, ID assignment) is deferred — the problems are reported
-    # so the user can fix them manually or in Emacs.
-    return 0
+    is_interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    force = getattr(args, "force", False)
+    if not is_interactive and not force:
+        print(
+            "repair: interactive confirmation requires a TTY; use --dry-run or --force",
+            file=sys.stderr,
+        )
+        return 1
+
+    # For now, repair only reports (full auto-fix is t0004/t0008).
+    # Since problems remain outstanding, exit 2.
+    return 2
 
 
 # ---------------------------------------------------------------------------
@@ -496,6 +621,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("help", help="show this help message")
 
+    p_info = sub.add_parser(
+        "info", help="report task file metadata and database status"
+    )
+    group = p_info.add_mutually_exclusive_group()
+    group.add_argument(
+        "--file",
+        dest="single_file",
+        action="store_true",
+        help="print only the canonical task file path",
+    )
+    group.add_argument(
+        "--format",
+        choices=["plain", "json"],
+        default="plain",
+        help="output format (plain or json)",
+    )
+
     sub.add_parser("init", help="create an empty dedicated task file")
 
     # list remains the default when no subcommand is supplied.
@@ -525,8 +667,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_open = sub.add_parser("open", help="reopen a task (DONE -> TODO)")
     p_open.add_argument("id", metavar="ID")
 
-    p_repair = sub.add_parser("repair", help="find and fix ID problems")
-    p_repair.add_argument("--dry-run", action="store_true")
+    p_repair = sub.add_parser("repair", help="find and fix task tree problems")
+    p_repair.add_argument("--dry-run", action="store_true",
+                          help="report problems without modifying the file")
+    p_repair.add_argument("--force", action="store_true",
+                          help="apply all available fixes without prompting")
+    p_repair.set_defaults(dry_run=False, force=False)
 
     p_show = sub.add_parser("show", help="show a single task by ID")
     p_show.add_argument("id", metavar="ID")
@@ -548,17 +694,22 @@ def main() -> int:
         print("init: --interactive is not supported", file=sys.stderr)
         return 1
 
+    provenance = None
     if args.file is None:
         if cmd == "init":
             configured = os.environ.get("ORTASK_FILE")
             args.file = Path(configured) if configured else Path(DEFAULT_NEW_TASK_FILE)
         else:
             try:
-                resolved = resolve_org_file()
+                resolved, provenance = core.resolve_org_file_with_provenance()
             except OrgFileDiscoveryError as exc:
+                if cmd == "info" and getattr(args, "single_file", False):
+                    return 1
                 print(exc, file=sys.stderr)
                 return 1
             if resolved is None:
+                if cmd == "info" and getattr(args, "single_file", False):
+                    return 1
                 if cmd == "log" and args.all and not args.interactive:
                     args.file = None
                 elif cmd == "add" and not args.interactive:
@@ -569,6 +720,16 @@ def main() -> int:
                     return 1
             else:
                 args.file = resolved
+    else:
+        provenance = f"--file {args.file}"
+
+    args.provenance = provenance
+
+    if cmd == "info" and getattr(args, "single_file", False):
+        if args.file is None or not args.file.exists():
+            return 1
+        print(args.file.resolve())
+        return 0
 
     if cmd != "init" and args.file is not None and not args.file.exists():
         if (
@@ -598,6 +759,7 @@ def main() -> int:
         "apply": cmd_apply,
         "archive": cmd_archive,
         "done": cmd_done,
+        "info": cmd_info,
         "init": cmd_init,
         "list": cmd_list,
         "log": cmd_log,

@@ -40,7 +40,7 @@ in shell scripts and simple enough to test with temporary fixtures. `orti` is
 `ortask.py -i`, the issue-editing workspace over the resolved file.
 
 `projmgr.py` (`pmgr`) is the project layer. It owns the registry, the project
-list, project registration (`add`), removal (`rm`), health (`doctor`), config
+list, project registration (`add`), removal (`rm`), health (`repair`), config
 (`init`), and the `cdproj` directory-stack helper. It must not become a local task
 editor: it reads Org task content and never writes it. `ptui` is
 `projmgr.py -i`, the project navigator. `docs/projects.md` is the model it

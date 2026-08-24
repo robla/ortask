@@ -57,13 +57,12 @@ dead paths are gone.
 
 ## Gemini
 
-**Updated: 2026-08-21**
+**Updated: 2026-08-23 Sun 19:37 PDT**
 
-**Overall: Solid trajectory and clean architecture.** The split of Org syntax into the standalone, zero-dependency `orglib/` package establishes a healthy boundary. The test suite is robust (167 passing tests), and the visual separation between `ptui` and `cdproj` resolves earlier UI ambiguity.
+**Overall: Strong progress with clean verb alignment (`t0032`).** The 290-test suite runs in ~8s. Unifying `doctor` -> `repair` across both tools (`pmgr repair`, `ort repair`) settles a long-standing naming inconsistency while keeping `doctor` as a backwards-compatible read-only alias. The unified exit codes (0 clean, 2 problems remain, 1 unreadable/no-TTY refusal) and safety gating (`--force`, TTY check) establish predictable scripting behavior across the entire CLI surface.
 
-Key observations and recommendations:
+The new `info` verbs (`ort info` and `pmgr info`) provide zero-mutation introspection for shell prompts and tooling. The single-field scripting contract (`--name`, `--path`, `--file`) prints raw paths cleanly and fails silently with exit 1 on no match, while human reports provide clear diagnostic summaries.
 
-1. **CLI Nomenclature:** The `doctor` subcommand in `projmgr` is cute but imprecise. It should be renamed or aliased to `check` (or `audit`), which cleanly describes validating registry symlinks and task file health.
-2. **Directory & Project Introspection:** Adding `pmgr info` (and `ort info`) fills a crucial gap for scripting and prompt integration, providing a zero-mutation way to resolve project roots, active task files, and directory stacks.
-3. **Dirstack Persistence (`t0031`):** Implementing `cdproj -s` / `pmgr set-dirs` with `$PWD` project auto-detection, `~` normalization, and subtraction prompts makes shell navigation state durable.
-4. **Preservation Over Normalization:** Keep the bespoke line-patching engine as the sole runtime writer; external parsers like `orgparse` belong strictly in optional test conformance suites.
+Next steps to watch:
+1. **Interactive Refinements:** `t0040` (`cdproj` picker project return), `t0041` (`pmgr --todo-only`), and `t0042` (dashboard duplicate warning) represent small edge fixes in `projmgr.py`/`taskui.py`.
+2. **View State UI (`p0035` / `t0036`):** revamping sort & filter presentation into `viewui.py` using `viewstate.py`.

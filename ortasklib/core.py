@@ -121,6 +121,31 @@ def _walk_up(start: Path) -> list[Path]:
     return [directory, *directory.parents]
 
 
+def resolve_org_file_with_provenance() -> tuple[Path | None, str | None]:
+    """Find the default org file from the current directory and its provenance.
+
+    Returns ``(path, provenance_description)``.
+    """
+    env = os.environ.get("ORTASK_FILE")
+    if env:
+        return Path(env), f"environment variable ORTASK_FILE={env}"
+
+    cwd = Path.cwd()
+    for directory in _walk_up(cwd):
+        found = _preferred_task_file_in(directory)
+        if found is not None:
+            prov = f"probed in {directory}" if directory != cwd else "probed in ."
+            return _relative_to_cwd(found), prov
+
+    org_files = sorted(p for p in cwd.glob("*.org") if p.is_file())
+    if len(org_files) == 1:
+        return Path(org_files[0].name), "generic *.org in ."
+    if len(org_files) > 1:
+        _ambiguous(cwd, "*.org", org_files)
+
+    return None, None
+
+
 def resolve_org_file() -> Path | None:
     """Find the default org file from the current directory.
 
@@ -129,23 +154,8 @@ def resolve_org_file() -> Path | None:
        compatibility names
     3. Use exactly one generic *.org file in the original cwd
     """
-    env = os.environ.get("ORTASK_FILE")
-    if env:
-        return Path(env)
-
-    cwd = Path.cwd()
-    for directory in _walk_up(cwd):
-        found = _preferred_task_file_in(directory)
-        if found is not None:
-            return _relative_to_cwd(found)
-
-    org_files = sorted(p for p in cwd.glob("*.org") if p.is_file())
-    if len(org_files) == 1:
-        return Path(org_files[0].name)
-    if len(org_files) > 1:
-        _ambiguous(cwd, "*.org", org_files)
-
-    return None
+    path, _ = resolve_org_file_with_provenance()
+    return path
 
 
 def discover_org_file(directory: Path) -> Path | None:

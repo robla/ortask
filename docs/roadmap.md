@@ -578,7 +578,7 @@ this section covers the tool shape, the names, and the order of the work.
 in, projects without task files are listed, `orgmgr.py` is `projmgr.py`,
 `projtui.py` is `ortasklib/taskui.py`, `cdproj` moved with the project layer, and
 one project view serves the navigator, `cdproj`, and both numbered fallbacks.
-`init`, `rm`, and `doctor` exist. What remains is listed under *Still open*.
+`init`, `rm`, and `repair` exist. What remains is listed under *Still open*.
 
 ### Goal
 
@@ -640,8 +640,8 @@ front-ends over `ortasklib/`, with no script importing another script.
 
 ### Verbs
 
-`projmgr.py` verbs, alphabetical as usual: `add`, `cdproj`, `doctor`, `help`,
-`init`, `list`, `log`, `migrate`, `rm`.
+`projmgr.py` verbs, alphabetical as usual: `add`, `cdproj`, `help`, `init`,
+`list`, `log`, `migrate`, `repair`, `rm`, `set-dirs`.
 
 - `add` replaces `projadd`, and is specified in `docs/projects.md`. The prefix
   was only ever there to disambiguate from local task verbs in a tool that also
@@ -694,9 +694,9 @@ All six steps are complete (`t0019.1`–`t0019.6`):
    browser into `projmgr.py`; deleted the script.
 5. Converged the `cdproj` picker and the `ptui` project list onto one row and view
    builder.
-6. Renamed `migrate` to `init`; added `rm` and `doctor`. `migrate` and `projadd`
+6. Renamed `migrate` to `init`; added `rm` and `repair`. `migrate` and `projadd`
    initially remained as deprecated aliases. `t0026.2` reclaimed `migrate` for
-   the registry-index conversion, so only `projadd` remains an alias.
+   the registry-index conversion, so only `projadd` and `doctor` remain aliases.
 
 ### Still open
 
@@ -744,7 +744,7 @@ models or silently discard text from a legacy private file.
    index. It supports dry-run and safe cleanup after interruption.
 3. **`t0026.3`: enforce the cutover (done).** `projects.org` is the migration
    marker and sole private-stack source. Private-stack consumers error before
-   migration or during mixed-state cleanup; `doctor` diagnoses those states.
+   migration or during mixed-state cleanup; `repair` diagnoses those states.
    Unrelated project verbs keep working.
 4. **`t0031.1`: add `pmgr set-dirs` (done).** It accepts directories
    positionally or via `--stdin`, selects a project with `--project` or

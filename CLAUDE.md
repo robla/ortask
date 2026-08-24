@@ -31,13 +31,13 @@ working fallback when absent. `pytest` is needed only to run the tests.
   registry directory (one subdirectory per project, each holding symlinks to
   the project and its `.org` task file). `ortask.ini` records it as
   `[projects] registry`. Verbs: `add` (register the project you are in),
-  `cdproj` (write a project's directory stack; see `docs/cdproj.md`), `doctor`
-  (report broken/ambiguous/unreadable entries), `help`, `init` (record the
-  registry in `~/.config/ortask/ortask.ini`), `list` (read-only task overview),
-  `migrate` (move legacy per-entry private directory files into the registry
-  index), `rm` (remove one registry entry), `set-dirs` (write a directory stack
-  into one `projects.org` section). `projadd` remains a deprecated alias for
-  `add`. `-i` opens the project navigator. Project-level writes are limited to
+  `cdproj` (write a project's directory stack; see `docs/cdproj.md`), `help`,
+  `init` (record the registry in `~/.config/ortask/ortask.ini`), `list`
+  (read-only task overview), `migrate` (move legacy per-entry private directory
+  files into the registry index), `repair` (diagnose/fix registry problems;
+  `doctor` survives as a deprecated alias), `rm` (remove one registry entry),
+  `set-dirs` (write a directory stack into one `projects.org` section). `projadd`
+  remains a deprecated alias for `add`. `-i` opens the project navigator. Project-level writes are limited to
   config, the registry (including its index), and explicit output files;
   `ortask.py` owns task content. Intended aliases: `pmgr`, and `ptui` for `-i`.
   Specs: `docs/projmgr.md` for the command, `docs/projects.md` for the registry
@@ -80,23 +80,25 @@ like a project root?"
 ## Current state vs. planned state
 
 - **`ortask.py`** implements every subcommand, parses `MOOT` as terminal, and
-  retains `SUPERSEDED` as a compatibility alias. `repair` *detects* problems
-  (duplicate IDs, headings under `* Tasks` missing a valid ID, subtask IDs that
-  don't match their parent's prefix) and reports them; auto-fix — renumbering
-  and ID assignment — is deferred, despite the subparser help still saying
-  "find and fix". `repair --dry-run` exits 2 if problems are found; `repair`
-  without `--dry-run` reports and exits 0 without modifying the file.
-- **`projmgr.py`** implements every specified verb. All of them resolve the
+  retains `SUPERSEDED` as a compatibility alias. `repair` detects problems,
+  exits 0 if clean, 2 if problems remain, and 1 on unreadable subject or non-TTY
+  refusal (unless `--dry-run` or `--force`). `info` reports file metadata and
+  database status (supports `--file` and `--format json`).
+- **`projmgr.py`** implements every specified verb. `repair` checks registry
+  health (`doctor` is a deprecated alias for `repair --dry-run`). `info` displays
+  resolved project context, task counts, and registry metadata (supports
+  `--name`, `--path`, `--file`, `--format json`). All commands resolve the
   registry via `manager.resolve_registry()` (`--registry` > `[projects]
   registry` > `~/Projects`) and enumerate it via `manager.discover_projects()`.
   `scan` is explicitly not planned, per `docs/projects.md`.
 - **Registry index (done 2026-08-21, `t0026`):** a project's *private*
   directory stack lives in `<registry>/projects.org` — one top-level heading per
   registry entry, with a `** Directories` child. The entry's symlinks are still
-  what makes it a project; only the settings moved. `pmgr migrate` converts a
-  registry from the legacy per-entry `directories-private.org` files, and
-  consumers require the migrated index rather than falling back to them. See
-  `docs/config.md` and `docs/cdproj.md`.
+  the membership marker, but everything else migrated.
+- **Activity log (done 2026-08-22, `t0033`):** `<registry>/log/YYYY-MM.jsonl`
+  records mutations across both tools, append-only, gated on `[log] enabled = true`
+  in `ortask.ini` or `ORTASK_LOG=on`, read through `ort log`.
+- **`docs/ortask.md` / `docs/projmgr.md`** are the command references for all verbs.
 - **Shared library (done):** reusable logic lives in `ortasklib/` (`core`,
   `tasks`, `manager`, `menu`, `taskui`); the two scripts are thin front-ends
   that do not import each other. See `docs/architecture.md`.

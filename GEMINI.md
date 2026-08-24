@@ -70,6 +70,7 @@ Keep registered subcommands, dispatch tables, and help documentation alphabetize
 | `context` | Planned | Output compact summary for prompt context. |
 | `done <id>` | Implemented | Mark task as DONE. |
 | `help` | Implemented | Show command help. |
+| `info` | Implemented | Report task file metadata and database status. |
 | `list` | Implemented | Print tasks (filter by state, limit N, multiple formats). Default action. |
 | `next` | Planned | Print next ID that `add` would assign. |
 | `open <id>` | Implemented | Reopen a DONE or MOOT task (sets state back to TODO). |
@@ -83,11 +84,12 @@ Keep registered subcommands, dispatch tables, and help documentation alphabetize
 | :--- | :--- | :--- |
 | `add [DIR]` | Implemented | Register a project directory into the registry. |
 | `cdproj [PROJ]` | Implemented | Resolve and output directory stack for `cdproj` shell function. |
-| `doctor` | Implemented | Check registry health, report broken symlinks or missing task files. |
 | `help` | Implemented | Show command help. |
+| `info [PROJ]` | Implemented | Display resolved project context and registry metadata. |
 | `init` | Implemented | Initialize `ortask.ini` pointing to the registry (`~/Projects`). |
 | `list` | Implemented | Overview of registered projects and open tasks. |
 | `migrate` | Implemented | Migrate per-entry `directories-private.org` to central `projects.org`. |
+| `repair` | Implemented | Check registry health, report broken symlinks or missing task files. |
 | `rm <project>` | Implemented | Remove a project entry from the registry. |
 | `set-dirs [PROJ]`| Implemented | Persist directory stack to `projects.org` (`cdproj -s` backend). |
 

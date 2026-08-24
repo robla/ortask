@@ -62,7 +62,7 @@ command that touches five tasks emits five events sharing one `session`.
 | `pmgr` | `migrate` | how many entries moved |
 | `pmgr` | `cdproj` | project name, the resolved stack — see below |
 
-Read-only commands — `list`, `show`, `doctor`, and `repair` — write nothing.
+Read-only commands — `list`, `show`, `info`, and `repair --dry-run` — write nothing.
 
 ### Navigation
 
@@ -169,9 +169,9 @@ The registry's subdirectories are projects, so a new one needs a rule.
 
 `manager.discover_projects()` already ignores it: an entry is a project only
 when it points outward with a symlink, and `log/` holds ordinary files. But
-`pmgr doctor` reports unrecognized subdirectories as notes — it currently says
+`pmgr repair` reports unrecognized subdirectories as notes — it currently says
 `docs: not a project entry, ignored` for the registry this was written against
-— so `doctor` should recognize `log/` and say nothing about it.
+— so `repair` should recognize `log/` and say nothing about it.
 
 If the registry directory does not exist, nothing is logged. Logging never
 creates a registry, and a missing registry is not an error for a command that
