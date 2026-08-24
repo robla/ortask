@@ -67,5 +67,14 @@ cdproj () {
     for ((i = ${#have[@]} - 1; i > 0; i--)); do
         pushd -n "${have[$i]}" > /dev/null
     done
+
+    # Name the tmux window after the directory we landed in. cdproj knows the
+    # registry name of the project it just loaded, but has no way to say so:
+    # --out carries directories and nothing else. The two agree unless a
+    # project's stack starts somewhere other than its own root.
+    if [[ -n "${TMUX-}" && -n "${have[0]##*/}" ]]; then
+        tmux rename-window "${have[0]##*/}"
+    fi
+
     dirs -v
 }
