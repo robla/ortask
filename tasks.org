@@ -221,16 +221,12 @@ mapping its optional project argument to =set-dirs --project=. Complete project
 names after =-s= in =misc/ortask-completion.bash=. The =--out= protocol is
 untouched: this path writes no stack file and does not =cd=.
 ** TODO t0032 Settle the repair/doctor naming and whether both should exist
-=ort repair= and =pmgr doctor= are the same kind of command — check a
-thing, report what is wrong — on two different subjects, under two
-unrelated names, and =repair= does not repair anything
-(=ortask.py:241=; its subparser help still claims "find and fix ID
-problems"). Gemini's assessment in =docs/llm-assessments.md=
-recommends renaming =doctor= to =check= or =audit=.  Decide one naming
-scheme for both, whether the pair collapses into one verb with a
-subject, and what =repair= promises before =t0004= and =t0008= build
-on it. Blocks the question in =docs/logging.md= of whether their
-findings are logged.
+Unified on =repair= across both tools: =pmgr doctor= is replaced by =pmgr repair=
+(=doctor= retained as a deprecated alias for =repair --dry-run=), aligning
+semantics with =ort repair=. Added =info= subcommands to both =ortask.py= and
+=projmgr.py= in =docs/ortask.md= and =docs/projmgr.md= to inspect task and
+project metadata, including active project detection from =projects.org= via
+=--name=. Implementation follows in code and CLI parsers.
 ** DONE t0033 Implement the ortask event log
 The event log specified in =docs/logging.md=: an append-only JSON Lines record
 of what the tools did, at =<registry>/log/YYYY-MM.jsonl= beside =projects.org=,

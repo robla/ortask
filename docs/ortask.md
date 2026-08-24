@@ -13,6 +13,7 @@ ortask.py apply [--template NAME] [--week WEEK] [--date YYYY-MM-DD] [--dry-run] 
 ortask.py archive [<id>] [--file FILE]
 ortask.py done <id> [--file FILE]
 ortask.py help
+ortask.py [--file FILE] info [--file | --path | --name | --format FORMAT]
 ortask.py [--file FILE] init
 ortask.py list [--todo | --done | --all] [--root-only] [--items N] [--format FORMAT] [--file FILE]
 ortask.py [--file FILE] log [--since WHEN] [--until WHEN] [--all] [--limit N] [--day-start HH:MM] [--format FORMAT]
@@ -130,6 +131,45 @@ line is modified; all other file content is preserved.
 
 Print the top-level command help. Bare `ortask.py` still defaults to `list`;
 use `ortask.py help` or `ortask.py --help` to display the command inventory.
+
+### info
+
+```
+ortask.py info
+ortask.py info --file
+ortask.py info --path
+ortask.py info --name
+ortask.py info --format json
+```
+
+Display metadata and database status for the active Org task file and its
+detected project context.
+
+Output includes:
+
+- **Task file**: Resolved canonical path and discovery source (`--file`,
+  `$ORTASK_FILE`, or probed ancestor).
+- **Project**: Associated project name if the task file belongs to a registered
+  project in the active registry (`projects.org`).
+- **Tasks Range**: Heading depth and line range of the `* Tasks` subtree.
+- **Task Counts**: Summary of `TODO`, `DONE`, and `MOOT` tasks.
+- **ID Status**: Allocation scheme (numeric `tNNNN` vs weekly `twYYWNN`) and
+  highest assigned ID (e.g. `t0039`).
+- **Keywords**: Declared `#+TODO:` workflow keywords in the file.
+- **Archive**: Stock archive file path (e.g. `tasks.org_archive`).
+
+**--file**
+:   Print only the canonical task file path and exit 0.
+
+**--path**
+:   Print only the parent directory of the active task file and exit 0.
+
+**--name**
+:   Print only the registered project name (if detected from `projects.org` /
+    registry) and exit 0.
+
+**--format** *FORMAT*
+:   Output format: `plain` (default) or `json`.
 
 ### init
 

@@ -13,8 +13,8 @@ This command was named `orgmgr.py` (`orgm`) until 2026-08-19. `projadd`
 survives as a deprecated alias for `add`. `migrate` converts legacy private
 directory files into the registry index; it no longer dispatches to `init`.
 
-Current verb set: `add`, `cdproj`, `doctor`, `init`, `list`, `log`, `migrate`,
-`rm`, `set-dirs`.
+Current verb set: `add`, `cdproj`, `info`, `init`, `list`, `log`, `migrate`,
+`repair`, `rm`, `set-dirs`.
 
 ## Registry Model
 
@@ -181,31 +181,42 @@ index and never falls back to a legacy file.
 initialize or open one project section in an already-migrated registry index
 when explicitly asked to edit the private list.
 
-## `doctor`
+## `info`
 
-`projmgr.py doctor` reports registry problems and changes nothing.
+`projmgr.py info [PROJECT | DIRECTORY]` displays the resolved project context and metadata from the registry and `projects.org`.
 
 ```sh
-projmgr.py doctor
-projmgr.py --registry ~/tmpsorta/proj2026 doctor
+projmgr.py info                                  # infer project from $PWD
+projmgr.py info ortask                           # by registered project name
+projmgr.py info ~/src/elusync                    # by project directory path
+projmgr.py info --name                           # print ONLY the project name
+projmgr.py info --path                           # print ONLY the project directory
+projmgr.py info --file                           # print ONLY the task file path
+projmgr.py info --format json                    # machine-readable JSON output
 ```
 
-It prints two kinds of line. A **note** is informational: a project with no task
-file, or a registry subdirectory that is not a project entry and is therefore
-ignored. A **problem** is something to fix: a broken or ambiguous project link,
-an unreadable task file, a file with no parseable task headings, or duplicate
-task IDs.
+Options:
 
-Exit status is 0 when no problems are found and 2 when any are, matching
-`ortask.py repair --dry-run`. Notes alone do not make it 2.
+- `PROJECT | DIRECTORY`: optional project name or filesystem path. If omitted,
+  `info` walks upward from `$PWD` to locate the active project root and matches
+  it against the registry (`projects.org` / registry symlinks). If no project
+  matches, or if multiple matches are ambiguous, it exits 1 with an explanatory
+  error.
+- `--name`, `-n`: print only the detected project name and exit 0 (ideal for
+  shell prompts like `PS1`, Starship, or scripts).
+- `--path`, `-p`: print only the canonical project root path and exit 0.
+- `--file`, `-f`: print only the canonical task file path and exit 0.
+- `--format plain|json`: `plain` (default) prints a formatted summary; `json`
+  outputs structured metadata.
 
-With the registry index in place (`t0026`), `doctor` also diagnoses migration
-and index state. A missing index is a `run pmgr migrate` problem; so are an
-unreadable or malformed index, stale or duplicate project sections, duplicate
-direct-child `Directories` sections, and any legacy private file left beside an
-index. Centralized config can outlive the entry it configures, which per-entry
-files could not do; `doctor` is what makes that visible. It remains usable
-before migration and exits 2 rather than refusing to run.
+Human-readable output includes:
+
+- **Project**: registered name in `<registry>/projects.org`
+- **Directory**: real filesystem path (collapsed to `~`)
+- **Task file**: canonical task file path and mirror status
+- **Registry**: registry location and index section heading (e.g. `* [#A] ortask`)
+- **Dirstack**: active directory stack source (`custom` in `projects.org` vs `project` in task file) and effective directory count
+- **Tasks**: summary counts of open and completed top-level tasks
 
 ## `init`
 
@@ -338,6 +349,44 @@ version. Once the cutover lands, this is the only command allowed to read the
 legacy files. See `docs/config.md` for the full validation and migration-gate
 contract.
 
+## `repair`
+
+`projmgr.py repair [--dry-run | --fix]` diagnoses registry health, broken symlinks, task file discoverability, and index consistency.
+
+```sh
+projmgr.py repair
+projmgr.py repair --dry-run
+projmgr.py repair --fix
+projmgr.py --registry ~/tmpsorta/proj2026 repair
+```
+
+It checks and reports two kinds of lines:
+
+- A **note** is informational: a project with no task file, or a registry
+  subdirectory that is not a project entry and is therefore ignored.
+- A **problem** is an inconsistency: a broken or ambiguous project symlink, an
+  unreadable task file, a file with no parseable task headings, duplicate task
+  IDs, or a missing/malformed `projects.org` index.
+
+Options:
+
+- `--dry-run`: report problems and proposed corrections without making any
+  modifications. Exits 2 if problems are found, 0 if clean.
+- `--fix`: apply automated fixes where safe (default when fixing capabilities are
+  supported, matching `ortask.py repair`).
+
+Exit status is 0 when no problems are found and 2 when any are detected,
+matching `ortask.py repair --dry-run`. Notes alone do not trigger an exit code of
+2.
+
+With the registry index in place (`t0026`), `repair` also diagnoses migration
+and index state. A missing index is a `run pmgr migrate` problem; so are an
+unreadable or malformed index, stale or duplicate project sections, duplicate
+direct-child `Directories` sections, and any legacy private file left beside an
+index. Centralized config can outlive the entry it configures, which per-entry
+files could not do; `repair` is what makes that visible. It remains usable
+before migration and exits 2 rather than refusing to run.
+
 ## `rm`
 
 `projmgr.py rm NAME` removes one project's registry entry. The real project
@@ -466,7 +515,8 @@ in the middle of the prompt.
 
 ## Deprecated aliases
 
-`projadd` still dispatches to `add`; new documentation should use `add`.
+- `projadd` still dispatches to `add`; new documentation should use `add`.
+- `doctor` is a deprecated alias for `repair --dry-run`.
 
 ## Not planned
 
@@ -477,13 +527,15 @@ friction is answered by `add` instead.
 
 ## Safety
 
-`list`, `log`, and `doctor` are read-only. `add` creates directories and symlinks only
-inside the registry; `rm` removes only a registry entry, and only its symlinks
-unless `--force` is given. `init` writes only `ortask.ini`. `migrate` atomically
-writes `projects.org` before removing validated legacy files. `set-dirs` edits
-only one bounded section in that index. `cdproj` writes the file named by
-`--out`, and can open or initialize a project's section in an already-migrated
-index when asked to edit it; it never writes Org task content.
+`list`, `log`, `info`, and `repair --dry-run` are read-only. `add` creates
+directories and symlinks only inside the registry; `rm` removes only a registry
+entry, and only its symlinks unless `--force` is given. `init` writes only
+`ortask.ini`. `migrate` atomically writes `projects.org` before removing
+validated legacy files. `set-dirs` edits only one bounded section in that index.
+`cdproj` writes the file named by `--out`, and can open or initialize a project's
+section in an already-migrated index when asked to edit it; it never writes Org
+task content.
 `docs/projects.md` states the general rule these follow: the registry,
 `ortask.ini`, and files named by an explicit `--out` are the only things the
 project layer writes.
+
