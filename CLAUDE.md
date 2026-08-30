@@ -200,6 +200,11 @@ ID rules:
   the same week (`2026w24` → `tw26W24`).
 - Subtasks/nesting: parent ID + `.N` (`t0001.3`, `tw26W24.1`, `t0001.3.1`).
 - IDs are permanent and never reused, even after deletion.
+- An ID names one task for its whole life. If the work is redefined, close the
+  old ID (`DONE`, or `MOOT` when it is no longer worth doing) and open a new
+  one. Reopening a task is fine; rewriting an open task's subject into a
+  different task is not. Narrowing scope or fixing wording is ordinary
+  curation --- replacing what the task *is* is not.
 
 Task-specific URLs go as plain body lines under the relevant task (not as extra
 `*` headings), so they show up in `ortask.py show` and in the TUI's task detail.
@@ -260,7 +265,8 @@ fixtures, `--help`, `--dry-run`, or the test suite. Ask before running
   shell completion tables in that order.
 - File edits are conservative: touch only the region the command owns, rewrite
   only matched lines, never reformat the whole file. Atomic writes only.
-- Task IDs are permanent and never reused.
+- Task IDs are permanent, never reused, and never repurposed: redefined work
+  gets a new ID, and the old one is closed `DONE` or `MOOT`.
 - Keep the Org file idiomatic and minimal — don't invent custom Org extensions.
   The aim is a file that an Emacs/org user would find unremarkable.
 - Docs stay objective and fact-based, including about other Org libraries and
