@@ -90,8 +90,10 @@ The task selector has two modes, chosen automatically by
   workspace is also highlight-bar only.
 
 The top-level `projmgr.py -i` project list is the root view of the same bounded
-application. Opening a project pushes its recovery or task view; leaving that
-task context refreshes the project list and restores the same project by name.
+application. `Enter` opens the highlighted project, and so does Right: the list
+is flat, so Right has no subtree to reveal there and does what it does on a leaf
+task. Opening a project pushes its recovery or task view; leaving that task
+context refreshes the project list and restores the same project by name.
 
 `cdproj` renders its project list through the same code. Only the title, the
 row label, and the third column differ, so the two are told apart on sight

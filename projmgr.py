@@ -94,6 +94,11 @@ PROJECT_FILTER_ACTION = menu.MenuAction(
     "filter", "C-t", "Show all projects or only those with open tasks"
 )
 PROJECT_MENU_ACTIONS = {
+    # The project list is flat, so Right has no subtree to open and can simply
+    # act as Enter, the way it does on a leaf task in the task list.
+    "right": menu.MenuAction(
+        "select", "Right", "Open the highlighted project"
+    ),
     "m": menu.MenuAction(
         "metadata", "m", "Edit the highlighted project's metadata"
     ),
@@ -125,7 +130,7 @@ def _project_menu_instruction(
         view = PROJECT_VIEW_AXES.initial(sort=view)
     prefix = "FILE MODIFIED · " if dirty else ""
     return (
-        f"{prefix}{view.badge()} · ↑↓/jk · S-↑/↓ priority · ↵ open · s sort · "
+        f"{prefix}{view.badge()} · ↑↓/jk · S-↑/↓ priority · ↵/→ open · s sort · "
         "C-t filter · v view · m metadata · C-s save · C-/ undo · C-r redo · "
         "C-g help · Esc/b/q exit"
     )

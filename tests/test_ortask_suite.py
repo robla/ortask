@@ -3903,6 +3903,39 @@ def test_project_browser_recovery_is_a_child_of_clean_exit(tmp_path: Path) -> No
     projmgr.menu.Application is None,
     reason="prompt_toolkit not installed",
 )
+def test_project_list_right_arrow_opens_the_highlighted_project(
+    tmp_path: Path,
+) -> None:
+    # The project list is flat, so Right has no subtree to open and acts as Enter.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "alpha"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+    register(registry, "alpha", project)
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text(
+                "\x1b[C"    # Right opens alpha's task list
+                "\x18"      # C-x leaves outright, so the list stays on screen
+            )
+            browser.run()
+
+    assert browser.task_controller is not None
+    assert browser.session is not None
+    view = browser.session.current_view
+    assert isinstance(view, menu.MenuView)
+    assert [row.text for row in view.rows] == ["t0001 Work"]
+
+
+@pytest.mark.skipif(
+    projmgr.menu.Application is None,
+    reason="prompt_toolkit not installed",
+)
 def test_view_options_screen_is_driven_by_the_real_key_bindings(
     tmp_path: Path,
 ) -> None:
