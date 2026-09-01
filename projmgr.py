@@ -524,6 +524,7 @@ class _ProjectBrowser:
         #: What the project list shows and in what order.
         self.view_state = PROJECT_VIEW_AXES.initial()
         self.session: menu.InlineMenuSession | None = None
+        self.task_controller: taskui.InteractiveTaskController | None = None
         self.index_buffer: taskui.OrgBuffer | None = None
         self.index_error: str | None = None
         self.index_conflicts: tuple[manager.ProjectIndexMergeConflict, ...] = ()
@@ -619,6 +620,88 @@ class _ProjectBrowser:
             noun = "edit" if count == 1 else "edits"
             return f"MERGE CONFLICT: {target} · FILE MODIFIED: {count} {noun}"
         return taskui.buffer_status(self.index_buffer)
+
+    def _index_exit_concern(self) -> menu.ExitConcern | None:
+        """Expose projects.org and active metadata drafts to the exit gateway."""
+        if self.index_buffer is None:
+            return None
+        workspaces: list[menu.WorkspaceView] = []
+        if self.session is not None:
+            workspaces = [
+                view
+                for view in self.session.views
+                if isinstance(view, menu.WorkspaceView)
+                and view.exit_owner is self
+                and view.is_dirty is not None
+                and view.is_dirty()
+            ]
+        dirty = self.index_buffer.dirty or bool(workspaces)
+        preparation: dict[str, str | None] = {"message": None}
+
+        def prepare() -> menu.ExitActionResult:
+            for workspace in workspaces:
+                assert workspace.prepare_exit is not None
+                result = workspace.prepare_exit()
+                if not result.success:
+                    return result
+            ready, message = self._reconcile_index(force=True)
+            if not ready:
+                return menu.ExitActionResult(
+                    False,
+                    message or self._conflict_message(),
+                )
+            preparation["message"] = message
+            return menu.ExitActionResult(True)
+
+        def save() -> menu.ExitActionResult:
+            assert self.index_buffer is not None
+            changed = self.index_buffer.dirty
+            try:
+                self.index_buffer.save()
+            except taskui.BufferChangedError as exc:
+                return menu.ExitActionResult(False, str(exc))
+            for workspace in workspaces:
+                assert workspace.mark_exit_saved is not None
+                workspace.mark_exit_saved()
+            message = (
+                "Saved changes to projects.org"
+                if changed
+                else "Saved projects.org (unchanged)"
+            )
+            if preparation["message"]:
+                message += f" · {preparation['message']}"
+            return menu.ExitActionResult(True, message)
+
+        def discard() -> menu.ExitActionResult:
+            assert self.index_buffer is not None
+            for workspace in workspaces:
+                assert workspace.discard_exit is not None
+                workspace.discard_exit()
+            self.index_buffer.discard()
+            self.index_conflicts = ()
+            self._reconciliation_key = None
+            return menu.ExitActionResult(
+                True,
+                "Discarded changes to projects.org",
+            )
+
+        return menu.ExitConcern(
+            label=manager.friendly_path(self.index_buffer.path.resolve()),
+            dirty=dirty,
+            prepare=prepare if dirty else None,
+            save=save if dirty else None,
+            discard=discard if dirty else None,
+        )
+
+    def _exit_concerns(self) -> tuple[menu.ExitConcern, ...]:
+        """Return dirty sources in deterministic projects-then-tasks order."""
+        concerns: list[menu.ExitConcern] = []
+        index = self._index_exit_concern()
+        if index is not None:
+            concerns.append(index)
+        if self.task_controller is not None:
+            concerns.append(self.task_controller.exit_concern())
+        return tuple(concerns)
 
     def _conflict_message(self) -> str:
         names = tuple(
@@ -1006,7 +1089,7 @@ class _ProjectBrowser:
             ]
         )
 
-        def save_workspace(session: menu.InlineMenuSession) -> bool:
+        def apply_workspace_edits() -> menu.ExitActionResult:
             assert self.index_buffer is not None
             revised = self.index_buffer.read()
             changed_fields: list[str] = []
@@ -1049,8 +1132,7 @@ class _ProjectBrowser:
                 manager.RegistryIndexError,
                 ValueError,
             ) as exc:
-                session.set_transient_message(str(exc))
-                return False
+                return menu.ExitActionResult(False, str(exc))
 
             if changed_fields:
                 self.index_buffer.apply_text(
@@ -1059,19 +1141,15 @@ class _ProjectBrowser:
                         f"Edit {project.name} " + " and ".join(changed_fields)
                     ),
                 )
-            saved, message = self._save_index_changes()
-            if not saved:
-                if self.index_conflicts:
-                    session.push_view(self._conflict_view(parent_is_save=False))
-                else:
-                    session.set_transient_message(message)
-                return False
+            return menu.ExitActionResult(True)
 
+        def mark_workspace_saved() -> None:
+            assert self.index_buffer is not None
             current = orglib.parse(self.index_buffer.read()).project(project.name)
             assert current is not None
-            current_directories = orglib.parse(self.index_buffer.read()).directories(
-                project.name
-            ).section
+            current_directories = orglib.parse(
+                self.index_buffer.read()
+            ).directories(project.name).section
             baseline["priority"] = current.priority
             baseline["description"] = current.description
             baseline["task_file"] = current.task_file
@@ -1097,6 +1175,20 @@ class _ProjectBrowser:
                 effective_state["source"] = "custom"
             if workspace is not None:
                 workspace.summary = workspace_summary()
+
+        def save_workspace(session: menu.InlineMenuSession) -> bool:
+            prepared = apply_workspace_edits()
+            if not prepared.success:
+                session.set_transient_message(prepared.message)
+                return False
+            saved, message = self._save_index_changes()
+            if not saved:
+                if self.index_conflicts:
+                    session.push_view(self._conflict_view(parent_is_save=False))
+                else:
+                    session.set_transient_message(message)
+                return False
+            mark_workspace_saved()
             session.set_outcome(message)
             return True
 
@@ -1294,16 +1386,24 @@ class _ProjectBrowser:
             on_choice_change=change_choice,
             activate_focus_indices=frozenset({3, 4}),
             on_activate=activate_control,
+            exit_owner=self,
+            exit_label=project.name,
+            prepare_exit=apply_workspace_edits,
+            mark_exit_saved=mark_workspace_saved,
+            discard_exit=discard_workspace_edits,
         )
         return workspace
 
     def _initial_view(self) -> menu.MenuView:
+        """Return the project-list root; recovery is pushed above it."""
+        return self.view()
+
+    def _push_recovery_view(self, session: menu.InlineMenuSession) -> None:
         if self.index_buffer is None:
-            return self.view()
+            return
         recovered = taskui.recovery_text(self.index_buffer)
-        if recovered is None:
-            return self.view()
-        return self._recovery_view(recovered)
+        if recovered is not None:
+            session.push_view(self._recovery_view(recovered))
 
     def _poll_index(self, session: menu.InlineMenuSession) -> None:
         """Adopt or reconcile index writes without touching the real file."""
@@ -1332,9 +1432,12 @@ class _ProjectBrowser:
                 *PROJECT_MENU_ACTIONS,
             ),
             final_message="No project changes",
+            exit_name="ptui",
+            exit_concerns=self._exit_concerns,
             on_poll=self._poll_index,
         )
         self.session = session
+        self._push_recovery_view(session)
         session.run()
         if session.error:
             print(session.error, file=sys.stderr)
@@ -1480,9 +1583,11 @@ class _ProjectBrowser:
                 ),
                 self.include_done,
             )
+            self.task_controller = controller
             controller.attach(session)
 
         def resume(session: menu.InlineMenuSession) -> None:
+            self.task_controller = None
             view = session.current_view
             index = view.selected_index
             name = projects[index].name if 0 <= index < len(projects) else None
@@ -1650,10 +1755,15 @@ class _ProjectBrowser:
             menu.MenuRow(2, "RECOVER", f"Load {auto} into the project buffer"),
             menu.MenuRow(3, "DISCARD", f"Delete {auto} and use projects.org"),
         ]
+        resolving_choice = False
 
         def finish(session: menu.InlineMenuSession, message: str) -> None:
-            session.replace_view(self.view())
-            session.set_outcome(message)
+            nonlocal resolving_choice
+            resolving_choice = True
+            try:
+                session.pop_view(message=message)
+            finally:
+                resolving_choice = False
 
         def keep(session: menu.InlineMenuSession) -> None:
             finish(session, f"Keeping {auto} for later")
@@ -1674,8 +1784,9 @@ class _ProjectBrowser:
                 keep(session)
 
         def back(session: menu.InlineMenuSession) -> bool:
-            keep(session)
-            return False
+            if not resolving_choice:
+                session.set_outcome(f"Keeping {auto} for later")
+            return True
 
         return menu.MenuView(
             rows=rows,

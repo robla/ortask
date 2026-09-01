@@ -408,7 +408,8 @@ does not apply while control has been suspended to an external editor. The
 numbered fallback retains its line-oriented `q` behavior. `t0046.1` implements
 the opt-in session gateway and footer prompt.
 `t0046.2` enables it in standalone `orti` with task-controller concerns;
-`ptui` remains disabled until its multi-buffer provider lands in `t0046.3`.
+`t0046.3` enables it in `ptui` with ordered project-index and task-file
+concerns. `t0046.4` completes contextual Help and lifecycle coverage.
 
 An exit is safe when there is no unapplied workspace draft and no dirty file
 buffer. Safe exits happen immediately, even when clean undo/redo history,

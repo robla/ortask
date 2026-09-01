@@ -262,11 +262,12 @@ paths must leave erasure enabled and restore the terminal before diagnostics.
 **In progress as `t0046`.** `t0046.1` adds an opt-in session gateway: clean
 state exits immediately, while dirty state preserves the current view and asks
 `Y`/`N`/`C-c` in the footer. `t0046.2` enables it in standalone `orti`, where
-the task controller exposes workspace drafts and buffered file state. `ptui`
-remains disabled until `t0046.3` can aggregate project and task concerns. The
-gateway requests exit without first unwinding menus, dialogs, workspaces, or
-active field editing. Back remains view-local, while root Back uses the same
-gateway.
+the task controller exposes workspace drafts and buffered file state.
+`t0046.3` enables `ptui` with project-index-first coordination of its retained
+index and active task controller. The gateway requests exit without first
+unwinding menus, dialogs, workspaces, or active field editing. Back remains
+view-local, while root Back uses the same gateway. `t0046.4` completes Help and
+lifecycle coverage.
 
 The session should coordinate one footer question and suppress recursive
 requests; it should not learn file or Org policy. Task and project controllers

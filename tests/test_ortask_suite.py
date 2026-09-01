@@ -3641,12 +3641,12 @@ def test_project_browser_poll_adopts_clean_index_and_refreshes_rows(
 )
 @pytest.mark.parametrize(
     ("exit_keys", "saved"),
-    [("q\r", True), ("qqqj\r", False)],
+    [("qy", True), ("q\x03qn", False)],
 )
 def test_project_browser_exit_resolves_buffered_priority(
     tmp_path: Path, exit_keys: str, saved: bool
 ) -> None:
-    # Exit defaults to Save; backing out and choosing Discard preserves disk.
+    # The footer exit prompt should save with Y or cancel and later discard.
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
@@ -3670,6 +3670,178 @@ def test_project_browser_exit_resolves_buffered_priority(
     assert browser.index_buffer is not None
     assert browser.index_buffer.dirty is False
     assert not browser.index_buffer.autosave_path.exists()
+
+
+@pytest.mark.skipif(
+    projmgr.menu.Application is None,
+    reason="prompt_toolkit not installed",
+)
+def test_project_browser_global_exit_saves_metadata_workspace_draft(
+    tmp_path: Path,
+) -> None:
+    # Global Y should apply an active metadata field before saving projects.org.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "alpha"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+    register(registry, "alpha", project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    index.write_text(
+        manager.PROJECTS_INDEX_HEADER + "* alpha\n** Directories\n",
+        encoding="utf-8",
+    )
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Open metadata, edit Description without applying, then save and exit.
+            pin.send_text("m\rProject note\x18y")
+            browser.run()
+
+    assert ":DESCRIPTION: Project note" in index.read_text(encoding="utf-8")
+    assert browser.index_buffer is not None
+    assert browser.index_buffer.dirty is False
+    assert not browser.index_buffer.autosave_path.exists()
+
+
+@pytest.mark.skipif(
+    projmgr.menu.Application is None,
+    reason="prompt_toolkit not installed",
+)
+def test_project_browser_global_exit_saves_index_then_task_file(
+    tmp_path: Path,
+) -> None:
+    # One Y should preflight and save both retained ptui buffers in fixed order.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "alpha"
+    task_file = write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+    register(registry, "alpha", project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    index.write_text(
+        manager.PROJECTS_INDEX_HEADER + "* alpha\n** Directories\n",
+        encoding="utf-8",
+    )
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Buffer project priority, enter tasks, buffer state, then save both.
+            pin.send_text("\x1b[1;2A\r\x1b[1;2C\x18y")
+            browser.run()
+
+    assert "* [#C] alpha" in index.read_text(encoding="utf-8")
+    assert "** DONE t0001 Work" in task_file.read_text(encoding="utf-8")
+    assert browser.session is not None
+    assert browser.session.final_message == (
+        "Saved changes to projects.org · Saved changes to tasks.org"
+    )
+
+
+@pytest.mark.skipif(
+    projmgr.menu.Application is None,
+    reason="prompt_toolkit not installed",
+)
+def test_project_browser_exit_preflights_all_files_before_writing(
+    tmp_path: Path,
+) -> None:
+    # A task conflict must block projects.org before the first ordered write.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "alpha"
+    task_file = write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+    register(registry, "alpha", project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    index.write_text(
+        manager.PROJECTS_INDEX_HEADER + "* alpha\n** Directories\n",
+        encoding="utf-8",
+    )
+    original_index = index.read_text(encoding="utf-8")
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+    assert browser.index_buffer is not None
+    revised = manager.change_project_priority(
+        browser.index_buffer.read(), "alpha", "A"
+    )
+    assert revised is not None
+    browser.index_buffer.apply_text(revised, description="Raise alpha priority")
+
+    task_buffer = taskui.OrgBuffer(task_file)
+    task_buffer.apply(
+        ["* Tasks", "** DONE t0001 Work"],
+        description="Complete t0001",
+    )
+    external_task = "* Tasks\n** TODO t0001 Changed elsewhere\n"
+    task_file.write_text(external_task, encoding="utf-8")
+    project_record = manager.discover_projects(registry)[0]
+    controller = taskui.InteractiveTaskController(
+        project_record,
+        task_buffer,
+        include_done=True,
+    )
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            session = menu.InlineMenuSession(
+                browser.view(),
+                exit_name="ptui",
+                exit_concerns=browser._exit_concerns,
+            )
+            browser.session = session
+            browser.task_controller = controller
+            controller.session = session
+            session.request_exit()
+            assert "Save 2 modified files?" in str(session._render_footer())
+            # Y fails task preflight before writes; the next request discards both.
+            pin.send_text("y\x18n")
+            session.run()
+
+    assert index.read_text(encoding="utf-8") == original_index
+    assert task_file.read_text(encoding="utf-8") == external_task
+    assert browser.index_buffer.dirty is False
+    assert task_buffer.dirty is False
+
+
+@pytest.mark.skipif(
+    projmgr.menu.Application is None,
+    reason="prompt_toolkit not installed",
+)
+def test_project_browser_recovery_is_a_child_of_clean_exit(tmp_path: Path) -> None:
+    # Resolving recovery should return to the list before clean root exit.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "alpha"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+    register(registry, "alpha", project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = manager.PROJECTS_INDEX_HEADER + "* alpha\n** Directories\n"
+    index.write_text(original, encoding="utf-8")
+    autosave = taskui.autosave_path_for(index)
+    autosave.write_text(original.replace("* alpha", "* [#A] alpha"), encoding="utf-8")
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("jj\rq")
+            browser.run()
+
+    assert not autosave.exists()
+    assert index.read_text(encoding="utf-8") == original
+    assert browser.session is not None
+    assert browser.session.final_message == (
+        "Discarded recovery data in #projects.org#"
+    )
 
 
 @pytest.mark.skipif(

@@ -180,12 +180,13 @@ so it also checks the loaded source revision before handing the file to
 
 ## Global Exit in `ptui`
 
-The suite-wide `C-x` contract is defined in `docs/interactive.md` and tracked
-as `t0046`. In `ptui`, the exit request must account for more than the visible
-view: the project navigator retains its session-wide `projects.org` buffer
+The suite-wide `C-x` contract is defined in `docs/interactive.md`; its ptui
+coordination is implemented by `t0046.3`. The exit request accounts for more
+than the visible view: the project navigator retains its session-wide
+`projects.org` buffer
 while an attached task controller may own a second task-file buffer and an
 unapplied workspace draft. `C-x` from that task workspace, Help, metadata mode,
-view options, or a conflict view must inventory both controllers before
+view options, or a conflict view inventories both controllers before
 deciding whether exit is immediately safe or needs a footer question.
 
 Clean state exits immediately. Dirty state preserves the visible body and asks

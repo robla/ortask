@@ -1063,6 +1063,7 @@ class InteractiveTaskController:
                 view
                 for view in self.session.views
                 if isinstance(view, menu.WorkspaceView)
+                and view.exit_owner is self
                 and view.exit_label
                 and view.is_dirty is not None
                 and view.is_dirty()
@@ -1086,6 +1087,9 @@ class InteractiveTaskController:
                 self.buf.save()
             except BufferChangedError as exc:
                 return menu.ExitActionResult(False, str(exc))
+            for workspace in workspaces:
+                assert workspace.mark_exit_saved is not None
+                workspace.mark_exit_saved()
             return menu.ExitActionResult(
                 True,
                 f"Saved changes to {self.buf.path.name}",
@@ -2097,8 +2101,10 @@ class InteractiveTaskController:
             on_list_move=move_subtask_list,
             activate_focus_indices=frozenset(activate_focus_indices),
             on_activate=activate_control,
+            exit_owner=self,
             exit_label=task_id,
             prepare_exit=apply_workspace_edits,
+            mark_exit_saved=mark_workspace_saved,
             discard_exit=discard_workspace_edits,
         )
 

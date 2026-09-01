@@ -708,7 +708,7 @@ unapplied workspace fields and dirty =OrgBuffer= state without teaching
 uses normal preimage-safe saving; =N= uses the controller's existing baseline
 and auto-save cleanup. A failed save stays in the application with all unsaved
 work intact and reports the error in the restored footer.
-*** TODO [#A] t0046.3 Aggregate ptui project and task state
+*** DONE [#A] t0046.3 Aggregate ptui project and task state
 Enable the gateway in =ptui= and keep its retained =projects.org= buffer visible
 to exit coordination while a
 child task context is active. List every affected path, validate and preflight

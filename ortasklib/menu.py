@@ -218,8 +218,10 @@ class WorkspaceView:
     ) = None
     activate_focus_indices: frozenset[int] = frozenset()
     on_activate: Callable[["InlineMenuSession", int], None] | None = None
+    exit_owner: Any = None
     exit_label: str = ""
     prepare_exit: Callable[[], ExitActionResult] | None = None
+    mark_exit_saved: Callable[[], None] | None = None
     discard_exit: Callable[[], None] | None = None
 
     def clamp_focus(self) -> None:
