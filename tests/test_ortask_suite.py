@@ -1551,6 +1551,52 @@ status=$?
     assert result.stderr == "usage: cdproj -s [PROJECT]\n"
 
 
+def test_cdproj_load_summarizes_only_what_changed(tmp_path: Path) -> None:
+    # Both sides of the swap line up in one column, and a no-op says nothing.
+    source = ROOT / "misc" / "cdproj.func.sh"
+    for name in ("alpha", "alpha/docs", "old1", "old2"):
+        (tmp_path / name).mkdir(parents=True, exist_ok=True)
+    program = r'''
+source "$CDPROJ_SOURCE"
+fake_projmgr() { printf '%s\n' "$HOME/alpha" "$HOME/alpha/docs" > "$3"; }
+ORTASK_PROJMGR=fake_projmgr
+cd "$HOME/old1"
+pushd "$HOME/old2" > /dev/null
+cdproj || exit 20
+echo "==="
+cdproj || exit 21
+'''
+
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-c", program],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "CDPROJ_SOURCE": str(source),
+            # Paths abbreviate against $HOME, so point it at the fixture.
+            "HOME": str(tmp_path),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    swap, _, repeat = result.stdout.partition("===\n")
+    summary, _, stack = swap.partition("\n\n")
+    assert summary.splitlines() == [
+        "dropped:  ~/old2",
+        "          ~/old1",
+        "added:    ~/alpha",
+        "          ~/alpha/docs",
+    ]
+    # The resulting stack still follows, and the second load repeats it alone.
+    assert "~/alpha" in stack
+    assert "dropped:" not in repeat
+    assert "added:" not in repeat
+
+
 def test_bash_completion_lists_subcommands_alphabetically() -> None:
     # Empty-prefix completion presents each command inventory in policy order.
     script = ROOT / "misc" / "ortask-completion.bash"

@@ -43,15 +43,32 @@ cdproj () {
     rm -f "$out"
     (( ${#want[@]} )) || return 0
 
-    # Report what this drops, the way nowcd did.
-    local old=() cur keep dropped=false
+    # Summarize the swap, the way nowcd did: what leaves, then what arrives.
+    # Anything in both lists is unremarkable, and "dirs -v" below shows where
+    # everything ended up, so only the difference is worth a line.
+    local old=() gone=() arrived=() cur other label
     readarray -t old < <(dirs -l -p)
-    echo "dropped:"
     for cur in "${old[@]}"; do
-        for keep in "${want[@]}"; do [[ "$cur" == "$keep" ]] && continue 2; done
-        echo "  - ${cur/#$HOME/\~}"; dropped=true
+        for other in "${want[@]}"; do [[ "$cur" == "$other" ]] && continue 2; done
+        gone+=("${cur/#$HOME/\~}")
     done
-    [[ $dropped == true ]] || echo "  (none)"
+    for cur in "${want[@]}"; do
+        for other in "${old[@]}"; do [[ "$cur" == "$other" ]] && continue 2; done
+        arrived+=("${cur/#$HOME/\~}")
+    done
+    if (( ${#gone[@]} + ${#arrived[@]} )); then
+        # The label heads its first path and the rest hang under it, so the
+        # paths line up in one column however many there are of each.
+        label="dropped:"
+        for cur in "${gone[@]}"; do
+            printf '%-8s  %s\n' "$label" "$cur"; label=""
+        done
+        label="added:"
+        for cur in "${arrived[@]}"; do
+            printf '%-8s  %s\n' "$label" "$cur"; label=""
+        done
+        echo
+    fi
 
     local have=() d i
     for d in "${want[@]}"; do
