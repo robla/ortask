@@ -8004,9 +8004,13 @@ def test_interactive_task_tree_actions_preserve_hierarchy_and_selection(
         def __init__(self, view: menu.MenuView) -> None:
             self.current_view = view
             self.message: str | None = None
+            self.pushed: list[object] = []
 
         def replace_view(self, view: menu.MenuView) -> None:
             self.current_view = view
+
+        def push_view(self, view: object) -> None:
+            self.pushed.append(view)
 
         def set_message(self, message: str) -> None:
             self.message = message
@@ -8023,9 +8027,14 @@ def test_interactive_task_tree_actions_preserve_hierarchy_and_selection(
     assert [row.tree_depth for row in session.current_view.rows] == [0, 1, 0]
 
     session.current_view.on_result(session, menu.MenuResult("tree_right", 1))
-    session.current_view.on_result(session, menu.MenuResult("tree_right", 1))
-    assert session.current_view.selected_index == 2
+    assert session.current_view.selected_index == 1
     assert session.current_view.rows[2].text == "t0001.1.1 Grandchild"
+
+    # The child is expanded now, so a second Right opens it rather than
+    # stepping down to the grandchild that Down already reaches.
+    session.current_view.on_result(session, menu.MenuResult("tree_right", 1))
+    assert len(session.pushed) == 1
+    assert session.current_view.selected_index == 1
 
     session.current_view.on_result(session, menu.MenuResult("tree_left", 2))
     assert session.current_view.selected_index == 1
@@ -8081,8 +8090,9 @@ def test_interactive_task_tree_keybindings(tmp_path: Path) -> None:
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            # Right expands and enters; Left returns; S-Tab folds all; Tab reopens.
-            pin.send_text("\x1b[C\x1b[C\x1b[D\x1b[Z\tq")
+            # Right expands; Down enters the child; Left returns to the
+            # parent; S-Tab folds all; Tab reopens.
+            pin.send_text("\x1b[C\x1b[B\x1b[D\x1b[Z\tq")
             controller.run()
 
     assert controller.session is not None
@@ -8120,8 +8130,8 @@ def test_load_menu_items_defaults_to_all_task_states(tmp_path: Path) -> None:
     ]
 
 
-def test_leaf_tree_navigation_uses_transient_warning(tmp_path: Path) -> None:
-    # Right on a leaf task should report a temporary notice, not a sticky footer.
+def test_leaf_fold_uses_transient_warning(tmp_path: Path) -> None:
+    # Tab on a leaf task should report a temporary notice, not a sticky footer.
     org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 Leaf\n")
     project = manager.Project("demo", tmp_path, org_file)
     controller = taskui.InteractiveTaskController(
@@ -8136,9 +8146,54 @@ def test_leaf_tree_navigation_uses_transient_warning(tmp_path: Path) -> None:
         def set_transient_message(self, message: str) -> None:
             notices.append(message)
 
-    view.on_result(NoticeSession(), menu.MenuResult("tree_right", 0))
+    view.on_result(NoticeSession(), menu.MenuResult("fold", 0))
 
     assert notices == ["t0001 has no visible subtasks"]
+
+
+class _PushSession:
+    """Records pushed views and fails on any transient notice."""
+
+    def __init__(self) -> None:
+        self.pushed: list[object] = []
+
+    def push_view(self, view: object) -> None:
+        self.pushed.append(view)
+
+    def set_transient_message(self, message: str) -> None:
+        raise AssertionError(f"unexpected notice: {message}")
+
+
+def test_right_opens_a_leaf_task(tmp_path: Path) -> None:
+    # Right is Enter once there is no subtree left to reveal.
+    org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 Leaf\n")
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = taskui.InteractiveTaskController(
+        project,
+        taskui.OrgBuffer(org_file),
+        include_done=True,
+    )
+    session = _PushSession()
+
+    controller.initial_view().on_result(session, menu.MenuResult("tree_right", 0))
+
+    assert len(session.pushed) == 1
+
+
+def test_right_opens_a_read_only_heading(tmp_path: Path) -> None:
+    # A file with no tasks lists bare headings, which also have nothing to expand.
+    org_file = write(tmp_path / "notes.org", "* Notes\n** Ideas\n")
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = taskui.InteractiveTaskController(
+        project,
+        taskui.OrgBuffer(org_file),
+        include_done=True,
+    )
+    session = _PushSession()
+
+    controller.initial_view().on_result(session, menu.MenuResult("tree_right", 0))
+
+    assert [view.title for view in session.pushed] == ["Org heading"]
 
 
 def test_anchor_index_follows_task_and_clamps() -> None:

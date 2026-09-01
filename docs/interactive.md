@@ -59,7 +59,8 @@ The task selector has two modes, chosen automatically by
   move the highlight (wrapping). The list starts as a top-level overview;
   `Tab` expands or collapses a task, Shift-Tab expands all or returns to the
   overview, and Left/Right provide directional tree navigation. `Enter` opens
-  the focus view;
+  the focus view, and so does Right once the highlighted task has nothing left
+  to expand;
   Shift-Left/Right cycles the highlighted task through the `TODO`/`DONE` ring;
   Shift-Up/Down raises or lowers its priority; `p` opens an explicit priority
   picker; `C-/` undoes one logical task edit; `C-r` redoes it; `C-s` saves the
@@ -365,10 +366,14 @@ Recommended task-list bindings:
   visibility-cycle convention. Deeper parents remain independently collapsed.
 - Shift-Tab toggles between the top-level overview and a fully expanded task
   tree, following Org's global visibility-cycle convention in a task-only view.
-- Right expands a collapsed task, then moves to its first child when pressed
-  again. Left collapses an expanded task, then moves to its parent when already
-  collapsed. These directional aliases follow conventional tree controls.
-- Enter opens the highlighted task's detail/focus view.
+- Right expands a collapsed task. Pressing it again — or pressing it on a task
+  with no visible children — opens that task, because Down already reaches the
+  first child and the second Right is better spent on the one motion the arrows
+  otherwise cannot make. Left collapses an expanded task, then moves to its
+  parent when already collapsed. These directional aliases follow conventional
+  tree controls.
+- Enter opens the highlighted task's detail/focus view; Right does the same
+  once there is nothing left to expand.
 - Shift-Right cycles the highlighted task forward through the TODO state ring;
   Shift-Left cycles backward. These should be documented as the primary state
   keys because they align with Org mode's `org-shiftright` / `org-shiftleft`

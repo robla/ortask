@@ -702,7 +702,7 @@ def _task_menu_instruction(view: viewstate.ViewState | str) -> str:
         view = task_view(True, view)
     return (
         f"{view.badge()} · ↑↓/jk move · Tab fold · "
-        "←/→ tree · S-Tab all · ↵ open · C-g help · "
+        "←/→ tree · S-Tab all · ↵/→ open · C-g help · "
         "C-s save · C-/ undo · C-r redo · C-t filter · s sort · v view · "
         "Esc/b/q back"
     )
@@ -741,7 +741,7 @@ TASK_MENU_ACTIONS = {
         "fold_all", "Shift+Tab", "Expand all tasks or return to the overview"
     ),
     "right": menu.MenuAction(
-        "tree_right", "Right", "Expand the task or move to its first subtask"
+        "tree_right", "Right", "Expand the task, or open it once it is expanded"
     ),
     "left": menu.MenuAction(
         "tree_left", "Left", "Collapse the task or move to its parent"
@@ -1439,6 +1439,11 @@ class InteractiveTaskController:
             return
         if result.action in {"fold", "tree_left", "tree_right"}:
             if item.task is None:
+                if result.action == "tree_right":
+                    # A bare heading has nothing to expand, so Right opens it
+                    # the way Enter does.
+                    session.push_view(self._focus_view(item))
+                    return
                 session.set_transient_message(
                     "This Org heading has no task subtree"
                 )
@@ -1462,17 +1467,14 @@ class InteractiveTaskController:
                 session.replace_view(self._task_view(task_id, fallback))
                 return
             if result.action == "tree_right":
-                if not children:
-                    session.set_transient_message(
-                        f"{task_id} has no visible subtasks"
-                    )
-                    return
-                if task_id not in self.expanded_task_ids:
+                if children and task_id not in self.expanded_task_ids:
                     self.expanded_task_ids.add(task_id)
-                    target_id = task_id
-                else:
-                    target_id = children[0]
-                session.replace_view(self._task_view(target_id, fallback))
+                    session.replace_view(self._task_view(task_id, fallback))
+                    return
+                # Nothing left to expand — a leaf, or a parent already showing
+                # its children — so Right opens the task instead. Down still
+                # reaches the first child, which is the next visible row.
+                session.push_view(self._focus_view(item))
                 return
             if task_id in self.expanded_task_ids and children:
                 self.expanded_task_ids.remove(task_id)
