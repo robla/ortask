@@ -186,22 +186,22 @@ view: the project navigator retains its session-wide `projects.org` buffer
 while an attached task controller may own a second task-file buffer and an
 unapplied workspace draft. `C-x` from that task workspace, Help, metadata mode,
 view options, or a conflict view must inventory both controllers before
-offering an outcome.
+deciding whether exit is immediately safe or needs a footer question.
 
-The confirmation lists every affected path and distinguishes draft edits,
-dirty file buffers, undo/redo history, and unresolved conflicts. **Save and
-Exit** validates all drafts and preflights every dirty source before beginning
-the displayed save order. The writes are independently atomic, not atomic as a
-group; if a later write fails, `ptui` stays open and reports which files were
-saved and which remain pending. A project-index merge conflict continues to
-block that index save and is never converted into a force-overwrite. **Discard
-and Exit** delegates to the project and task controllers so their recovery-file
-and baseline rules remain intact.
+Clean state exits immediately. Dirty state preserves the visible body and asks
+`Save modified file? Y Yes | N No | ^C Cancel` in the footer, using a count
+when both sources are dirty. `Y` validates all drafts and preflights every dirty
+source before beginning the deterministic save order. The writes are
+independently atomic, not atomic as a group; if a later write fails, `ptui`
+stays open and reports which files were saved and which remain pending. A
+project-index merge conflict continues to block that index save and is never
+converted into a force-overwrite. `N` delegates to the project and task
+controllers so their recovery-file and baseline rules remain intact; `C-c`
+cancels.
 
-A clean `ptui` session still confirms exit because its project selection,
-view stack, filters, sorting, expansion, and task position are session state.
-Root `Esc`/`b`/`q` enters this same confirmation; at nested levels those keys
-continue to mean Back.
+Project selection, view stack, filters, sorting, expansion, task position, and
+clean undo/redo history do not make exit unsafe. Root `Esc`/`b`/`q` uses the
+same dirty-state check; at nested levels those keys continue to mean Back.
 
 ## Safety and Implementation Boundaries
 

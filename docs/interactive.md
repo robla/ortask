@@ -389,53 +389,51 @@ Recommended task-list bindings:
   an exact Emacs binding, but it keeps `C-c` open for future multi-key command
   families while reserving `/` for search.
 - `C-x` requests application exit from any active `orti` or `ptui` context.
-  It is distinct from Back and always opens the exit confirmation specified
-  below.
+  It exits immediately when no changes need resolution; otherwise it asks in
+  the footer as specified below.
 - `C-g` opens contextual help. Although Emacs normally uses `C-g` to quit the
   current command, ortask uses it as the always-available command reference;
   `C-g`, `Esc`, `b`, `q`, or `Enter` returns to the unchanged menu selection.
 - `/` should be reserved for search in the current list or backing Org file.
 - `Esc`, `b`, and `q` all pop exactly one context. At the root they request
-  application exit through the same confirmation as `C-x` rather than
-  bypassing it.
+  application exit through the same dirty-state check as `C-x`.
 
 ### Global Exit (`C-x`)
 
 Tracked as `t0046`. This is the application-level counterpart to Back:
 `Esc`/`b`/`q` pop one view, while `C-x` requests termination from any active
 prompt_toolkit context. The binding applies in menus, Help, view options,
-confirmation and conflict views, workspace navigation, and active text or
-choice editing. It does not apply while control has been suspended to an
-external editor. The numbered fallback retains its line-oriented `q` behavior.
-`t0046.1` implements the opt-in session gateway and clean confirmation; the
-applications enable it only when their exit-concern providers land in
-`t0046.2` and `t0046.3`.
+conflict views, workspace navigation, and active text or choice editing. It
+does not apply while control has been suspended to an external editor. The
+numbered fallback retains its line-oriented `q` behavior. `t0046.1` implements
+the opt-in session gateway and footer prompt.
+`t0046.2` enables it in standalone `orti` with task-controller concerns;
+`ptui` remains disabled until its multi-buffer provider lands in `t0046.3`.
 
-Every actual `orti` or `ptui` exit asks for confirmation, including a root Back
-with no file changes. The prompt preserves the current view stack and selects
-**Continue** by default. A clean session offers **Exit** and **Continue**, and
-states that selection, expansion, filter/sort, and navigation context will be
-lost. If clean buffers still have undo or redo history, the prompt names the
-history that exit will discard.
+An exit is safe when there is no unapplied workspace draft and no dirty file
+buffer. Safe exits happen immediately, even when clean undo/redo history,
+selection, expansion, filter/sort, or navigation context will be lost. Root
+Back follows the same rule. Clean recovery data is left in place for a future
+session.
 
-An exit request inventories all state owned by the application's controllers:
-unapplied workspace fields, dirty file buffers, undo/redo history, recovery
-data, and unresolved external-change conflicts. Dirty state offers **Save and
-Exit**, **Discard and Exit**, and **Continue**. Save first validates and applies
+A dirty exit leaves the current body and view stack untouched and temporarily
+replaces the footer with `Save modified file? Y Yes | N No | ^C Cancel` (using
+a file count when more than one source is dirty). `Y` validates and applies
 active workspace drafts, then preflights every dirty file with its normal exact
-source check before writing. Multiple files cannot be one atomic transaction;
-the confirmation lists them in save order, and a later failure leaves the
-application open with an explicit saved-versus-pending report. Conflicts and
-invalid fields block exit-by-save without losing in-memory work. Discard uses
-each owning controller's existing discard policy rather than deleting state in
-the menu layer.
+source check before writing. `N` delegates discard to each owning controller;
+`C-c` cancels and restores the ordinary footer. Other keys, including repeated
+`C-x`, do nothing while the question is active.
+
+Multiple files cannot be one atomic transaction. A later write failure leaves
+the application open and reports saved versus pending files. Conflicts and
+invalid fields block save-and-exit without losing in-memory work; the footer
+question is dismissed so the error is visible with the original body restored.
 
 `InlineMenuSession` owns the global key and one non-recursive exit request, but
 it does not inspect Org files or decide how data is saved. Controllers provide
-descriptions and save/discard callbacks for their exit concerns. Pressing
-`C-x` while the confirmation is already visible must not bypass it or push a
-second copy. `C-x` appears in contextual Help and, where width permits, the
-compact command bar.
+dirty-state, prepare, save, and discard callbacks for their exit concerns.
+`C-x` appears in contextual Help and, where width permits, the compact command
+bar.
 
 Avoid making `t` a row-selector state toggle. It is not very mnemonic once the
 command grows beyond "toggle", and it competes with future meanings such as

@@ -1028,8 +1028,11 @@ class InteractiveTaskController:
             self.initial_view(),
             action_keys=self.action_keys(),
             final_message=f"No changes to {self.buf.path.name}",
+            exit_name="orti",
+            exit_concerns=lambda: (self.exit_concern(),),
         )
         self.session = session
+        self._push_recovery_view(session)
         session.run()
         if session.error:
             print(session.error, file=sys.stderr)
@@ -1038,6 +1041,7 @@ class InteractiveTaskController:
         """Push this task context onto an existing bounded session."""
         self.session = session
         session.push_view(self.initial_view())
+        self._push_recovery_view(session)
 
     @property
     def filter_mode(self) -> str:
@@ -1050,6 +1054,60 @@ class InteractiveTaskController:
 
     def _buffer_status(self) -> str:
         return buffer_status(self.buf)
+
+    def exit_concern(self) -> menu.ExitConcern:
+        """Expose task drafts and buffered file state to the exit gateway."""
+        workspaces: list[menu.WorkspaceView] = []
+        if self.session is not None:
+            workspaces = [
+                view
+                for view in self.session.views
+                if isinstance(view, menu.WorkspaceView)
+                and view.exit_label
+                and view.is_dirty is not None
+                and view.is_dirty()
+            ]
+
+        dirty = self.buf.dirty or bool(workspaces)
+
+        def prepare() -> menu.ExitActionResult:
+            for workspace in workspaces:
+                assert workspace.prepare_exit is not None
+                result = workspace.prepare_exit()
+                if not result.success:
+                    return result
+            change = self.buf.check_external_change(force=True)
+            if change is not None:
+                return menu.ExitActionResult(False, change.summary)
+            return menu.ExitActionResult(True)
+
+        def save() -> menu.ExitActionResult:
+            try:
+                self.buf.save()
+            except BufferChangedError as exc:
+                return menu.ExitActionResult(False, str(exc))
+            return menu.ExitActionResult(
+                True,
+                f"Saved changes to {self.buf.path.name}",
+            )
+
+        def discard() -> menu.ExitActionResult:
+            for workspace in workspaces:
+                assert workspace.discard_exit is not None
+                workspace.discard_exit()
+            self.buf.discard()
+            return menu.ExitActionResult(
+                True,
+                f"Discarded changes to {self.buf.path.name}",
+            )
+
+        return menu.ExitConcern(
+            label=friendly_path(self.buf.path.resolve()),
+            dirty=dirty,
+            prepare=prepare if dirty else None,
+            save=save if dirty else None,
+            discard=discard if dirty else None,
+        )
 
     def _save_buffer(self, session: menu.InlineMenuSession) -> None:
         """What ``C-s`` means everywhere in this task context, screens included."""
@@ -1069,10 +1127,13 @@ class InteractiveTaskController:
         return f"File: {friendly_path(self.buf.path.resolve())}"
 
     def initial_view(self) -> menu.MenuView:
+        """Return the task-list root; startup notices are pushed above it."""
+        return self._task_view()
+
+    def _push_recovery_view(self, session: menu.InlineMenuSession) -> None:
         recovered = recovery_text(self.buf)
-        if recovered is None:
-            return self._task_view()
-        return self._recovery_view(recovered)
+        if recovered is not None:
+            session.push_view(self._recovery_view(recovered))
 
     def _recovery_view(self, recovered: str) -> menu.MenuView:
         name = self.buf.path.name
@@ -1084,8 +1145,7 @@ class InteractiveTaskController:
         ]
 
         def finish(session: menu.InlineMenuSession, message: str) -> None:
-            session.replace_view(self._task_view())
-            session.set_outcome(message)
+            session.pop_view(message=message)
 
         def keep(session: menu.InlineMenuSession) -> None:
             finish(session, f"Keeping {auto} for later")
@@ -1106,8 +1166,8 @@ class InteractiveTaskController:
                 keep(session)
 
         def back(session: menu.InlineMenuSession) -> bool:
-            keep(session)
-            return False
+            session.set_outcome(f"Keeping {auto} for later")
+            return True
 
         return menu.MenuView(
             rows=rows,
@@ -1737,7 +1797,7 @@ class InteractiveTaskController:
             ]
         )
 
-        def save_workspace(session: menu.InlineMenuSession) -> bool:
+        def apply_workspace_edits() -> menu.ExitActionResult:
             source = self.buf.read()
             changed_fields: list[str] = []
             try:
@@ -1768,13 +1828,12 @@ class InteractiveTaskController:
                     source = core.lines_to_text(new_lines)
                     changed_fields.append("priority")
             except tasks.TaskNotFound:
-                session.set_transient_message(
-                    f"task {task_id} no longer exists"
+                return menu.ExitActionResult(
+                    False,
+                    f"task {task_id} no longer exists",
                 )
-                return False
             except ValueError as exc:
-                session.set_transient_message(str(exc))
-                return False
+                return menu.ExitActionResult(False, str(exc))
 
             if changed_fields:
                 fields = " and ".join(changed_fields)
@@ -1782,21 +1841,31 @@ class InteractiveTaskController:
                     source.splitlines(),
                     description=f"Edit {task_id} {fields}",
                 )
-            changed = self.buf.dirty
-            try:
-                self.buf.save()
-            except BufferChangedError as exc:
-                session.set_transient_message(str(exc))
-                return
-            if changed:
-                message = f"Saved changes to {self.buf.path.name}"
-            else:
-                message = f"Saved {self.buf.path.name} (unchanged)"
+            return menu.ExitActionResult(True)
+
+        def mark_workspace_saved() -> None:
             baseline["title"] = title_area.text
             baseline["body"] = body_area.text
             baseline["state"] = draft["state"]
             baseline["priority"] = draft["priority"]
             reset_workspace_undo()
+
+        def save_workspace(session: menu.InlineMenuSession) -> bool:
+            prepared = apply_workspace_edits()
+            if not prepared.success:
+                session.set_transient_message(prepared.message)
+                return False
+            changed = self.buf.dirty
+            try:
+                self.buf.save()
+            except BufferChangedError as exc:
+                session.set_transient_message(str(exc))
+                return False
+            if changed:
+                message = f"Saved changes to {self.buf.path.name}"
+            else:
+                message = f"Saved {self.buf.path.name} (unchanged)"
+            mark_workspace_saved()
             session.set_outcome(message)
             return True
 
@@ -2028,6 +2097,9 @@ class InteractiveTaskController:
             on_list_move=move_subtask_list,
             activate_focus_indices=frozenset(activate_focus_indices),
             on_activate=activate_control,
+            exit_label=task_id,
+            prepare_exit=apply_workspace_edits,
+            discard_exit=discard_workspace_edits,
         )
 
         def clear_saved_message(_buffer) -> None:

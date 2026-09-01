@@ -6051,7 +6051,7 @@ def test_inline_task_contexts_share_one_bounded_application(
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Visit workspace Help, cancel a picker, then discard a priority edit.
-            pin.send_text("\r\x07q\x1bpq\x1b[1;2Aqj\r")
+            pin.send_text("\r\x07q\x1bpq\x1b[1;2Aqn")
             controller.run()
 
     assert len(applications) == 1
@@ -7230,8 +7230,9 @@ def test_inline_menu_session_empty_rows_allows_exit_and_actions() -> None:
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
-def test_inline_menu_confirmed_exit_is_opt_in_and_continue_is_safe() -> None:
-    # Root Back should confirm only for opted-in apps, with Continue selected.
+@pytest.mark.parametrize("exit_keys", ["q", "\x18"])
+def test_inline_menu_clean_exit_is_immediate(exit_keys: str) -> None:
+    # Root Back and C-x should immediately leave an opted-in clean session.
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
@@ -7242,9 +7243,7 @@ def test_inline_menu_confirmed_exit_is_opt_in_and_continue_is_safe() -> None:
     )
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            # Root q opens the prompt; Enter continues. C-x opens it again,
-            # repeated C-x is harmless, and Up/Enter explicitly exits.
-            pin.send_text("q\r\x18\x18\x1b[A\r")
+            pin.send_text(exit_keys)
             session = menu.InlineMenuSession(view, exit_name="test app")
             result = session.run()
 
@@ -7256,11 +7255,12 @@ def test_inline_menu_confirmed_exit_is_opt_in_and_continue_is_safe() -> None:
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_inline_menu_global_exit_preserves_active_text_context() -> None:
-    # Canceling global Exit should restore an active field and its exact draft.
+    # A footer-prompt cancel should preserve the active field and exact draft.
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
 
+    saved: list[str] = []
     text_view = menu.TextInputView(
         "",
         lambda _session, _text: None,
@@ -7277,15 +7277,66 @@ def test_inline_menu_global_exit_preserves_active_text_context() -> None:
     )
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            # Open the field, draft text, cancel Exit, keep typing, then Exit.
-            pin.send_text("\rdraft\x18\r!\x18\x1b[A\r")
-            session = menu.InlineMenuSession(parent, exit_name="test app")
+            # Open the field, cancel the exit question, keep typing, then save.
+            pin.send_text("\rdraft\x18\x03!\x18y")
+            session = menu.InlineMenuSession(
+                parent,
+                exit_name="test app",
+                exit_concerns=lambda: (
+                    menu.ExitConcern(
+                        "draft",
+                        dirty=True,
+                        save=lambda: (
+                            saved.append(text_view.text)
+                            or menu.ExitActionResult(True)
+                        ),
+                        discard=lambda: menu.ExitActionResult(True),
+                    ),
+                ),
+            )
             result = session.run()
 
     assert result == menu.MenuResult("exit", None)
     assert text_view.text == "draft!"
+    assert saved == ["draft!"]
     assert session.current_view is text_view
     assert len(session.views) == 2
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_menu_dirty_exit_prompt_replaces_only_footer(monkeypatch) -> None:
+    # Requesting dirty exit must leave the current body and view stack intact.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import DummyOutput
+
+    view = menu.MenuView(
+        [menu.MenuRow(1, "TODO", "t0001 task")],
+        lambda _session, _result: None,
+        instruction="C-g help · Esc back",
+    )
+    concern = menu.ExitConcern(
+        "tasks.org",
+        dirty=True,
+        save=lambda: menu.ExitActionResult(True),
+        discard=lambda: menu.ExitActionResult(True),
+    )
+    with create_app_session(output=DummyOutput()):
+        session = menu.InlineMenuSession(
+            view,
+            exit_name="test app",
+            exit_concerns=lambda: (concern,),
+        )
+        monkeypatch.setattr(session.application, "invalidate", lambda: None)
+        body_before = str(session._render_body())
+
+        session.request_exit()
+
+    assert session.current_view is view
+    assert len(session.views) == 1
+    assert str(session._render_body()) == body_before
+    assert "Save modified file? Y Yes | N No | ^C Cancel" in str(
+        session._render_footer()
+    )
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
@@ -7680,7 +7731,7 @@ def test_interactive_priority_shortcuts_keep_selected_task(
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            pin.send_text("\x1b[1;2A\x1b[1;2Aq\r")
+            pin.send_text("\x1b[1;2A\x1b[1;2Aqy")
             taskui._interactive_task_menu(project, buf, include_done=True)
 
     assert "** TODO [#B] t0001 alpha" in buf.read()
@@ -7690,8 +7741,8 @@ def test_interactive_priority_shortcuts_keep_selected_task(
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
-def test_interactive_save_view_saves_by_default(tmp_path: Path) -> None:
-    # Leaving a dirty task view should save on the confirmation's default row.
+def test_interactive_exit_gateway_saves_explicitly(tmp_path: Path) -> None:
+    # A dirty task-list exit should save only after selecting Save and Exit.
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
@@ -7703,7 +7754,7 @@ def test_interactive_save_view_saves_by_default(tmp_path: Path) -> None:
 
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
-            pin.send_text("\x1b[1;2Cq\r")
+            pin.send_text("\x1b[1;2Cqy")
             controller.run()
 
     assert org_file.read_text(encoding="utf-8") == "* Tasks\n** DONE t0001 alpha\n"
@@ -7716,7 +7767,118 @@ def test_interactive_save_view_saves_by_default(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
-def test_interactive_save_view_cancel_then_discard(tmp_path: Path) -> None:
+def test_interactive_ctrl_x_saves_active_workspace_draft(tmp_path: Path) -> None:
+    # C-x should apply an active field draft before saving the complete Org file.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 Original\n")
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Open TITLE, type without applying it, then choose Save and Exit.
+            pin.send_text("\r\r revised\x18y")
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == (
+        "* Tasks\n** TODO t0001 Original revised\n"
+    )
+    assert buf.dirty is False
+    assert not buf.autosave_path.exists()
+    assert controller.session is not None
+    assert controller.session.final_message == "Saved changes to tasks.org"
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_interactive_exit_prompt_blocks_active_field_edits(tmp_path: Path) -> None:
+    # Keys other than Y/N/C-c must not leak into a field behind the footer prompt.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 Original\n")
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Backspace, Left, and X are ignored until C-c restores field editing.
+            pin.send_text("\r\r revised\x18\x7f\x1b[DX\x03\x13\x18")
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == (
+        "* Tasks\n** TODO t0001 Original revised\n"
+    )
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_interactive_ctrl_x_discards_active_workspace_draft(tmp_path: Path) -> None:
+    # Discard and Exit should drop an unapplied field draft without touching disk.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    original = "* Tasks\n** TODO t0001 Original\n"
+    org_file = write(tmp_path / "tasks.org", original)
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Open TITLE, type without applying it, then choose Discard and Exit.
+            pin.send_text("\r\r discarded\x18n")
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == original
+    assert buf.read() == original
+    assert buf.dirty is False
+    assert not buf.autosave_path.exists()
+    assert controller.session is not None
+    assert controller.session.final_message == "Discarded changes to tasks.org"
+
+
+def test_task_exit_preflight_preserves_draft_on_external_change(
+    tmp_path: Path,
+) -> None:
+    # A failed exact-source check must retain both the draft and buffered edit.
+    original = "* Tasks\n** TODO t0001 Original\n"
+    external = "* Tasks\n** TODO t0001 Changed elsewhere\n"
+    org_file = write(tmp_path / "tasks.org", original)
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
+    workspace = controller._focus_view(taskui.load_menu_items(buf)[0])
+    assert isinstance(workspace, menu.WorkspaceView)
+    workspace.editing_index = 2
+    workspace.focus_targets[2].buffer.insert_text(" revised")
+
+    class WorkspaceSession:
+        views = [controller.initial_view(), workspace]
+
+    controller.session = WorkspaceSession()
+    org_file.write_text(external, encoding="utf-8")
+
+    concern = controller.exit_concern()
+    assert concern.dirty is True
+    assert concern.prepare is not None
+    result = concern.prepare()
+
+    assert result.success is False
+    assert "changed externally" in result.message
+    assert "Original revised" in buf.read()
+    assert workspace.is_dirty is not None and workspace.is_dirty() is True
+    assert org_file.read_text(encoding="utf-8") == external
+    assert buf.autosave_path.exists()
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_interactive_exit_gateway_cancel_then_discard(tmp_path: Path) -> None:
     # Back should cancel the first exit, while a later Discard leaves disk unchanged.
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input
@@ -7731,7 +7893,7 @@ def test_interactive_save_view_cancel_then_discard(tmp_path: Path) -> None:
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Open, cancel, reopen, move to Discard, and confirm.
-            pin.send_text("\x1b[1;2Cqqqj\r")
+            pin.send_text("\x1b[1;2Cq\x03qn")
             controller.run()
 
     assert org_file.read_text(encoding="utf-8") == original
@@ -7797,7 +7959,7 @@ def test_interactive_recovery_view_recovers_then_saves(tmp_path: Path) -> None:
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Select Recover, leave the dirty task view, then accept Save.
-            pin.send_text("j\rq\r")
+            pin.send_text("j\rqy")
             controller.run()
 
     assert buf.read() == recovered
@@ -8465,4 +8627,3 @@ def test_pmgr_info_reports_metadata_and_scripting_flags(
     assert projmgr.cmd_info(args_human_unreg) == 1
     err_out = capsys.readouterr().err
     assert "no registered project matches" in err_out
-

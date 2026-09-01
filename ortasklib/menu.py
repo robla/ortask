@@ -104,6 +104,25 @@ class MenuAction:
     description: str
 
 
+@dataclass(frozen=True)
+class ExitActionResult:
+    """Outcome of one application-owned exit preparation or persistence step."""
+
+    success: bool
+    message: str = ""
+
+
+@dataclass(frozen=True)
+class ExitConcern:
+    """Application-owned state that must be resolved before a dirty exit."""
+
+    label: str
+    dirty: bool = False
+    prepare: Callable[[], ExitActionResult] | None = None
+    save: Callable[[], ExitActionResult] | None = None
+    discard: Callable[[], ExitActionResult] | None = None
+
+
 @dataclass
 class MenuView:
     """One view rendered inside a persistent :class:`InlineMenuSession`."""
@@ -199,6 +218,9 @@ class WorkspaceView:
     ) = None
     activate_focus_indices: frozenset[int] = frozenset()
     on_activate: Callable[["InlineMenuSession", int], None] | None = None
+    exit_label: str = ""
+    prepare_exit: Callable[[], ExitActionResult] | None = None
+    discard_exit: Callable[[], None] | None = None
 
     def clamp_focus(self) -> None:
         if not self.focus_targets:
@@ -281,6 +303,7 @@ SELECT_STYLE = (
             "field.editing": "bg:#005f5f fg:#ffffff bold",
             "choice.focused": "bg:#00afaf fg:#000000 bold",
             "input.prompt": "ansicyan bold",
+            "exit.prompt": "reverse bold",
             "hint": "ansibrightblack",
             "dim": "ansibrightblack",
         }
@@ -521,6 +544,7 @@ class InlineMenuSession:
         height: int = DEFAULT_HEIGHT,
         final_message: str = "Session closed",
         exit_name: str | None = None,
+        exit_concerns: Callable[[], Iterable[ExitConcern]] | None = None,
         on_poll: Callable[["InlineMenuSession"], None] | None = None,
         poll_interval: float = 0.5,
         input: Any = None,
@@ -542,54 +566,58 @@ class InlineMenuSession:
         self._message_task: Any = None
         self.final_message = final_message
         self.exit_name = exit_name
-        self._exit_confirmation_view: MenuView | None = None
-        self._exit_restore_help = False
+        self.exit_concerns = exit_concerns
+        self._exit_pending_concerns: tuple[ExitConcern, ...] | None = None
         self.error: str | None = None
         self.on_poll = on_poll
 
         bindings = KeyBindings()
-        menu_active = Condition(
+        normal_interaction = Condition(
+            lambda: self._exit_pending_concerns is None
+        )
+        exit_prompt_active = ~normal_interaction
+        menu_active = normal_interaction & Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, MenuView)
         )
-        singleline_input_active = Condition(
+        singleline_input_active = normal_interaction & Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, TextInputView)
         )
-        multiline_input_active = Condition(
+        multiline_input_active = normal_interaction & Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, MultilineInputView)
         )
-        workspace_active = Condition(
+        workspace_active = normal_interaction & Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, WorkspaceView)
         )
-        workspace_navigation_active = Condition(
-            lambda: not self.help_visible
-            and isinstance(self.current_view, WorkspaceView)
-            and self.current_view.editing_index is None
-        )
-        workspace_begin_edit_active = Condition(
+        workspace_navigation_active = normal_interaction & Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, WorkspaceView)
             and self.current_view.editing_index is None
-            and self.current_view.focused_index
-            in self.current_view.edit_focus_indices
         )
-        workspace_editable_navigation_active = Condition(
+        workspace_begin_edit_active = normal_interaction & Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, WorkspaceView)
             and self.current_view.editing_index is None
             and self.current_view.focused_index
             in self.current_view.edit_focus_indices
         )
-        workspace_editing_active = Condition(
+        workspace_editable_navigation_active = normal_interaction & Condition(
+            lambda: not self.help_visible
+            and isinstance(self.current_view, WorkspaceView)
+            and self.current_view.editing_index is None
+            and self.current_view.focused_index
+            in self.current_view.edit_focus_indices
+        )
+        workspace_editing_active = normal_interaction & Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, WorkspaceView)
             and self.current_view.editing_index
             == self.current_view.focused_index
         )
-        workspace_finish_edit_active = Condition(
+        workspace_finish_edit_active = normal_interaction & Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, WorkspaceView)
             and self.current_view.editing_index
@@ -599,7 +627,7 @@ class InlineMenuSession:
             and self.current_view.focused_index
             not in self.current_view.list_focus_indices
         )
-        workspace_choice_active = Condition(
+        workspace_choice_active = normal_interaction & Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, WorkspaceView)
             and self.current_view.editing_index
@@ -608,7 +636,7 @@ class InlineMenuSession:
             and self.current_view.focused_index
             in self.current_view.choice_focus_indices
         )
-        workspace_activate_active = Condition(
+        workspace_activate_active = normal_interaction & Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, WorkspaceView)
             and self.current_view.on_activate is not None
@@ -621,7 +649,7 @@ class InlineMenuSession:
                 == self.current_view.focused_index
             )
         )
-        workspace_list_active = Condition(
+        workspace_list_active = normal_interaction & Condition(
             lambda: not self.help_visible
             and isinstance(self.current_view, WorkspaceView)
             and self.current_view.editing_index
@@ -630,14 +658,14 @@ class InlineMenuSession:
             and self.current_view.focused_index
             in self.current_view.list_focus_indices
         )
-        input_active = Condition(
+        input_active = normal_interaction & Condition(
             lambda: not self.help_visible
             and isinstance(
                 self.current_view,
                 (TextInputView, MultilineInputView),
             )
         )
-        help_active = Condition(lambda: self.help_visible)
+        help_active = normal_interaction & Condition(lambda: self.help_visible)
 
         def move(delta: int) -> None:
             view = self.current_view
@@ -817,7 +845,7 @@ class InlineMenuSession:
             self._focus_current_view()
             self.application.invalidate()
 
-        @bindings.add("c-g", eager=True)
+        @bindings.add("c-g", filter=normal_interaction, eager=True)
         def help_view(_event) -> None:
             self.help_visible = not self.help_visible
             self._focus_current_view()
@@ -828,6 +856,21 @@ class InlineMenuSession:
             @bindings.add("c-x", eager=True)
             def request_exit(_event) -> None:
                 self.request_exit()
+
+            @bindings.add("c-c", filter=exit_prompt_active, eager=True)
+            def cancel_exit(_event) -> None:
+                self._cancel_exit_prompt()
+
+            @bindings.add("<any>", filter=exit_prompt_active, eager=True)
+            def answer_exit(event) -> None:
+                concerns = self._exit_pending_concerns
+                if concerns is None:
+                    return
+                answer = event.data.casefold()
+                if answer == "y":
+                    self._save_concerns_and_exit(concerns)
+                elif answer == "n":
+                    self._discard_concerns_and_exit(concerns)
 
         def make_action(key: str):
             def handler(_event) -> None:
@@ -947,67 +990,100 @@ class InlineMenuSession:
         self.application.invalidate()
 
     def request_exit(self) -> None:
-        """Push one clean-session exit confirmation without unwinding views."""
-        if self.exit_name is None or self._exit_confirmation_view is not None:
+        """Exit immediately when safe; otherwise show the footer prompt."""
+        if self.exit_name is None or self._exit_pending_concerns is not None:
             return
-        self._exit_restore_help = self.help_visible
-        self.help_visible = False
-        confirmation = self._clean_exit_confirmation()
-        self._exit_confirmation_view = confirmation
-        self.push_view(confirmation)
-
-    def _clean_exit_confirmation(self) -> MenuView:
-        rows = [
-            MenuRow(1, "EXIT", "Close the application and lose session context"),
-            MenuRow(2, "CONTINUE", "Return to the current context"),
-        ]
-
-        def handle(
-            session: "InlineMenuSession",
-            result: MenuResult,
-        ) -> None:
-            if result.action != "select" or result.index is None:
-                return
-            if result.index == 0:
-                session._finish_confirmed_exit()
-            else:
-                session._cancel_exit_confirmation()
-
-        def back(session: "InlineMenuSession") -> bool:
-            session._cancel_exit_confirmation()
-            return False
-
-        return MenuView(
-            rows=rows,
-            on_result=handle,
-            title=f"Exit {self.exit_name}?",
-            summary="No files need saving; current session context will be lost",
-            instruction="↑↓/jk · ↵ choose · Esc/b/q continue",
-            select_help="Choose whether to exit or continue",
-            back_help="Continue without exiting",
-            selected_index=1,
-            on_back=back,
+        concerns = (
+            tuple(self.exit_concerns())
+            if self.exit_concerns is not None
+            else ()
         )
-
-    def _cancel_exit_confirmation(self) -> None:
-        if self._exit_confirmation_view is None:
+        if not any(concern.dirty for concern in concerns):
+            self._finish_exit()
             return
-        if self.current_view is self._exit_confirmation_view:
-            self.views.pop()
-        self._exit_confirmation_view = None
-        self.help_visible = self._exit_restore_help
-        self._exit_restore_help = False
+        self._exit_pending_concerns = concerns
         self._replace_message(None)
-        self._activate_current_view()
         self.application.invalidate()
 
-    def _finish_confirmed_exit(self) -> None:
-        if self._exit_confirmation_view is None:
+    def _exit_prompt(self) -> str:
+        concerns = self._exit_pending_concerns or ()
+        count = sum(concern.dirty for concern in concerns)
+        subject = "modified file" if count == 1 else f"{count} modified files"
+        return f"Save {subject}? Y Yes | N No | ^C Cancel"
+
+    def _save_concerns_and_exit(
+        self,
+        concerns: tuple[ExitConcern, ...],
+    ) -> None:
+        for concern in concerns:
+            if concern.prepare is None:
+                continue
+            result = concern.prepare()
+            if not result.success:
+                self._exit_failure(
+                    result.message or f"Cannot save {concern.label}"
+                )
+                return
+
+        saved: list[str] = []
+        messages: list[str] = []
+        for concern in concerns:
+            if not concern.dirty:
+                continue
+            if concern.save is None:
+                self._exit_failure(f"Cannot save {concern.label}")
+                return
+            result = concern.save()
+            if not result.success:
+                suffix = f" · already saved: {', '.join(saved)}" if saved else ""
+                self._exit_failure(
+                    (result.message or f"Cannot save {concern.label}") + suffix
+                )
+                return
+            saved.append(concern.label)
+            if result.message:
+                messages.append(result.message)
+        if messages:
+            self.final_message = " · ".join(messages)
+        self._finish_exit()
+
+    def _discard_concerns_and_exit(
+        self,
+        concerns: tuple[ExitConcern, ...],
+    ) -> None:
+        messages: list[str] = []
+        for concern in concerns:
+            if not concern.dirty:
+                continue
+            if concern.discard is None:
+                self._exit_failure(f"Cannot discard {concern.label}")
+                return
+            result = concern.discard()
+            if not result.success:
+                self._exit_failure(
+                    result.message or f"Cannot discard {concern.label}"
+                )
+                return
+            if result.message:
+                messages.append(result.message)
+        if messages:
+            self.final_message = " · ".join(messages)
+        self._finish_exit()
+
+    def _cancel_exit_prompt(self) -> None:
+        if self._exit_pending_concerns is None:
             return
-        if self.current_view is self._exit_confirmation_view:
-            self.views.pop()
-        self._exit_confirmation_view = None
-        self._exit_restore_help = False
+        self._exit_pending_concerns = None
+        self._replace_message(None)
+        self._focus_current_view()
+        self.application.invalidate()
+
+    def _exit_failure(self, message: str) -> None:
+        self._cancel_exit_prompt()
+        self.set_transient_message(message)
+
+    def _finish_exit(self) -> None:
+        self._exit_pending_concerns = None
         self.help_visible = False
         self._replace_message(self.final_message)
         self._activate_current_view()
@@ -1017,6 +1093,11 @@ class InlineMenuSession:
     def pop_view(self, *, message: str | None = None) -> None:
         self.help_visible = False
         self._replace_message(None)
+        if message is not None:
+            self.final_message = message
+        if len(self.views) == 1 and self.exit_name is not None:
+            self.request_exit()
+            return
         active = self.current_view
         on_back = (
             active.on_back
@@ -1026,12 +1107,7 @@ class InlineMenuSession:
         if on_back is not None and not on_back(self):
             self.application.invalidate()
             return
-        if message is not None:
-            self.final_message = message
         if len(self.views) == 1:
-            if self.exit_name is not None:
-                self.request_exit()
-                return
             self._replace_message(self.final_message)
             self.application.erase_when_done = False
             self.application.exit(result=MenuResult("back", None))
@@ -1190,10 +1266,15 @@ class InlineMenuSession:
         return FormattedText([("class:input.prompt", prompt)])
 
     def _render_footer(self) -> FormattedText:
-        if self.help_visible:
+        if self._exit_pending_concerns is not None:
+            instruction = self._exit_prompt()
+            style = "class:exit.prompt"
+        elif self.help_visible:
             instruction = "C-g/Esc/b/q/Enter close help"
+            style = "class:hint"
         else:
             instruction = self.message or self.current_view.instruction
+            style = "class:hint"
             view = self.current_view
             if (
                 self.message is None
@@ -1208,7 +1289,7 @@ class InlineMenuSession:
                 and view.is_dirty()
             ):
                 instruction = f"{view.dirty_label} · {instruction}"
-        return FormattedText([("", "\n"), ("class:hint", instruction)])
+        return FormattedText([("", "\n"), (style, instruction)])
 
     def _active_body(self):
         if self.help_visible or isinstance(self.current_view, MenuView):

@@ -73,7 +73,7 @@ The ortask interaction should follow these rules:
   and save/discard confirmation are views in the same bounded region.
 - Enter or another action pushes a child view when appropriate. `Esc`, `b`, or
   `q` pops one view; at the top level, Back requests exit through the
-  confirmation planned in Stage 7 rather than terminating directly.
+  dirty-state gateway planned in Stage 7.
 - State and priority edits update the in-memory `OrgBuffer`, refresh affected
   rows, and invalidate the application without ending it.
 - Running an external editor temporarily suspends the application, restores
@@ -259,24 +259,24 @@ paths must leave erasure enabled and restore the terminal before diagnostics.
 
 #### 7. Add one global exit gateway
 
-**In progress as `t0046`.** `t0046.1` adds an opt-in session gateway, clean
-confirmation, safe-default Continue, and non-recursive `C-x`; it remains
-disabled in application entry points until their concern providers land. Then
-bind `C-x` at the persistent application level so it requests exit from menus,
-Help, dialogs, workspaces, and active field editing without first unwinding the
-view stack. Keep Back view-local, but route a root Back through the same gateway
-so no termination path bypasses confirmation.
+**In progress as `t0046`.** `t0046.1` adds an opt-in session gateway: clean
+state exits immediately, while dirty state preserves the current view and asks
+`Y`/`N`/`C-c` in the footer. `t0046.2` enables it in standalone `orti`, where
+the task controller exposes workspace drafts and buffered file state. `ptui`
+remains disabled until `t0046.3` can aggregate project and task concerns. The
+gateway requests exit without first unwinding menus, dialogs, workspaces, or
+active field editing. Back remains view-local, while root Back uses the same
+gateway.
 
-The session should coordinate one confirmation view and suppress recursive
+The session should coordinate one footer question and suppress recursive
 requests; it should not learn file or Org policy. Task and project controllers
-instead expose exit concerns describing workspace drafts, dirty buffers,
-undo/redo history, recovery state, and conflicts, together with their existing
-save/discard operations. `ptui` must aggregate its retained `projects.org`
-buffer with the active task controller. Validate and preflight all dirty files
-before a multi-file save, report its non-atomic ordering honestly, and remain
-open after any failure. Pipe-input tests should invoke `C-x` in every view type;
-PTY coverage should verify confirmation, cancellation, retained final output,
-and terminal restoration.
+instead expose dirty state with their existing prepare, save, and discard
+operations. `ptui` must aggregate its retained `projects.org` buffer with the
+active task controller. Validate and preflight all dirty files before a
+multi-file save, report its non-atomic ordering honestly, and remain open after
+any failure. Pipe-input tests should invoke `C-x` in every view type; PTY
+coverage should verify immediate clean exit, dirty cancellation, retained final
+output, and terminal restoration.
 
 ### Relationship to Handrail
 
@@ -333,10 +333,10 @@ The interactive UI work is complete when:
 - returning from task details does not append another full task list;
 - long lists scroll without losing the selected row;
 - external editor handoff resumes the same session cleanly;
-- `C-x` requests a confirmed exit from every active `orti` and `ptui` context,
-  while root Back uses the same gateway and nested Back still pops one view;
-- exit confirmation reports drafts, dirty buffers, undo/redo history, and
-  conflicts without moving persistence policy into the menu layer;
+- `C-x` requests exit from every active `orti` and `ptui` context, while root
+  Back uses the same gateway and nested Back still pops one view;
+- clean state exits immediately, while dirty state asks in the footer without
+  moving persistence policy into the menu layer or replacing the current body;
 - save, discard, cancellation, and recovery remain safe and visible;
 - non-TTY numbered behavior remains usable;
 - pipe-input and PTY tests defend adaptive repainting, resize, terminal

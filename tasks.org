@@ -685,44 +685,42 @@ front-end script; =docs/architecture.md= puts Org syntax in =orglib=, and
 =t0023= will need a real reader for that keyword line anyway. Move both into
 =orglib.syntax= and have =ort info= ask for them, which is the same direction
 =t0020= is already taking the parse call sites.
-** TODO [#A] t0046 Add confirmed global C-x exit to orti and ptui
+** TODO [#A] t0046 Add safe global C-x exit to orti and ptui
 Make =C-x= request application exit from every prompt_toolkit context without
-unwinding the view stack first. Always confirm with Continue selected by
-default, even for a clean session, because navigation and view state would be
-lost. Keep =Esc=/=b=/=q= as one-level Back commands, but route root Back through
-the same confirmation so it cannot bypass dirty-state safety. The numbered
-fallback keeps its existing line-oriented exit behavior. See "Global Exit" in
-=docs/interactive.md= and the ptui-specific multi-buffer contract in
-=docs/ptui.md=.
-*** DONE [#A] t0046.1 Add the session-level exit gateway and clean confirmation
+unwinding the view stack first. Exit immediately when no workspace draft or
+file buffer is dirty. Otherwise preserve the current body and replace only the
+footer with =Save modified file? Y Yes | N No | ^C Cancel=. Keep
+=Esc=/=b=/=q= as one-level Back commands, but route root Back through the same
+dirty-state check. The numbered fallback keeps its existing line-oriented exit
+behavior. See "Global Exit" in =docs/interactive.md= and the ptui-specific
+multi-buffer contract in =docs/ptui.md=.
+*** DONE [#A] t0046.1 Add the session-level exit gateway and footer prompt
 Give =InlineMenuSession= one non-recursive =request_exit= path and an opt-in
-global =C-x= binding. Show Exit and Continue for a clean session, with Continue
-selected; repeat =C-x= on the confirmation must not terminate or stack another
-prompt. Make root =pop_view= delegate to this path while nested Back remains
-unchanged. Keep the opt-in disabled in application entry points until
-=t0046.2=/=t0046.3= supply their controller-owned exit concerns; unrelated
-selectors such as =cdproj= retain direct root Back.
-*** TODO [#A] t0046.2 Report and resolve task-controller exit concerns
-Enable the gateway in standalone =orti= after its task controller can report
-unapplied workspace fields, dirty
-=OrgBuffer= state, undo/redo history, recovery data, and conflicts without
-teaching =menu.py= Org or persistence policy. Save and Exit validates/applies
-the active draft and uses normal preimage-safe saving; Discard and Exit uses the
-controller's existing baseline and auto-save cleanup. A failed save stays in
-the application with all unsaved work intact.
+global =C-x= binding. Clean state exits immediately; dirty state keeps the
+current view in place and asks in the footer, using =Y= to save, =N= to discard,
+and =C-c= to cancel. Repeat =C-x= at the prompt must not terminate or create a
+second prompt. Make root =pop_view= delegate to this path while nested Back
+remains unchanged. Unrelated selectors such as =cdproj= retain direct root Back.
+*** DONE [#A] t0046.2 Expose and resolve task-controller exit concerns
+Enable the gateway in standalone =orti= after its task controller can expose
+unapplied workspace fields and dirty =OrgBuffer= state without teaching
+=menu.py= Org or persistence policy. =Y= validates/applies the active draft and
+uses normal preimage-safe saving; =N= uses the controller's existing baseline
+and auto-save cleanup. A failed save stays in the application with all unsaved
+work intact and reports the error in the restored footer.
 *** TODO [#A] t0046.3 Aggregate ptui project and task state
 Enable the gateway in =ptui= and keep its retained =projects.org= buffer visible
 to exit coordination while a
 child task context is active. List every affected path, validate and preflight
-all dirty sources before writing, display the deterministic save order, and
-state that the independently atomic writes are not one cross-file transaction.
-On partial failure, remain open and report saved versus pending files; never
-force through a project-index conflict.
+all dirty sources before writing, and use the footer question's file count
+rather than a modal list. The independently atomic writes are not one
+cross-file transaction. On partial failure, remain open and report saved versus
+pending files; never force through a project-index conflict.
 *** TODO [#A] t0046.4 Add Help, input-mode, and terminal lifecycle coverage
 List =C-x= in contextual Help and compact hints where width permits. Exercise it
-with pipe input from root and nested menus, Help, view options, confirmation and
-conflict views, workspace navigation, and active single- and multi-line fields.
-Cover clean state, undo/redo-only state, dirty save/discard/continue, repeated
-=C-x=, save failure, root Back, multiple dirty files, retained final output,
-and terminal restoration. No binding is expected while an external editor owns
-the terminal.
+with pipe input from root and nested menus, Help, view options, conflict views,
+workspace navigation, and active single- and multi-line fields. Cover immediate
+clean and undo/redo-only exits; dirty =Y=/=N=/=C-c= responses; repeated =C-x=;
+save failure; root Back; multiple dirty files; retained final output; and
+terminal restoration. No binding is expected while an external editor owns the
+terminal.
