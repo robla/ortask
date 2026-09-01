@@ -432,6 +432,7 @@ def _selector_help(
     *,
     select_help: str,
     back_help: str,
+    exit_help: str | None = None,
 ) -> FormattedText:
     entries = [
         ("↑/↓, j/k", "Move the highlight"),
@@ -449,11 +450,15 @@ def _selector_help(
             ("Esc/b/q", back_help),
         ]
     )
+    if exit_help is not None:
+        entries.append(("C-x", exit_help))
     return _command_help(entries)
 
 
 def _text_input_help(
     view: TextInputView | MultilineInputView,
+    *,
+    exit_help: str | None = None,
 ) -> FormattedText:
     edit_help = "Edit the field"
     accept_key = "Enter"
@@ -462,25 +467,36 @@ def _text_input_help(
         edit_help = "Edit the task body"
         accept_key = "Ctrl-S"
         entries.append(("Enter", "Insert a newline"))
-    return _command_help(
-        [
-            ("Typing", edit_help),
-            *entries,
-            (accept_key, view.accept_help),
-            ("Esc", view.cancel_help),
+    entries = [
+        ("Typing", edit_help),
+        *entries,
+        (accept_key, view.accept_help),
+        ("Esc", view.cancel_help),
+        ("C-g", "Show or close this help"),
+    ]
+    if exit_help is not None:
+        entries.append(("C-x", exit_help))
+    return _command_help(entries)
+
+
+def _workspace_help(
+    view: WorkspaceView,
+    *,
+    exit_help: str | None = None,
+) -> FormattedText:
+    entries = (
+        list(view.help_entries)
+        if view.help_entries
+        else [
+            ("Typing", "Edit the focused field"),
+            ("Tab/Shift-Tab", "Move between fields"),
+            ("Ctrl-S", "Save workspace edits"),
+            ("Esc", "Return, warning first if edits are unsaved"),
             ("C-g", "Show or close this help"),
         ]
     )
-
-
-def _workspace_help(view: WorkspaceView) -> FormattedText:
-    entries = view.help_entries or [
-        ("Typing", "Edit the focused field"),
-        ("Tab/Shift-Tab", "Move between fields"),
-        ("Ctrl-S", "Save workspace edits"),
-        ("Esc", "Return, warning first if edits are unsaved"),
-        ("C-g", "Show or close this help"),
-    ]
+    if exit_help is not None:
+        entries.append(("C-x", exit_help))
     return _command_help(entries)
 
 
@@ -1029,7 +1045,7 @@ class InlineMenuSession:
 
         saved: list[str] = []
         messages: list[str] = []
-        for concern in concerns:
+        for index, concern in enumerate(concerns):
             if not concern.dirty:
                 continue
             if concern.save is None:
@@ -1037,7 +1053,17 @@ class InlineMenuSession:
                 return
             result = concern.save()
             if not result.success:
-                suffix = f" · already saved: {', '.join(saved)}" if saved else ""
+                pending = [
+                    pending.label
+                    for pending in concerns[index:]
+                    if pending.dirty
+                ]
+                status = []
+                if saved:
+                    status.append(f"saved: {', '.join(saved)}")
+                if pending:
+                    status.append(f"pending: {', '.join(pending)}")
+                suffix = f" · {' · '.join(status)}" if status else ""
                 self._exit_failure(
                     (result.message or f"Cannot save {concern.label}") + suffix
                 )
@@ -1241,14 +1267,20 @@ class InlineMenuSession:
     def _render_body(self) -> FormattedText:
         view = self.current_view
         if self.help_visible:
+            exit_help = (
+                "Exit the application (asks only for unsaved changes)"
+                if self.exit_name is not None
+                else None
+            )
             if isinstance(view, (TextInputView, MultilineInputView)):
-                return _text_input_help(view)
+                return _text_input_help(view, exit_help=exit_help)
             if isinstance(view, WorkspaceView):
-                return _workspace_help(view)
+                return _workspace_help(view, exit_help=exit_help)
             return _selector_help(
                 view.actions,
                 select_help=view.select_help,
                 back_help=view.back_help,
+                exit_help=exit_help,
             )
         assert isinstance(view, MenuView)
         rows = _render_menu_rows(
@@ -1291,6 +1323,12 @@ class InlineMenuSession:
                 and view.is_dirty()
             ):
                 instruction = f"{view.dirty_label} · {instruction}"
+            if self.message is None and self.exit_name is not None:
+                exit_hint = (
+                    f"{instruction} · C-x exit" if instruction else "C-x exit"
+                )
+                if len(exit_hint) <= self.application.output.get_size().columns:
+                    instruction = exit_hint
         return FormattedText([("", "\n"), (style, instruction)])
 
     def _active_body(self):

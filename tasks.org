@@ -685,7 +685,7 @@ front-end script; =docs/architecture.md= puts Org syntax in =orglib=, and
 =t0023= will need a real reader for that keyword line anyway. Move both into
 =orglib.syntax= and have =ort info= ask for them, which is the same direction
 =t0020= is already taking the parse call sites.
-** TODO [#A] t0046 Add safe global C-x exit to orti and ptui
+** DONE [#A] t0046 Add safe global C-x exit to orti and ptui
 Make =C-x= request application exit from every prompt_toolkit context without
 unwinding the view stack first. Exit immediately when no workspace draft or
 file buffer is dirty. Otherwise preserve the current body and replace only the
@@ -716,7 +716,7 @@ all dirty sources before writing, and use the footer question's file count
 rather than a modal list. The independently atomic writes are not one
 cross-file transaction. On partial failure, remain open and report saved versus
 pending files; never force through a project-index conflict.
-*** TODO [#A] t0046.4 Add Help, input-mode, and terminal lifecycle coverage
+*** DONE [#A] t0046.4 Add Help, input-mode, and terminal lifecycle coverage
 List =C-x= in contextual Help and compact hints where width permits. Exercise it
 with pipe input from root and nested menus, Help, view options, conflict views,
 workspace navigation, and active single- and multi-line fields. Cover immediate

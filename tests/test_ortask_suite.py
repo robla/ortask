@@ -3814,6 +3814,61 @@ def test_project_browser_exit_preflights_all_files_before_writing(
     projmgr.menu.Application is None,
     reason="prompt_toolkit not installed",
 )
+def test_project_browser_global_exit_from_conflict_view(tmp_path: Path) -> None:
+    # C-x in a conflict view should reject Y safely, then allow explicit discard.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "alpha"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+    register(registry, "alpha", project)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    base = manager.PROJECTS_INDEX_HEADER + "* alpha\nAlpha.\n"
+    index.write_text(base, encoding="utf-8")
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+    assert browser.index_buffer is not None
+    ours = base.replace("* alpha", "* [#C] alpha")
+    theirs = base.replace("* alpha", "* [#A] alpha")
+    browser.index_buffer.apply_text(ours, description="Lower alpha priority")
+    index.write_text(theirs, encoding="utf-8")
+    ready, message = browser._reconcile_index(force=True)
+    assert ready is False
+    assert message == "Merge conflict: alpha"
+    conflict_view = browser._conflict_view(parent_is_save=False)
+    failures: list[str] = []
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("\x18y\x18n")
+            session = menu.InlineMenuSession(
+                conflict_view,
+                exit_name="ptui",
+                exit_concerns=browser._exit_concerns,
+            )
+            browser.session = session
+            original_transient = session.set_transient_message
+
+            def record_failure(error: str, **kwargs) -> None:
+                failures.append(error)
+                original_transient(error, **kwargs)
+
+            session.set_transient_message = record_failure
+            result = session.run()
+
+    assert result == menu.MenuResult("exit", None)
+    assert failures == ["Merge conflict: alpha"]
+    assert session.current_view is conflict_view
+    assert index.read_text(encoding="utf-8") == theirs
+    assert browser.index_buffer.dirty is False
+    assert session.final_message == "Discarded changes to projects.org"
+
+
+@pytest.mark.skipif(
+    projmgr.menu.Application is None,
+    reason="prompt_toolkit not installed",
+)
 def test_project_browser_recovery_is_a_child_of_clean_exit(tmp_path: Path) -> None:
     # Resolving recovery should return to the list before clean root exit.
     from prompt_toolkit.application import create_app_session
@@ -5905,11 +5960,77 @@ def test_selector_help_uses_action_metadata_once() -> None:
     assert "Esc/b/q" in text and "C-g/Esc/b/q/Enter closes it" in text
 
 
+@pytest.mark.skipif(menu.FormattedText is None, reason="prompt_toolkit not installed")
+def test_contextual_help_lists_opted_in_global_exit() -> None:
+    # Every view kind should teach C-x only when its application enables exit.
+    exit_help = "Exit the application (asks only for unsaved changes)"
+    workspace = menu.WorkspaceView(
+        object(),
+        [object()],
+        lambda _session: None,
+        help_entries=[("Esc", "Return to the task list")],
+    )
+    help_views = [
+        menu._selector_help(
+            {},
+            select_help="Open the item",
+            back_help="Back one level",
+            exit_help=exit_help,
+        ),
+        menu._text_input_help(
+            menu.TextInputView("", lambda *_args: None),
+            exit_help=exit_help,
+        ),
+        menu._text_input_help(
+            menu.MultilineInputView("", lambda *_args: None),
+            exit_help=exit_help,
+        ),
+        menu._workspace_help(workspace, exit_help=exit_help),
+        menu._workspace_help(workspace, exit_help=exit_help),
+    ]
+
+    for help_view in help_views:
+        text = "".join(fragment[1] for fragment in help_view)
+        assert "C-x" in text
+        assert exit_help in text
+    assert workspace.help_entries == [("Esc", "Return to the task list")]
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_global_exit_hint_appears_only_when_it_fits() -> None:
+    # The compact footer should advertise C-x without crowding narrow views.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import DummyOutput
+    from prompt_toolkit.output.base import Size
+
+    class SizedOutput(DummyOutput):
+        columns = 80
+
+        def get_size(self) -> Size:
+            return Size(rows=24, columns=self.columns)
+
+    output = SizedOutput()
+    view = menu.MenuView(
+        [menu.MenuRow(1, "TODO", "t0001 task")],
+        lambda _session, _result: None,
+        instruction="C-g help",
+    )
+    with create_app_session(output=output):
+        session = menu.InlineMenuSession(view, exit_name="test app")
+        assert "C-g help · C-x exit" in str(session._render_footer())
+        output.columns = 18
+        assert "C-x exit" not in str(session._render_footer())
+        session.message = "Temporary warning"
+        output.columns = 80
+        assert "C-x exit" not in str(session._render_footer())
+
+
 def _run_local_task_pty(
     directory: Path,
     *,
     initial_rows: int = 24,
     resized_rows: int = 12,
+    dirty_exit: bool = False,
 ) -> tuple[int, bytes, bool]:
     """Run ``ortask.py -i`` in a real PTY and capture its terminal stream."""
     import fcntl
@@ -5993,7 +6114,12 @@ def _run_local_task_pty(
         assert len(captured) > before_resize, "terminal resize did not repaint"
         os.write(master, b"\x07")
         read_until(b"Interactive help")
-        os.write(master, b"qq")
+        if dirty_exit:
+            os.write(master, b"q\x1b[1;2C\x18")
+            read_until(b"Save modified file?")
+            os.write(master, b"n")
+        else:
+            os.write(master, b"qq")
         returncode = process.wait(timeout=5)
         read_for(0.1)
         attributes_after = termios.tcgetattr(slave)
@@ -6041,6 +6167,30 @@ def test_local_task_normal_exit_contract_in_real_pty(tmp_path: Path) -> None:
         before_prompt,
     )
     assert after_prompt == b" "
+
+
+@pytest.mark.skipif(
+    menu.Application is None or sys.platform == "win32",
+    reason="PTY integration requires prompt_toolkit on POSIX",
+)
+def test_local_task_dirty_global_exit_contract_in_real_pty(tmp_path: Path) -> None:
+    # A dirty footer decision should retain its outcome and restore terminal mode.
+    tasks_text = "* Tasks\n" + "".join(
+        f"** TODO t{index:04} Task {index}\n"
+        for index in range(1, 56)
+    )
+    org_file = write(tmp_path / "tasks.org", tasks_text)
+
+    returncode, output, restored = _run_local_task_pty(
+        tmp_path,
+        dirty_exit=True,
+    )
+
+    assert returncode == 0
+    assert restored is True
+    assert b"Save modified file?" in output
+    assert b"Discarded changes to tasks.org" in output
+    assert org_file.read_text(encoding="utf-8") == tasks_text
 
 
 TREE_FIXTURE = (
@@ -7426,6 +7576,45 @@ def test_inline_menu_clean_exit_is_immediate(exit_keys: str) -> None:
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+@pytest.mark.parametrize(
+    ("prefix", "expected_title"),
+    [("\r", "Child"), ("\x07", "Root")],
+)
+def test_inline_menu_global_exit_from_nested_menu_and_help(
+    prefix: str,
+    expected_title: str,
+) -> None:
+    # C-x should bypass Back from a child menu and while contextual Help is open.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    child = menu.MenuView(
+        [menu.MenuRow(1, "CHILD", "Nested item")],
+        lambda _session, _result: None,
+        title="Child",
+    )
+
+    def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+        if result.action == "select":
+            session.push_view(child)
+
+    root = menu.MenuView(
+        [menu.MenuRow(1, "ROOT", "Open child")],
+        handle,
+        title="Root",
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text(prefix + "\x18")
+            session = menu.InlineMenuSession(root, exit_name="test app")
+            result = session.run()
+
+    assert result == menu.MenuResult("exit", None)
+    assert session.current_view.title == expected_title
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_inline_menu_global_exit_preserves_active_text_context() -> None:
     # A footer-prompt cancel should preserve the active field and exact draft.
     from prompt_toolkit.application import create_app_session
@@ -7476,6 +7665,56 @@ def test_inline_menu_global_exit_preserves_active_text_context() -> None:
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_menu_global_exit_preserves_active_multiline_context() -> None:
+    # Repeated C-x must not stack prompts, and C-c must restore a body draft.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    discarded: list[str] = []
+    body_view = menu.MultilineInputView(
+        "Original",
+        lambda _session, _text: None,
+        title="Draft body",
+    )
+
+    def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+        if result.action == "select":
+            session.push_view(body_view)
+
+    parent = menu.MenuView(
+        [menu.MenuRow(1, "BODY", "Edit body")],
+        handle,
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Cancel one repeated exit request, keep typing, then discard.
+            pin.send_text("\r\rNext\x18\x18\x03!\x18n")
+            session = menu.InlineMenuSession(
+                parent,
+                exit_name="test app",
+                exit_concerns=lambda: (
+                    menu.ExitConcern(
+                        "draft",
+                        dirty=True,
+                        save=lambda: menu.ExitActionResult(True),
+                        discard=lambda: (
+                            discarded.append(body_view.text)
+                            or menu.ExitActionResult(True)
+                        ),
+                    ),
+                ),
+            )
+            result = session.run()
+
+    assert result == menu.MenuResult("exit", None)
+    assert body_view.text == "Original\nNext!"
+    assert discarded == ["Original\nNext!"]
+    assert session.current_view is body_view
+    assert len(session.views) == 2
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_inline_menu_dirty_exit_prompt_replaces_only_footer(monkeypatch) -> None:
     # Requesting dirty exit must leave the current body and view stack intact.
     from prompt_toolkit.application import create_app_session
@@ -7509,6 +7748,72 @@ def test_inline_menu_dirty_exit_prompt_replaces_only_footer(monkeypatch) -> None
     assert "Save modified file? Y Yes | N No | ^C Cancel" in str(
         session._render_footer()
     )
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_menu_partial_save_reports_saved_and_pending_files() -> None:
+    # A later write failure should keep the app open and identify both sides.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    dirty = {"projects.org": True, "tasks.org": True}
+    failures: list[str] = []
+
+    def save_projects() -> menu.ExitActionResult:
+        dirty["projects.org"] = False
+        return menu.ExitActionResult(True, "Saved projects.org")
+
+    def save_tasks() -> menu.ExitActionResult:
+        return menu.ExitActionResult(False, "tasks.org write failed")
+
+    def discard_tasks() -> menu.ExitActionResult:
+        dirty["tasks.org"] = False
+        return menu.ExitActionResult(True, "Discarded tasks.org")
+
+    def concerns() -> tuple[menu.ExitConcern, ...]:
+        return (
+            menu.ExitConcern(
+                "projects.org",
+                dirty=dirty["projects.org"],
+                save=save_projects,
+                discard=lambda: menu.ExitActionResult(True),
+            ),
+            menu.ExitConcern(
+                "tasks.org",
+                dirty=dirty["tasks.org"],
+                save=save_tasks,
+                discard=discard_tasks,
+            ),
+        )
+
+    view = menu.MenuView(
+        [menu.MenuRow(1, "TODO", "t0001 task")],
+        lambda _session, _result: None,
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("\x18y\x18n")
+            session = menu.InlineMenuSession(
+                view,
+                exit_name="test app",
+                exit_concerns=concerns,
+            )
+            original_transient = session.set_transient_message
+
+            def record_failure(message: str, **kwargs) -> None:
+                failures.append(message)
+                original_transient(message, **kwargs)
+
+            session.set_transient_message = record_failure
+            result = session.run()
+
+    assert result == menu.MenuResult("exit", None)
+    assert failures == [
+        "tasks.org write failed · saved: projects.org · pending: tasks.org"
+    ]
+    assert dirty == {"projects.org": False, "tasks.org": False}
+    assert session.final_message == "Discarded tasks.org"
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
@@ -7936,6 +8241,63 @@ def test_interactive_exit_gateway_saves_explicitly(tmp_path: Path) -> None:
     assert controller.session.message == "Saved changes to tasks.org"
     assert controller.session.final_message == "Saved changes to tasks.org"
     assert controller.session.application.erase_when_done is False
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_interactive_ctrl_x_exits_cleanly_from_view_options(tmp_path: Path) -> None:
+    # The application-level key should exit directly from a nested options view.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 alpha\n")
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = taskui.InteractiveTaskController(
+        project,
+        taskui.OrgBuffer(org_file),
+        include_done=True,
+    )
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("v\x18")
+            controller.run()
+
+    assert controller.session is not None
+    assert controller.session.current_view.title == "View options: demo tasks"
+    assert len(controller.session.views) == 2
+    assert controller.session.final_message == "No changes to tasks.org"
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_interactive_ctrl_x_exits_with_clean_redo_history(tmp_path: Path) -> None:
+    # Undo/redo history alone should not turn a clean C-x into a confirmation.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    original = "* Tasks\n** TODO t0001 alpha\n"
+    org_file = write(tmp_path / "tasks.org", original)
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = taskui.OrgBuffer(org_file)
+    buf.apply(
+        ["* Tasks", "** DONE t0001 alpha"],
+        description="Complete t0001",
+    )
+    assert buf.undo() == "Complete t0001"
+    assert buf.dirty is False
+    assert buf.can_redo is True
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text("\x18")
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == original
+    assert buf.can_redo is True
+    assert controller.session is not None
+    assert controller.session.final_message == "No changes to tasks.org"
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")

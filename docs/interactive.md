@@ -409,7 +409,8 @@ numbered fallback retains its line-oriented `q` behavior. `t0046.1` implements
 the opt-in session gateway and footer prompt.
 `t0046.2` enables it in standalone `orti` with task-controller concerns;
 `t0046.3` enables it in `ptui` with ordered project-index and task-file
-concerns. `t0046.4` completes contextual Help and lifecycle coverage.
+concerns. `t0046.4` adds contextual Help, width-aware compact hints, and
+lifecycle coverage across nested, editing, conflict, and real-terminal paths.
 
 An exit is safe when there is no unapplied workspace draft and no dirty file
 buffer. Safe exits happen immediately, even when clean undo/redo history,
