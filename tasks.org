@@ -694,21 +694,25 @@ the same confirmation so it cannot bypass dirty-state safety. The numbered
 fallback keeps its existing line-oriented exit behavior. See "Global Exit" in
 =docs/interactive.md= and the ptui-specific multi-buffer contract in
 =docs/ptui.md=.
-*** TODO [#A] t0046.1 Add the session-level exit gateway and clean confirmation
+*** DONE [#A] t0046.1 Add the session-level exit gateway and clean confirmation
 Give =InlineMenuSession= one non-recursive =request_exit= path and an opt-in
-global =C-x= binding used by orti and ptui, not by unrelated selectors such as
-=cdproj=. Show Exit and Continue for a clean session, with Continue selected;
-repeat =C-x= on the confirmation must not terminate or stack another prompt.
-Make root =pop_view= delegate to this path while nested Back remains unchanged.
+global =C-x= binding. Show Exit and Continue for a clean session, with Continue
+selected; repeat =C-x= on the confirmation must not terminate or stack another
+prompt. Make root =pop_view= delegate to this path while nested Back remains
+unchanged. Keep the opt-in disabled in application entry points until
+=t0046.2=/=t0046.3= supply their controller-owned exit concerns; unrelated
+selectors such as =cdproj= retain direct root Back.
 *** TODO [#A] t0046.2 Report and resolve task-controller exit concerns
-Have each attached task controller report unapplied workspace fields, dirty
+Enable the gateway in standalone =orti= after its task controller can report
+unapplied workspace fields, dirty
 =OrgBuffer= state, undo/redo history, recovery data, and conflicts without
 teaching =menu.py= Org or persistence policy. Save and Exit validates/applies
 the active draft and uses normal preimage-safe saving; Discard and Exit uses the
 controller's existing baseline and auto-save cleanup. A failed save stays in
 the application with all unsaved work intact.
 *** TODO [#A] t0046.3 Aggregate ptui project and task state
-Keep the retained =projects.org= buffer visible to exit coordination while a
+Enable the gateway in =ptui= and keep its retained =projects.org= buffer visible
+to exit coordination while a
 child task context is active. List every affected path, validate and preflight
 all dirty sources before writing, display the deterministic save order, and
 state that the independently atomic writes are not one cross-file transaction.

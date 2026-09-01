@@ -407,6 +407,9 @@ prompt_toolkit context. The binding applies in menus, Help, view options,
 confirmation and conflict views, workspace navigation, and active text or
 choice editing. It does not apply while control has been suspended to an
 external editor. The numbered fallback retains its line-oriented `q` behavior.
+`t0046.1` implements the opt-in session gateway and clean confirmation; the
+applications enable it only when their exit-concern providers land in
+`t0046.2` and `t0046.3`.
 
 Every actual `orti` or `ptui` exit asks for confirmation, including a root Back
 with no file changes. The prompt preserves the current view stack and selects

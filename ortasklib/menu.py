@@ -86,9 +86,9 @@ class ProjectRow:
 class MenuResult:
     """Outcome of one menu interaction in an :class:`InlineMenuSession`.
 
-    ``action`` is ``"select"``, ``"back"``, or a custom action name supplied by
-    the caller (e.g. ``"edit"``, ``"toggle"``). ``index`` is the 0-based
-    highlighted row index, or ``None`` for ``"back"``.
+    ``action`` is ``"select"``, ``"back"``, ``"exit"``, or a custom action
+    name supplied by the caller (e.g. ``"edit"``, ``"toggle"``). ``index`` is
+    the 0-based highlighted row index, or ``None`` for ``"back"``/``"exit"``.
     """
 
     action: str
@@ -520,6 +520,7 @@ class InlineMenuSession:
         action_keys: Iterable[str] = (),
         height: int = DEFAULT_HEIGHT,
         final_message: str = "Session closed",
+        exit_name: str | None = None,
         on_poll: Callable[["InlineMenuSession"], None] | None = None,
         poll_interval: float = 0.5,
         input: Any = None,
@@ -540,6 +541,9 @@ class InlineMenuSession:
         self._message_generation = 0
         self._message_task: Any = None
         self.final_message = final_message
+        self.exit_name = exit_name
+        self._exit_confirmation_view: MenuView | None = None
+        self._exit_restore_help = False
         self.error: str | None = None
         self.on_poll = on_poll
 
@@ -819,6 +823,12 @@ class InlineMenuSession:
             self._focus_current_view()
             self.application.invalidate()
 
+        if self.exit_name is not None:
+
+            @bindings.add("c-x", eager=True)
+            def request_exit(_event) -> None:
+                self.request_exit()
+
         def make_action(key: str):
             def handler(_event) -> None:
                 view = self.current_view
@@ -936,6 +946,74 @@ class InlineMenuSession:
         self._activate_current_view()
         self.application.invalidate()
 
+    def request_exit(self) -> None:
+        """Push one clean-session exit confirmation without unwinding views."""
+        if self.exit_name is None or self._exit_confirmation_view is not None:
+            return
+        self._exit_restore_help = self.help_visible
+        self.help_visible = False
+        confirmation = self._clean_exit_confirmation()
+        self._exit_confirmation_view = confirmation
+        self.push_view(confirmation)
+
+    def _clean_exit_confirmation(self) -> MenuView:
+        rows = [
+            MenuRow(1, "EXIT", "Close the application and lose session context"),
+            MenuRow(2, "CONTINUE", "Return to the current context"),
+        ]
+
+        def handle(
+            session: "InlineMenuSession",
+            result: MenuResult,
+        ) -> None:
+            if result.action != "select" or result.index is None:
+                return
+            if result.index == 0:
+                session._finish_confirmed_exit()
+            else:
+                session._cancel_exit_confirmation()
+
+        def back(session: "InlineMenuSession") -> bool:
+            session._cancel_exit_confirmation()
+            return False
+
+        return MenuView(
+            rows=rows,
+            on_result=handle,
+            title=f"Exit {self.exit_name}?",
+            summary="No files need saving; current session context will be lost",
+            instruction="↑↓/jk · ↵ choose · Esc/b/q continue",
+            select_help="Choose whether to exit or continue",
+            back_help="Continue without exiting",
+            selected_index=1,
+            on_back=back,
+        )
+
+    def _cancel_exit_confirmation(self) -> None:
+        if self._exit_confirmation_view is None:
+            return
+        if self.current_view is self._exit_confirmation_view:
+            self.views.pop()
+        self._exit_confirmation_view = None
+        self.help_visible = self._exit_restore_help
+        self._exit_restore_help = False
+        self._replace_message(None)
+        self._activate_current_view()
+        self.application.invalidate()
+
+    def _finish_confirmed_exit(self) -> None:
+        if self._exit_confirmation_view is None:
+            return
+        if self.current_view is self._exit_confirmation_view:
+            self.views.pop()
+        self._exit_confirmation_view = None
+        self._exit_restore_help = False
+        self.help_visible = False
+        self._replace_message(self.final_message)
+        self._activate_current_view()
+        self.application.erase_when_done = False
+        self.application.exit(result=MenuResult("exit", None))
+
     def pop_view(self, *, message: str | None = None) -> None:
         self.help_visible = False
         self._replace_message(None)
@@ -951,6 +1029,9 @@ class InlineMenuSession:
         if message is not None:
             self.final_message = message
         if len(self.views) == 1:
+            if self.exit_name is not None:
+                self.request_exit()
+                return
             self._replace_message(self.final_message)
             self.application.erase_when_done = False
             self.application.exit(result=MenuResult("back", None))

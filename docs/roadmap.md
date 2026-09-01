@@ -259,10 +259,13 @@ paths must leave erasure enabled and restore the terminal before diagnostics.
 
 #### 7. Add one global exit gateway
 
-**Planned as `t0046`.** Bind `C-x` at the persistent application level so it
-requests exit from menus, Help, dialogs, workspaces, and active field editing
-without first unwinding the view stack. Keep Back view-local, but route a root
-Back through the same gateway so no termination path bypasses confirmation.
+**In progress as `t0046`.** `t0046.1` adds an opt-in session gateway, clean
+confirmation, safe-default Continue, and non-recursive `C-x`; it remains
+disabled in application entry points until their concern providers land. Then
+bind `C-x` at the persistent application level so it requests exit from menus,
+Help, dialogs, workspaces, and active field editing without first unwinding the
+view stack. Keep Back view-local, but route a root Back through the same gateway
+so no termination path bypasses confirmation.
 
 The session should coordinate one confirmation view and suppress recursive
 requests; it should not learn file or Org policy. Task and project controllers

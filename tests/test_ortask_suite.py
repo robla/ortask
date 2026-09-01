@@ -7230,6 +7230,65 @@ def test_inline_menu_session_empty_rows_allows_exit_and_actions() -> None:
 
 
 @pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_menu_confirmed_exit_is_opt_in_and_continue_is_safe() -> None:
+    # Root Back should confirm only for opted-in apps, with Continue selected.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    view = menu.MenuView(
+        [menu.MenuRow(1, "TODO", "t0001 task")],
+        lambda _session, _result: None,
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Root q opens the prompt; Enter continues. C-x opens it again,
+            # repeated C-x is harmless, and Up/Enter explicitly exits.
+            pin.send_text("q\r\x18\x18\x1b[A\r")
+            session = menu.InlineMenuSession(view, exit_name="test app")
+            result = session.run()
+
+    assert result == menu.MenuResult("exit", None)
+    assert session.current_view is view
+    assert len(session.views) == 1
+    assert session.application.erase_when_done is False
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_inline_menu_global_exit_preserves_active_text_context() -> None:
+    # Canceling global Exit should restore an active field and its exact draft.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    text_view = menu.TextInputView(
+        "",
+        lambda _session, _text: None,
+        title="Draft title",
+    )
+
+    def handle(session: menu.InlineMenuSession, result: menu.MenuResult) -> None:
+        if result.action == "select":
+            session.push_view(text_view)
+
+    parent = menu.MenuView(
+        [menu.MenuRow(1, "TEXT", "Edit title")],
+        handle,
+    )
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Open the field, draft text, cancel Exit, keep typing, then Exit.
+            pin.send_text("\rdraft\x18\r!\x18\x1b[A\r")
+            session = menu.InlineMenuSession(parent, exit_name="test app")
+            result = session.run()
+
+    assert result == menu.MenuResult("exit", None)
+    assert text_view.text == "draft!"
+    assert session.current_view is text_view
+    assert len(session.views) == 2
+
+
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_project_menu_uses_one_application_for_nested_task_views(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -8406,5 +8465,4 @@ def test_pmgr_info_reports_metadata_and_scripting_flags(
     assert projmgr.cmd_info(args_human_unreg) == 1
     err_out = capsys.readouterr().err
     assert "no registered project matches" in err_out
-
 
