@@ -178,6 +178,31 @@ private-list editor uses the same `OrgBuffer` plus bounded directory writer,
 so it also checks the loaded source revision before handing the file to
 `$VISUAL`.
 
+## Global Exit in `ptui`
+
+The suite-wide `C-x` contract is defined in `docs/interactive.md` and tracked
+as `t0046`. In `ptui`, the exit request must account for more than the visible
+view: the project navigator retains its session-wide `projects.org` buffer
+while an attached task controller may own a second task-file buffer and an
+unapplied workspace draft. `C-x` from that task workspace, Help, metadata mode,
+view options, or a conflict view must inventory both controllers before
+offering an outcome.
+
+The confirmation lists every affected path and distinguishes draft edits,
+dirty file buffers, undo/redo history, and unresolved conflicts. **Save and
+Exit** validates all drafts and preflights every dirty source before beginning
+the displayed save order. The writes are independently atomic, not atomic as a
+group; if a later write fails, `ptui` stays open and reports which files were
+saved and which remain pending. A project-index merge conflict continues to
+block that index save and is never converted into a force-overwrite. **Discard
+and Exit** delegates to the project and task controllers so their recovery-file
+and baseline rules remain intact.
+
+A clean `ptui` session still confirms exit because its project selection,
+view stack, filters, sorting, expansion, and task position are session state.
+Root `Esc`/`b`/`q` enters this same confirmation; at nested levels those keys
+continue to mean Back.
+
 ## Safety and Implementation Boundaries
 
 Project discovery continues to come from registry entries, not

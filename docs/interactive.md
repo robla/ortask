@@ -386,14 +386,53 @@ Recommended task-list bindings:
 - `C-s` writes the complete Org buffer to disk and starts a new history.
 - `e` opens the current Org file or selected task in the editor.
 - `C-t` cycles the task visibility filter: `all -> TODO -> DONE+`. This is not
-  an exact Emacs binding, but it keeps `C-c` and `C-x` open for future
-  multi-key command families while reserving `/` for search.
+  an exact Emacs binding, but it keeps `C-c` open for future multi-key command
+  families while reserving `/` for search.
+- `C-x` requests application exit from any active `orti` or `ptui` context.
+  It is distinct from Back and always opens the exit confirmation specified
+  below.
 - `C-g` opens contextual help. Although Emacs normally uses `C-g` to quit the
   current command, ortask uses it as the always-available command reference;
   `C-g`, `Esc`, `b`, `q`, or `Enter` returns to the unchanged menu selection.
 - `/` should be reserved for search in the current list or backing Org file.
-- `Esc`, `b`, and `q` all pop exactly one context. Only popping the top-level
-  local task list or project list exits the program.
+- `Esc`, `b`, and `q` all pop exactly one context. At the root they request
+  application exit through the same confirmation as `C-x` rather than
+  bypassing it.
+
+### Global Exit (`C-x`)
+
+Tracked as `t0046`. This is the application-level counterpart to Back:
+`Esc`/`b`/`q` pop one view, while `C-x` requests termination from any active
+prompt_toolkit context. The binding applies in menus, Help, view options,
+confirmation and conflict views, workspace navigation, and active text or
+choice editing. It does not apply while control has been suspended to an
+external editor. The numbered fallback retains its line-oriented `q` behavior.
+
+Every actual `orti` or `ptui` exit asks for confirmation, including a root Back
+with no file changes. The prompt preserves the current view stack and selects
+**Continue** by default. A clean session offers **Exit** and **Continue**, and
+states that selection, expansion, filter/sort, and navigation context will be
+lost. If clean buffers still have undo or redo history, the prompt names the
+history that exit will discard.
+
+An exit request inventories all state owned by the application's controllers:
+unapplied workspace fields, dirty file buffers, undo/redo history, recovery
+data, and unresolved external-change conflicts. Dirty state offers **Save and
+Exit**, **Discard and Exit**, and **Continue**. Save first validates and applies
+active workspace drafts, then preflights every dirty file with its normal exact
+source check before writing. Multiple files cannot be one atomic transaction;
+the confirmation lists them in save order, and a later failure leaves the
+application open with an explicit saved-versus-pending report. Conflicts and
+invalid fields block exit-by-save without losing in-memory work. Discard uses
+each owning controller's existing discard policy rather than deleting state in
+the menu layer.
+
+`InlineMenuSession` owns the global key and one non-recursive exit request, but
+it does not inspect Org files or decide how data is saved. Controllers provide
+descriptions and save/discard callbacks for their exit concerns. Pressing
+`C-x` while the confirmation is already visible must not bypass it or push a
+second copy. `C-x` appears in contextual Help and, where width permits, the
+compact command bar.
 
 Avoid making `t` a row-selector state toggle. It is not very mnemonic once the
 command grows beyond "toggle", and it competes with future meanings such as

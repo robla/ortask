@@ -72,7 +72,8 @@ The ortask interaction should follow these rules:
 - Project lists, task lists, task details, Help, priority selection, recovery,
   and save/discard confirmation are views in the same bounded region.
 - Enter or another action pushes a child view when appropriate. `Esc`, `b`, or
-  `q` pops one view; only popping the top-level view exits the application.
+  `q` pops one view; at the top level, Back requests exit through the
+  confirmation planned in Stage 7 rather than terminating directly.
 - State and priority edits update the in-memory `OrgBuffer`, refresh affected
   rows, and invalidate the application without ending it.
 - Running an external editor temporarily suspends the application, restores
@@ -154,7 +155,7 @@ The implementation provides a session-oriented API:
 
 - `menu.InlineMenuSession` owns requested/effective height, the active view
   stack, transient messages, movement, Help, terminal resize, external-command
-  suspension, and the one call to `Application.run()`.
+  suspension, the global exit request, and the one call to `Application.run()`.
 - `menu.MenuView` describes a title, summary, rows, selected index, available
   commands, optional detail text, sizing preferences, and callbacks for actions
   and resume.
@@ -256,6 +257,24 @@ Signal handling, unexpected exceptions, editor failures, and terminal resize
 below the minimum still need explicit failure outcomes and PTY coverage. Those
 paths must leave erasure enabled and restore the terminal before diagnostics.
 
+#### 7. Add one global exit gateway
+
+**Planned as `t0046`.** Bind `C-x` at the persistent application level so it
+requests exit from menus, Help, dialogs, workspaces, and active field editing
+without first unwinding the view stack. Keep Back view-local, but route a root
+Back through the same gateway so no termination path bypasses confirmation.
+
+The session should coordinate one confirmation view and suppress recursive
+requests; it should not learn file or Org policy. Task and project controllers
+instead expose exit concerns describing workspace drafts, dirty buffers,
+undo/redo history, recovery state, and conflicts, together with their existing
+save/discard operations. `ptui` must aggregate its retained `projects.org`
+buffer with the active task controller. Validate and preflight all dirty files
+before a multi-file save, report its non-atomic ordering honestly, and remain
+open after any failure. Pipe-input tests should invoke `C-x` in every view type;
+PTY coverage should verify confirmation, cancellation, retained final output,
+and terminal restoration.
+
 ### Relationship to Handrail
 
 This work should establish the bounded-inline behavior before ortask depends on
@@ -311,6 +330,10 @@ The interactive UI work is complete when:
 - returning from task details does not append another full task list;
 - long lists scroll without losing the selected row;
 - external editor handoff resumes the same session cleanly;
+- `C-x` requests a confirmed exit from every active `orti` and `ptui` context,
+  while root Back uses the same gateway and nested Back still pops one view;
+- exit confirmation reports drafts, dirty buffers, undo/redo history, and
+  conflicts without moving persistence policy into the menu layer;
 - save, discard, cancellation, and recovery remain safe and visible;
 - non-TTY numbered behavior remains usable;
 - pipe-input and PTY tests defend adaptive repainting, resize, terminal
