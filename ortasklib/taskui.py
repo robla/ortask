@@ -704,7 +704,7 @@ def _task_menu_instruction(view: viewstate.ViewState | str) -> str:
         f"{view.badge()} · ↑↓/jk move · Tab fold · "
         "←/→ tree · S-Tab all · ↵/→ open · C-g help · "
         "C-s save · C-/ undo · C-r redo · C-t filter · s sort · v view · "
-        "Esc/b/q back"
+        "Esc/b/q/← back"
     )
 
 
@@ -744,7 +744,9 @@ TASK_MENU_ACTIONS = {
         "tree_right", "Right", "Expand the task, or open it once it is expanded"
     ),
     "left": menu.MenuAction(
-        "tree_left", "Left", "Collapse the task or move to its parent"
+        "tree_left",
+        "Left",
+        "Collapse the task, move to its parent, or leave the list",
     ),
     "e": _EDIT_MENU_ACTION,
     "p": _PICK_PRIORITY_ACTION,
@@ -1444,6 +1446,11 @@ class InteractiveTaskController:
                     # the way Enter does.
                     session.push_view(self._focus_view(item))
                     return
+                if result.action == "tree_left":
+                    # Nothing to collapse, and a heading has no parent task to
+                    # rise to, so Left leaves the list the way Back does.
+                    session.pop_view()
+                    return
                 session.set_transient_message(
                     "This Org heading has no task subtree"
                 )
@@ -1482,9 +1489,12 @@ class InteractiveTaskController:
             else:
                 target_id = parent_ids.get(task_id)
             if target_id is None:
-                session.set_transient_message(
-                    f"{task_id} is already at the tree root"
-                )
+                # Nothing left to ascend to inside the list, so Left keeps
+                # rising and leaves it, the way Back does. Under ptui that
+                # lands on the project browser; in a standalone orti the task
+                # list is the top level, so it exits through the same gateway
+                # C-x uses, save prompt included.
+                session.pop_view()
                 return
             session.replace_view(self._task_view(target_id, fallback))
             return

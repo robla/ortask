@@ -3982,6 +3982,42 @@ def test_project_list_right_arrow_opens_the_highlighted_project(
     projmgr.menu.Application is None,
     reason="prompt_toolkit not installed",
 )
+def test_left_arrow_returns_from_a_task_list_to_the_project_list(
+    tmp_path: Path,
+) -> None:
+    # Right descends into a project's tasks; Left at the tree root comes back.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    registry = tmp_path / "registry"
+    project = tmp_path / "src" / "alpha"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+    register(registry, "alpha", project)
+    browser = projmgr._ProjectBrowser(registry, "~/registry", include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            pin.send_text(
+                "\x1b[C"    # Right opens alpha's task list
+                "\x1b[D"    # Left at the tree root returns to the projects
+                "\x18"      # C-x leaves outright, so that list stays on screen
+            )
+            browser.run()
+
+    assert browser.task_controller is None
+    assert browser.session is not None
+    view = browser.session.current_view
+    assert isinstance(view, menu.MenuView)
+    assert view.title == "Project navigator"
+    assert len(view.rows) == 1
+    assert "alpha" in view.rows[0].text
+
+
+@pytest.mark.skipif(
+    projmgr.menu.Application is None,
+    reason="prompt_toolkit not installed",
+)
 def test_view_options_screen_is_driven_by_the_real_key_bindings(
     tmp_path: Path,
 ) -> None:
@@ -8185,6 +8221,32 @@ def test_interactive_task_tree_keybindings(tmp_path: Path) -> None:
     assert view.selected_index == 0
 
 
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
+def test_left_at_the_tree_root_exits_standalone_orti(tmp_path: Path) -> None:
+    # With no project list underneath, Left leaves through the C-x gateway.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    original = "* Tasks\n** TODO t0001 Work\n"
+    org_file = write(tmp_path / "tasks.org", original)
+    project = manager.Project("demo", tmp_path, org_file)
+    buf = taskui.OrgBuffer(org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
+
+    with create_pipe_input() as pin:
+        with create_app_session(input=pin, output=DummyOutput()):
+            # Shift-Right dirties the buffer, so Left has to raise the save
+            # question before it can leave; N answers it.
+            pin.send_text("\x1b[1;2C\x1b[Dn")
+            controller.run()
+
+    assert org_file.read_text(encoding="utf-8") == original
+    assert buf.dirty is False
+    assert controller.session is not None
+    assert controller.session.final_message == "Discarded changes to tasks.org"
+
+
 def test_load_menu_items_defaults_to_all_task_states(tmp_path: Path) -> None:
     # The shared task view starts with TODO and DONE rows visible, then filters explicitly.
     org_file = write(
@@ -8273,6 +8335,84 @@ def test_right_opens_a_read_only_heading(tmp_path: Path) -> None:
     controller.initial_view().on_result(session, menu.MenuResult("tree_right", 0))
 
     assert [view.title for view in session.pushed] == ["Org heading"]
+
+
+class _PopSession:
+    """Records pop_view calls and fails on any transient notice."""
+
+    def __init__(self) -> None:
+        self.pops = 0
+
+    def pop_view(self, *, message: str | None = None) -> None:
+        self.pops += 1
+
+    def set_transient_message(self, message: str) -> None:
+        raise AssertionError(f"unexpected notice: {message}")
+
+
+def test_left_at_the_tree_root_leaves_the_list(tmp_path: Path) -> None:
+    # Left keeps rising: with no parent left inside the list, it goes back.
+    org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 Leaf\n")
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = taskui.InteractiveTaskController(
+        project,
+        taskui.OrgBuffer(org_file),
+        include_done=True,
+    )
+    session = _PopSession()
+
+    controller.initial_view().on_result(session, menu.MenuResult("tree_left", 0))
+
+    assert session.pops == 1
+
+
+def test_left_on_a_read_only_heading_leaves_the_list(tmp_path: Path) -> None:
+    # A bare heading has no subtree to collapse and no parent task to reach.
+    org_file = write(tmp_path / "notes.org", "* Notes\n** Ideas\n")
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = taskui.InteractiveTaskController(
+        project,
+        taskui.OrgBuffer(org_file),
+        include_done=True,
+    )
+    session = _PopSession()
+
+    controller.initial_view().on_result(session, menu.MenuResult("tree_left", 0))
+
+    assert session.pops == 1
+
+
+def test_left_collapses_before_it_leaves(tmp_path: Path) -> None:
+    # An expanded top-level parent costs one Left to fold and another to leave.
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n** TODO t0001 Parent\n*** TODO t0001.1 Child\n",
+    )
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = taskui.InteractiveTaskController(
+        project,
+        taskui.OrgBuffer(org_file),
+        include_done=True,
+    )
+
+    class FoldSession(_PopSession):
+        def __init__(self, view: menu.MenuView) -> None:
+            super().__init__()
+            self.current_view = view
+
+        def replace_view(self, view: menu.MenuView) -> None:
+            self.current_view = view
+
+    session = FoldSession(controller.initial_view())
+    session.current_view.on_result(session, menu.MenuResult("tree_right", 0))
+    assert len(session.current_view.rows) == 2
+
+    session.current_view.on_result(session, menu.MenuResult("tree_left", 0))
+    assert [row.text for row in session.current_view.rows] == ["t0001 Parent"]
+    assert session.pops == 0
+
+    session.current_view.on_result(session, menu.MenuResult("tree_left", 0))
+    assert session.pops == 1
 
 
 def test_anchor_index_follows_task_and_clamps() -> None:

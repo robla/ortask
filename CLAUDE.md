@@ -271,6 +271,10 @@ fixtures, `--help`, `--dry-run`, or the test suite. Ask before running
   The aim is a file that an Emacs/org user would find unremarkable.
 - Docs stay objective and fact-based, including about other Org libraries and
   tools.
+- **Commit subjects:** one short imperative line, no body, suffixed with the
+  model that did the work (`(Claude)`). Name the task ID whenever the change
+  addresses a task in `tasks.org` (`t0047`), so the commit points back at what
+  motivated it. (This mirrors the convention in `AGENTS.md`.)
 - **LLM change log:** when making any user-requested repository change, add one
   entry to `docs/llm-log.org` in the same turn, in the existing single-line Org
   format (`** Claude [YYYY-MM-DD Ddd HH:MM TZ]: short description`). One line,

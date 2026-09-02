@@ -54,34 +54,33 @@ controls; no reconciliation writes the real index before `C-s`.
 The task selector has two modes, chosen automatically by
 `menu.interactive_select_available()`:
 
-- **Highlight-bar mode** (interactive TTY with `prompt_toolkit`): task workflows
-  run in one bounded `menu.InlineMenuSession`. Up/Down or `j`/`k`
-  move the highlight (wrapping). The list starts as a top-level overview;
-  `Tab` expands or collapses a task, Shift-Tab expands all or returns to the
+- **Highlight-bar mode** (interactive TTY with `prompt_toolkit`): task
+  workflows run in one bounded `menu.InlineMenuSession`. Up/Down or `j`/`k`
+  move the highlight (wrapping). The list starts as a top-level overview; `Tab`
+  expands or collapses a task, Shift-Tab expands all or returns to the
   overview, and Left/Right provide directional tree navigation. `Enter` opens
   the focus view, and so does Right once the highlighted task has nothing left
-  to expand;
-  Shift-Left/Right cycles the highlighted task through the `TODO`/`DONE` ring;
-  Shift-Up/Down raises or lowers its priority; `p` opens an explicit priority
-  picker; `C-/` undoes one logical task edit; `C-r` redoes it; `C-s` saves the
-  Org file and clears that history; `C-t` cycles the visibility filter (`all ->
-  TODO -> DONE+`, whose third position matches every terminal state); `v` opens
-  the view options screen; `e` opens the editor at the highlighted task's line;
-  `C-g` opens contextual command help; and `Esc`, `b`, or `q` goes back exactly
-  one level. In `projmgr.py -i`,
-  leaving a task list returns to the project menu; in local `ortask.py -i`, that
-  task list is the top level, so leaving it exits. The application renders
-  inline (not full screen), defaults to 20 rows, and repaints that region as
-  contexts change. On a controlled exit it retains one final bounded frame with
-  a factual footer such as `No changes to tasks.org`, `Saved changes to
-  tasks.org`, or `Discarded changes to tasks.org`; it does not append each
-  visited view.
-  Long lists scroll within the row body while the title, summary, and key hint
-  remain fixed; the selector keeps one context row above and below the highlight
-  when space permits.
-  Selecting a task opens the task workspace described below. Its fields start
-  in navigation mode; Enter explicitly enables text or choice editing. The view
-  options screen is that same workspace with one field per axis.
+  to expand; Shift-Left/Right cycles the highlighted task through the
+  `TODO`/`DONE` ring; Shift-Up/Down raises or lowers its priority; `p` opens an
+  explicit priority picker; `C-/` undoes one logical task edit; `C-r` redoes
+  it; `C-s` saves the Org file and clears that history; `C-t` cycles the
+  visibility filter (`all -> TODO -> DONE+`, whose third position matches every
+  terminal state); `v` opens the view options screen; `e` opens the editor at
+  the highlighted task's line; `C-g` opens contextual command help; and `Esc`,
+  `b`, `q`, or Left with nothing left to collapse or ascend to goes back
+  exactly one level. In `projmgr.py -i`, leaving a task list returns to the
+  project menu; in local `ortask.py -i`, that task list is the top level, so
+  leaving it exits. The application renders inline (not full screen), defaults
+  to 20 rows, and repaints that region as contexts change. On a controlled exit
+  it retains one final bounded frame with a factual footer such as `No changes
+  to tasks.org`, `Saved changes to tasks.org`, or `Discarded changes to
+  tasks.org`; it does not append each visited view. Long lists scroll within
+  the row body while the title, summary, and key hint remain fixed; the
+  selector keeps one context row above and below the highlight when space
+  permits. Selecting a task opens the task workspace described below. Its
+  fields start in navigation mode; Enter explicitly enables text or choice
+  editing. The view options screen is that same workspace with one field per
+  axis.
 - **Numbered mode** (non-TTY, piped, or `prompt_toolkit` absent): the original
   numbered dashboard + prompt, preserved as the scriptable fallback with the
   same `C-t` visibility cycle. It lists the complete filtered hierarchy because
@@ -372,8 +371,10 @@ Recommended task-list bindings:
   with no visible children — opens that task, because Down already reaches the
   first child and the second Right is better spent on the one motion the arrows
   otherwise cannot make. Left collapses an expanded task, then moves to its
-  parent when already collapsed. These directional aliases follow conventional
-  tree controls.
+  parent when already collapsed, then leaves the list once there is no parent
+  left to reach — the project browser under `projmgr.py -i`, and the exit
+  gateway, save prompt included, in a standalone `ortask.py -i`. These
+  directional aliases follow conventional tree controls.
 - Enter opens the highlighted task's detail/focus view; Right does the same
   once there is nothing left to expand.
 - Shift-Right cycles the highlighted task forward through the TODO state ring;
