@@ -724,3 +724,15 @@ clean and undo/redo-only exits; dirty =Y=/=N=/=C-c= responses; repeated =C-x=;
 save failure; root Back; multiple dirty files; retained final output; and
 terminal restoration. No binding is expected while an external editor owns the
 terminal.
+** TODO [#B] t0047 Return to ptui on Left arrow at tree root in orti
+When navigating a task list inside ptui (where orti is pushed on top of the
+project browser), pressing Left on a top-level task that is already collapsed
+currently emits a transient message "tNNNN is already at the tree root"
+(=taskui.py:1485=). Make Left ascend to the parent view via =session.pop_view()=
+when there is no parent task to move to, creating full two-way symmetry with
+Right (which expands subtasks, and once there is nothing left to expand, opens the
+task workspace; see =docs/interactive.md:61=). In ptui, this returns to the project
+browser, passing through =on_back= for unsaved file safety. In standalone orti,
+decide whether Left at the root view is a no-op / warning or delegates to
+=session.pop_view()= / exit. Update command hints, contextual Help (=C-g=),
+=docs/interactive.md=, and interactive tree-navigation tests.
