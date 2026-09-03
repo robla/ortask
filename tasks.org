@@ -736,3 +736,5 @@ browser, passing through =on_back= for unsaved file safety. In standalone orti,
 decide whether Left at the root view is a no-op / warning or delegates to
 =session.pop_view()= / exit. Update command hints, contextual Help (=C-g=),
 =docs/interactive.md=, and interactive tree-navigation tests.
+** TODO [#A] t0048 Long body in tasks should show first part, not last part
+As of right now, the display of tasks puts the cursor at the end of the task body, which means (for long tasks) the beginning of the task body isn't viewable by default.  The user is required to go into edit mode and move the cursor to the top of the task body to see it.  In a more ideal world, only the end of the task would be truncated.
