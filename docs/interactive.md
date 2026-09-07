@@ -802,15 +802,24 @@ restores all four fields to the values loaded when the workspace opened or last
 saved; it does not discard older edits already buffered from the task list.
 
 The body boundary ends at the next Org heading, so child and sibling headings
-cannot be changed from the body control. A five-row viewport contains every
-descendant task in Org source order, indented by heading depth. Navigate to it
-with arrows or Tab, press Enter to interact with it, then move its highlight
-with Up/Down or `j`/`k` and five rows with Page Up/Page Down. Enter again opens
-the selected descendant's workspace; Esc returns to field navigation. The
-viewport scrolls to keep the selected descendant visible and does not truncate
-the list. Back returns to the parent with its draft fields and subtask selection
-intact. The header count includes all descendants. Direct state and priority
-actions within the subtask viewport remain part of `t0016.4`.
+cannot be changed from the body control. The control opens with the cursor on
+the body's first line: the window follows the cursor, so a body taller than the
+control shows its beginning and leaves the rest one scroll away. `Ctrl-S`
+clears the field undo histories without moving that cursor. A five-row viewport
+contains every descendant task in Org source order, indented by heading depth.
+Navigate to it with arrows or Tab, press Enter to interact with it, then move
+its highlight with Up/Down or `j`/`k` and five rows with Page Up/Page Down.
+Enter again opens the selected descendant's workspace; Esc returns to field
+navigation. The viewport scrolls to keep the selected descendant visible and
+does not truncate the list. Back returns to the parent with its draft fields
+and subtask selection intact. The header count includes all descendants. Direct
+state and priority actions within the subtask viewport remain part of
+`t0016.4`.
+
+Long body lines wrap for display only: a line is stored exactly as typed, and
+only an explicit newline — Enter, while editing — adds one, so the control never
+rewrites the file's line structure. Title does not wrap, an Org heading being
+one line by nature.
 
 The bottom `[ Open in external editor ]` button uses the same terminal handoff
 and source-line targeting as `e` in the task list. Navigate to it and press

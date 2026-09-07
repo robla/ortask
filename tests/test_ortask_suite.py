@@ -7152,6 +7152,76 @@ def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) 
     assert view.status_text() == "FILE MODIFIED: 1 edit"
 
 
+class _OutcomeSession:
+    """Enough session for WorkspaceView.on_save, failing on any notice."""
+
+    def __init__(self) -> None:
+        self.outcome: str | None = None
+
+    def set_outcome(self, message: str) -> None:
+        self.outcome = message
+
+    def set_transient_message(self, message: str) -> None:
+        raise AssertionError(f"unexpected notice: {message}")
+
+
+def _long_body_controller(tmp_path: Path) -> tuple:
+    body = "\n".join(f"Body line {n}" for n in range(1, 41))
+    org_file = write(
+        tmp_path / "tasks.org",
+        "* Tasks\n** TODO t0001 Long task\n" + body + "\n",
+    )
+    buf = taskui.OrgBuffer(org_file)
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
+    return controller, taskui.load_menu_items(buf)[0]
+
+
+def test_task_workspace_body_opens_at_its_first_line(tmp_path: Path) -> None:
+    # The window follows the cursor, so a body that opens at its end hides its
+    # beginning. Long bodies should show the top and truncate the tail instead.
+    controller, item = _long_body_controller(tmp_path)
+
+    body_area = controller._focus_view(item).focus_targets[3]
+
+    assert body_area.text.startswith("Body line 1\n")
+    assert body_area.buffer.cursor_position == 0
+    assert body_area.buffer.document.cursor_position_row == 0
+
+
+def test_task_workspace_save_leaves_the_body_cursor_alone(tmp_path: Path) -> None:
+    # C-s clears the undo history, which must not scroll the reader away.
+    controller, item = _long_body_controller(tmp_path)
+    view = controller._focus_view(item)
+    body_area = view.focus_targets[3]
+    resting = len("Body line 1\nBody line 2\n")
+    body_area.buffer.cursor_position = resting
+
+    assert view.on_save(_OutcomeSession()) is True
+    assert body_area.buffer.cursor_position == resting
+
+
+def test_task_workspace_wraps_the_body_for_display_only(tmp_path: Path) -> None:
+    # A long line wraps in the control, but stays one line in the Org file:
+    # only an explicit newline adds one.
+    long_line = " ".join(f"word{n}" for n in range(1, 61))
+    original = "* Tasks\n** TODO t0001 Wide task\n" + long_line + "\n"
+    org_file = write(tmp_path / "tasks.org", original)
+    buf = taskui.OrgBuffer(org_file)
+    project = manager.Project("demo", tmp_path, org_file)
+    controller = taskui.InteractiveTaskController(project, buf, include_done=True)
+
+    view = controller._focus_view(taskui.load_menu_items(buf)[0])
+    title_area, body_area = view.focus_targets[2], view.focus_targets[3]
+
+    assert body_area.wrap_lines is True
+    assert title_area.wrap_lines is False    # a heading is one line by nature
+    assert body_area.text == long_line
+
+    assert view.on_save(_OutcomeSession()) is True
+    assert org_file.read_text(encoding="utf-8") == original
+
+
 def test_task_workspace_subtasks_follow_org_tree_without_truncation(
     tmp_path: Path,
 ) -> None:
@@ -7416,9 +7486,11 @@ def test_bounded_task_editor_updates_title_and_multiline_body(tmp_path: Path) ->
     with create_pipe_input() as pin:
         with create_app_session(input=pin, output=DummyOutput()):
             # Edit TITLE and BODY together, apply once, then save the task buffer.
+            # The title opens with the cursor at its end, so C-u clears it; the
+            # body opens on its first line, so C-k is what clears that.
             pin.send_text(
                 "\r\r\x15Renamed title\r"
-                "\x1b[B\r\x15First body line\rSecond body line\x13"
+                "\x1b[B\r\x0bFirst body line\rSecond body line\x13"
                 "\x1b\x1bq"
             )
             controller.run()

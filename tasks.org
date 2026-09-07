@@ -738,11 +738,17 @@ decide whether Left at the root view is a no-op / warning or delegates to
 =docs/interactive.md=, and interactive tree-navigation tests.
 Resolved: Left always delegates to =session.pop_view()=, so in standalone orti
 it leaves through the same exit gateway =C-x= uses, save prompt included.
-** TODO [#A] t0048 Long body in tasks should show first part, not last part
+** DONE [#A] t0048 Long body in tasks should show first part, not last part
 As of right now, the display of tasks puts the cursor at the end of the task body, which means (for long tasks) the beginning of the task body isn't viewable by default.  The user is required to go into edit mode and move the cursor to the top of the task body to see it.  In a more ideal world, only the end of the task would be truncated.
-** TODO t0049 Settle word wrap in task bodies
+** DONE t0049 Settle word wrap in task bodies
 As of right now, there is not automatic word wrap when editing long lines in orti.  There are at least two possible solutions to this:
 1) wrap in a way that saves the wrapped text in the underlying org file
 2) turn on display wrap for the field in orti, but save the long line unless an explicit CR or LF is entered.
 
-robla is not sure which is best.  He used ^J to compose this, which he can't remember if that's CR or LF. 
+robla is not sure which is best.  He used ^J to compose this, which he can't remember if that's CR or LF.
+
+Resolved: option 2. The Body control wraps for display only, and the Org file
+keeps each body line exactly as typed; only Enter, while editing, adds a
+newline. Option 1 would have the editor reformat text the user did not ask it
+to touch, which the conservative-writes convention rules out. (=^J= is LF, the
+newline itself; =^M= is CR.)

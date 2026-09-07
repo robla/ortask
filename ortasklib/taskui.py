@@ -1591,7 +1591,10 @@ class InteractiveTaskController:
         body_area = TextArea(
             text="\n".join(item.task.body_lines),
             multiline=True,
-            wrap_lines=False,
+            # Wrapping is display-only. A body line stays one line in the Org
+            # file however it is shown here, so only an explicit newline —
+            # Enter, while editing — ever adds one.
+            wrap_lines=True,
             scrollbar=True,
             read_only=Condition(lambda: not field_is_editing(3)),
         )
@@ -1599,7 +1602,9 @@ class InteractiveTaskController:
             lambda: not field_is_editing(3)
         )
         body_area.window.style = lambda: field_style(3)
-        body_area.buffer.cursor_position = len(body_area.text)
+        # The body deliberately keeps the cursor on its first line. The window
+        # scrolls to wherever the cursor is, so parking it at the end would
+        # open a long body at its tail and hide the beginning.
         draft: dict[str, str | None] = {
             "state": item.task.state,
             "priority": item.task.priority,
@@ -1658,9 +1663,10 @@ class InteractiveTaskController:
             )
 
         def reset_control(control, text: str) -> None:
-            control.buffer.reset(
-                Document(text, cursor_position=len(text))
-            )
+            # Clearing the undo history should not move the reader, so keep the
+            # cursor where it is, clamped to whatever text remains.
+            cursor = min(control.buffer.cursor_position, len(text))
+            control.buffer.reset(Document(text, cursor_position=cursor))
 
         def reset_workspace_undo() -> None:
             reset_control(title_area, title_area.text)
