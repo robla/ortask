@@ -724,7 +724,7 @@ clean and undo/redo-only exits; dirty =Y=/=N=/=C-c= responses; repeated =C-x=;
 save failure; root Back; multiple dirty files; retained final output; and
 terminal restoration. No binding is expected while an external editor owns the
 terminal.
-** TODO [#B] t0047 Return to ptui on Left arrow at tree root in orti
+** DONE [#B] t0047 Return to ptui on Left arrow at tree root in orti
 When navigating a task list inside ptui (where orti is pushed on top of the
 project browser), pressing Left on a top-level task that is already collapsed
 currently emits a transient message "tNNNN is already at the tree root"
@@ -736,6 +736,8 @@ browser, passing through =on_back= for unsaved file safety. In standalone orti,
 decide whether Left at the root view is a no-op / warning or delegates to
 =session.pop_view()= / exit. Update command hints, contextual Help (=C-g=),
 =docs/interactive.md=, and interactive tree-navigation tests.
+Resolved: Left always delegates to =session.pop_view()=, so in standalone orti
+it leaves through the same exit gateway =C-x= uses, save prompt included.
 ** TODO [#A] t0048 Long body in tasks should show first part, not last part
 As of right now, the display of tasks puts the cursor at the end of the task body, which means (for long tasks) the beginning of the task body isn't viewable by default.  The user is required to go into edit mode and move the cursor to the top of the task body to see it.  In a more ideal world, only the end of the task would be truncated.
 ** TODO t0049 Settle word wrap in task bodies
