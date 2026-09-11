@@ -752,15 +752,18 @@ keeps each body line exactly as typed; only Enter, while editing, adds a
 newline. Option 1 would have the editor reformat text the user did not ask it
 to touch, which the conservative-writes convention rules out. (=^J= is LF, the
 newline itself; =^M= is CR.)
-** TODO [#C] t0050 Decide whether pmgr add should seed a projects.org section
-=pmgr add= registers a project by creating its registry subdirectory of
-symlinks and nothing else — =docs/projmgr.md:110= says it never edits Org
-content — so a freshly added project has no heading in
-=<registry>/projects.org= until =set-dirs=, =cdproj -s=, or a ptui priority or
-description edit writes one. robla ran =pmgr add= in =~/src/inedit= and expected
-the index to change. Decide whether =add= should seed a stub section (=* NAME=,
-possibly with an empty =** Directories=) so the index lists every registered
-project, or whether the index should keep holding only the projects that have
-something to record. If the current behavior stands, say so where someone would
-look for it: the =add= spec in =docs/projmgr.md= and the index model in
-=docs/projects.md= should agree either way.
+** TODO [#A] t0050 "pmgr add" should seed a projects.org section
+=pmgr add= registers a project by creating its registry subdirectory
+of symlinks and nothing else.  =docs/projmgr.md:110= says it never
+edits Org content, which is problematic.  This results in a freshly
+added project having no heading in =<registry>/projects.org= until
+=set-dirs=, =cdproj -s=, or a ptui priority or description edit writes
+one. robla ran =pmgr add= in =~/src/inedit= and expected the index to
+change. Decide whether =add= should seed a stub section (=* NAME=,
+possibly with an empty =** Directories=) so the index lists every
+registered project, or whether the index should keep holding only the
+projects that have something to record. If the current behavior
+stands, say so where someone would look for it: the =add= spec in
+=docs/projmgr.md= and the index model in =docs/projects.md= should
+agree either way.
+*** TODO [#A] t0050.1 modify docs/projmgr.md to allow for editing projects.org
