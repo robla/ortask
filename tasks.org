@@ -752,7 +752,7 @@ keeps each body line exactly as typed; only Enter, while editing, adds a
 newline. Option 1 would have the editor reformat text the user did not ask it
 to touch, which the conservative-writes convention rules out. (=^J= is LF, the
 newline itself; =^M= is CR.)
-** TODO [#A] t0050 "pmgr add" should seed a projects.org section
+** DONE [#A] t0050 "pmgr add" should seed a projects.org section
 =pmgr add= registers a project by creating its registry subdirectory
 of symlinks and nothing else.  =docs/projmgr.md:110= says it never
 edits Org content, which is problematic.  This results in a freshly

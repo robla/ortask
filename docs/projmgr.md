@@ -106,8 +106,7 @@ shape, sort semantics, safety rules, and delivery order.
 
 ## `add`
 
-**Status: implemented, apart from the index section in step 7 — specified here
-under `t0050`, not yet built.**
+**Status: implemented (`t0050`).**
 
 `projmgr.py add` registers exactly one project by creating a registry
 subdirectory of symlinks, and gives that project a section in the registry
@@ -324,15 +323,22 @@ Task `t0026.2` reclaimed that name for a real data migration; it did not change
 
 ## `list`
 
-`projmgr.py list` lists all projects in the registry and the top-level tasks
-within each project. It shows each Org file as a resolved path, with `$HOME`
-collapsed to `~` when possible.
+`projmgr.py list` lists all projects in the registry, one line each: the
+project's name, how much open work it has, and where it lives. `--verbose`
+expands that into the top-level tasks within each project. It shows each Org
+file as a resolved path, with `$HOME` collapsed to `~` when possible.
+
+The summary is the default because a registry is a place to choose from. Every
+project's task rows at once is a screenful per project, which buries the choice
+the command exists to support; `--verbose` is there for when the tasks
+themselves are the point.
 
 ```sh
 projmgr.py                         # show help
 projmgr.py help                    # show help
 projmgr.py -i                      # open the interactive project browser
 projmgr.py list
+projmgr.py list --verbose                  # -v; the top-level tasks as well
 projmgr.py --registry ~/tmpsorta/proj2026 list
 projmgr.py list --all
 projmgr.py list --format json
@@ -341,7 +347,11 @@ projmgr.py list --format names
 
 Options:
 
-- `--all`: include top-level `DONE` tasks as well as open ones.
+- `-v`, `--verbose`: list each project's top-level tasks under its summary
+  line, which is what `list` printed before the summary became the default.
+- `--all`: include top-level `DONE` tasks as well as open ones. In the summary
+  form the count then says what it is out of — `1 open of 2` — since the number
+  of listed tasks and the number of open ones have stopped agreeing.
 - `--format plain|json|names`: `names` prints one bare project name per line and
   nothing else, skipping task-file parsing. It exists so shell completion can
   ask for the registry's contents instead of globbing it — the marker rule that
@@ -350,10 +360,27 @@ Options:
   "Shell completion" below.
 
 A project with no task file is listed with its project directory and
-`(no task file)` in place of task rows; a broken or ambiguous entry is listed
-with its warning. See `docs/projects.md` for why.
+`(no task file)` in place of a count or task rows; a broken or ambiguous entry
+is listed with its warning. See `docs/projects.md` for why.
+
+Summary columns are sized from the listing itself, so one long project name
+widens the table rather than pushing its own row out of line. A note standing
+in for a count is allowed to overflow instead: one broken project should not
+pad every other row out to the width of its complaint. The name column starts
+at the width the interactive navigator uses, so a project sits in about the
+same place on either surface.
 
 Example plain output:
+
+```text
+Registry: ~/tmpsorta/proj2026
+
+elweek          1 open          ~/tmpsorta/electorama-weekly/castabout.task.org
+ortask          26 open         ~/src/ortask/todo.org
+roblaconf       (no task file)  ~/confsrc/roblaconf
+```
+
+Example `--verbose` output:
 
 ```text
 Registry: ~/tmpsorta/proj2026

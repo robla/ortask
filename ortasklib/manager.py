@@ -1768,6 +1768,37 @@ def registry_directories_section(
     )
 
 
+def add_project_section(text: str, project: str) -> str | None:
+    """Return the index with a bare heading for ``project``, or None if named.
+
+    The heading is written alone, with no ``Directories`` child. A section that
+    exists with no entries still counts as defining the private stack, and the
+    private list wins outright over the project's own ``* Directories``
+    section, so seeding one would replace a stack the project already had. See
+    the ``add`` spec in ``docs/projmgr.md``.
+    """
+    malformed_line = _malformed_priority_heading_line(text, project)
+    if malformed_line is not None:
+        raise ValueError(
+            f"malformed priority cookie for project {project!r} "
+            f"at line {malformed_line}"
+        )
+    if orglib.parse(text).directories(project).project_span is not None:
+        return None
+
+    eol = _source_eol(text)
+    prefix = text
+    if prefix and not prefix.endswith(("\n", "\r")):
+        prefix += eol
+    revised = prefix + f"* {project}{eol}"
+
+    if orglib.parse(revised).directories(project).project_span is None:
+        raise RegistryIndexError(
+            f"cannot create a safe index section for {project!r}"
+        )
+    return revised
+
+
 def change_project_directories(
     text: str,
     project: str,

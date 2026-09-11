@@ -1102,7 +1102,7 @@ def test_summarize_projects_for_projmgr(tmp_path: Path, capsys) -> None:
     write(workspace / ".hidden" / "TODO.org", "* Tasks\n** TODO t0003 Hidden\n")
     write(workspace / "docs" / "TODO.org", "* Tasks\n** TODO t0004 Docs\n")
 
-    args = argparse.Namespace(registry=str(workspace), all=False, format="json")
+    args = _list_args(registry=str(workspace), format="json")
     assert projmgr.cmd_list(args) == 0
     projects = json.loads(capsys.readouterr().out)
 
@@ -1798,6 +1798,12 @@ def _add_args(path: Path | None, **kw) -> argparse.Namespace:
     return argparse.Namespace(**base)
 
 
+def _list_args(**kw) -> argparse.Namespace:
+    base = dict(registry=None, all=False, format="plain", verbose=False)
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
 def test_init_records_registry(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -2059,9 +2065,7 @@ def test_projadd_creates_symlink_subdir(tmp_path: Path, monkeypatch, capsys) -> 
     assert task_link.resolve() == (project / "TODO.org").resolve()
 
     # Discovery follows the symlinks: list shows the project and its task.
-    assert projmgr.cmd_list(
-        argparse.Namespace(registry=str(registry), all=False, format="json")
-    ) == 0
+    assert projmgr.cmd_list(_list_args(registry=str(registry), format="json")) == 0
     projects = json.loads(capsys.readouterr().out)
     assert projects[0]["project"] == "elweek"
     assert projects[0]["file"] == str((project / "TODO.org").resolve())
@@ -2217,6 +2221,92 @@ def test_manager_broken_and_ambiguous_entries_stay_visible(tmp_path: Path) -> No
     assert by_name["twins"].link is None
 
 
+def test_add_project_section_appends_only_a_bare_heading() -> None:
+    # The pure text step: one heading, and nothing when the name is already there.
+    index = "#+TITLE: Projects\n\n* [#C] other\n** Directories\n   - ~/elsewhere\n"
+
+    assert manager.add_project_section(index, "demo") == index + "* demo\n"
+    assert manager.add_project_section(index, "other") is None  # cookie and all
+    assert manager.add_project_section("* a", "b") == "* a\n* b\n"  # no final EOL
+
+
+def test_add_seeds_a_bare_index_section(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Registering a project should give it a heading someone can go and edit.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+    registry.mkdir()
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = manager.PROJECTS_INDEX_HEADER + "* [#C] other\n"
+    index.write_text(original, encoding="utf-8")
+
+    project = tmp_path / "src" / "demo"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+
+    assert projmgr.cmd_add(_add_args(project)) == 0
+    assert "projects.org: added section '* demo'" in capsys.readouterr().out
+
+    # The heading is bare: an empty Directories child would claim a stack.
+    assert index.read_text(encoding="utf-8") == original + "* demo\n"
+
+    # Registering again leaves the section, and anything added to it, alone.
+    index.write_text(original + "* [#A] demo\n** Directories\n   - ~/src/demo\n",
+                     encoding="utf-8")
+    kept = index.read_text(encoding="utf-8")
+    assert projmgr.cmd_add(_add_args(project, force=True)) == 0
+    assert "already names 'demo'" in capsys.readouterr().out
+    assert index.read_text(encoding="utf-8") == kept
+
+
+def test_add_leaves_the_index_alone_when_the_registry_is_unmigrated(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # add stays usable before pmgr migrate: it reports the skip and succeeds.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+
+    project = tmp_path / "src" / "demo"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+
+    assert projmgr.cmd_add(_add_args(project)) == 0
+    out = capsys.readouterr().out
+
+    assert "run pmgr migrate" in out
+    assert not (registry / manager.PROJECTS_INDEX_NAME).exists()
+    assert (registry / "demo" / "demo").is_symlink()      # still registered
+
+
+def test_add_does_not_claim_a_projects_directory_stack(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # The seeded heading must not become the private stack: the private list
+    # wins outright, so an empty section would demote the project's own list.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+    registry.mkdir()
+    (registry / manager.PROJECTS_INDEX_NAME).write_text(
+        manager.PROJECTS_INDEX_HEADER, encoding="utf-8"
+    )
+
+    project = tmp_path / "src" / "demo"
+    write(
+        project / "tasks.org",
+        "* Directories\n** file:.\n** file:./docs\n* Tasks\n** TODO t0001 Work\n",
+    )
+
+    assert projmgr.cmd_add(_add_args(project)) == 0
+    capsys.readouterr()
+
+    registered = manager.discover_projects(registry)[0]
+    assert [source.label for source in manager.directory_sources(registered)] == [
+        "project"
+    ]
+
+
 def test_projmgr_add_walks_up_to_the_project_root(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -2252,12 +2342,81 @@ def test_projmgr_list_shows_a_project_with_no_task_file(
     project.mkdir(parents=True)
     register(registry, "fresh", project)
 
-    assert projmgr.cmd_list(
-        argparse.Namespace(registry=None, all=False, format="plain")
-    ) == 0
+    assert projmgr.cmd_list(_list_args()) == 0
     out = capsys.readouterr().out
     assert "fresh" in out
     assert "(no task file)" in out
+
+
+def _list_registry(tmp_path: Path) -> Path:
+    """Three projects: open work, a broken entry, and one with no task file."""
+    registry = tmp_path / "projects"
+    alpha = tmp_path / "src" / "alpha"
+    write(alpha / "tasks.org", "* Tasks\n** TODO t0001 One\n** DONE t0002 Two\n")
+    register(registry, "alpha", alpha)
+    empty = tmp_path / "src" / "a-very-long-project-name"
+    write(empty / "tasks.org", "* Notes\nnothing parseable\n")
+    register(registry, "a-very-long-project-name", empty)
+    bare = tmp_path / "src" / "bare"
+    bare.mkdir(parents=True)
+    register(registry, "bare", bare)
+    return registry
+
+
+def test_projmgr_list_defaults_to_one_line_per_project(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # A registry is a place to choose from; a screenful per project buries that.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = _list_registry(tmp_path)
+
+    assert projmgr.cmd_list(_list_args(registry=str(registry))) == 0
+    out = capsys.readouterr().out
+    header, blank, *rows = out.splitlines()
+
+    assert header.startswith("Registry: ")
+    assert blank == ""
+    assert len(rows) == 3                      # one line per project, no task rows
+    assert "t0001" not in out
+    assert "(warning: no parseable tasks found)" in rows[0]
+    assert rows[1].split() == ["alpha", "1", "open", str(tmp_path / "src" / "alpha"
+                                                        / "tasks.org")]
+    assert "(no task file)" in rows[2]
+
+    # The long name widens the table rather than pushing its own row out of line.
+    width = max(len("a-very-long-project-name"), projmgr.PROJECT_NAME_WIDTH)
+    for row, name in zip(rows, ["a-very-long-project-name", "alpha", "bare"]):
+        assert row.startswith(f"{name:<{width}}  ")
+
+
+def test_projmgr_list_verbose_keeps_the_task_rows(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # The long form is the old default, unchanged.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = _list_registry(tmp_path)
+
+    assert projmgr.cmd_list(_list_args(registry=str(registry), verbose=True)) == 0
+    out = capsys.readouterr().out
+
+    assert "  [TODO] t0001 One" in out
+    assert "  (warning: no parseable tasks found)" in out
+    assert "  (no task file)" in out
+
+
+def test_projmgr_list_counts_open_work_apart_from_done(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # --all lists DONE tasks too, so the summary says what the count is out of.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = _list_registry(tmp_path)
+
+    assert projmgr.cmd_list(_list_args(registry=str(registry), all=True)) == 0
+    assert "1 open of 2" in capsys.readouterr().out
+
+    assert projmgr.cmd_list(_list_args(registry=str(registry))) == 0
+    out = capsys.readouterr().out
+    assert "1 open" in out and "of 2" not in out
 
 
 def test_projmgr_list_format_names_applies_the_marker_rule(
@@ -2281,9 +2440,7 @@ def test_projmgr_list_format_names_applies_the_marker_rule(
     notes.mkdir()
     (notes / "notes.md").write_text("notes\n", encoding="utf-8")
 
-    assert projmgr.cmd_list(
-        argparse.Namespace(registry=None, all=False, format="names")
-    ) == 0
+    assert projmgr.cmd_list(_list_args(format="names")) == 0
     captured = capsys.readouterr()
     assert captured.out.split() == ["elusync", "elweek"]
     assert captured.err == ""
@@ -5537,9 +5694,7 @@ def test_project_verbs_unrelated_to_private_stacks_work_before_migration(
     write(existing / "tasks.org", "* Tasks\n** TODO t0001 Existing\n")
     register(registry, "existing", existing)
 
-    assert projmgr.cmd_list(
-        argparse.Namespace(registry=str(registry), format="names", all=False)
-    ) == 0
+    assert projmgr.cmd_list(_list_args(registry=str(registry), format="names")) == 0
     assert capsys.readouterr().out.strip() == "existing"
 
     added = tmp_path / "added"

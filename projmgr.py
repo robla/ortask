@@ -1861,6 +1861,64 @@ def cmd_interactive(args: argparse.Namespace) -> int:
     return project_menu(workspace, display_path)
 
 
+def _list_note(record: dict) -> str:
+    """Why a project has no task rows, in the words the verbose form uses."""
+    warning = record.get("warning")
+    if warning is not None:
+        label = "invalid" if "duplicate task IDs" in warning else "warning"
+        return f"({label}: {warning})"
+    if record["file"] is None:
+        return "(no task file)"
+    return ""
+
+
+def _list_workload(record: dict) -> str:
+    """How much open work a project has, or why it has no task rows.
+
+    Counted from the record the verbose listing prints, so the number here and
+    the rows there can never disagree.
+    """
+    note = _list_note(record)
+    if note:
+        return note
+    open_tasks = sum(1 for task in record["tasks"] if task["state"] == "TODO")
+    listed = len(record["tasks"])
+    if listed == open_tasks:
+        return f"{open_tasks} open"
+    return f"{open_tasks} open of {listed}"      # --all lists DONE tasks too
+
+
+def _list_rows(records: list[dict]) -> list[str]:
+    """One line per project: name, how much is open, and where it lives.
+
+    Column widths come from the listing itself, so a long project name widens
+    the table rather than pushing its own row out of line. A note standing in
+    for a count — a warning, or no task file — may overflow instead, since one
+    broken project should not pad every other row out to the width of its
+    complaint. The name column starts at the navigator's width, so a project
+    sits in about the same place whichever surface you are reading.
+    """
+    cells = [
+        (record["project"], _list_workload(record), record["file"] or record["path"])
+        for record in records
+    ]
+    name_width = max(
+        [len(name) for name, _, _ in cells] + [PROJECT_NAME_WIDTH]
+    )
+    work_width = max(
+        [
+            len(workload)
+            for (_, workload, _), record in zip(cells, records)
+            if not _list_note(record)
+        ],
+        default=0,
+    )
+    return [
+        f"{name:<{name_width}}  {workload:<{work_width}}  {location}".rstrip()
+        for name, workload, location in cells
+    ]
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     workspace, display_path = manager.resolve_registry(args.registry)
 
@@ -1880,19 +1938,21 @@ def cmd_list(args: argparse.Namespace) -> int:
 
     if args.format == "json":
         print(json.dumps(projects_data, indent=2))
+    elif not args.verbose:
+        # One line per project. A registry is a place to choose from, and a
+        # screenful of task rows per project buries the choice.
+        print(f"Registry: {display_path}")
+        print()
+        for row in _list_rows(projects_data):
+            print(row)
     else:
         print(f"Registry: {display_path}")
         for p in projects_data:
             print()
             print(f"{p['project']}  {p['file'] or p['path']}")
-            if "warning" in p:
-                warning_msg = p["warning"]
-                if "duplicate task IDs" in warning_msg:
-                    print(f"  (invalid: {warning_msg})")
-                else:
-                    print(f"  (warning: {warning_msg})")
-            elif p["file"] is None:
-                print("  (no task file)")
+            note = _list_note(p)
+            if note:
+                print(f"  {note}")
             else:
                 for t in p["tasks"]:
                     print(f"  [{t['state']}] {t['id']} {t['title']}")
@@ -2109,6 +2169,39 @@ def cmd_info(args: argparse.Namespace) -> int:
     return 0
 
 
+@dataclass(frozen=True)
+class _IndexSectionPlan:
+    """What `add` will do to the registry index, decided before anything writes."""
+
+    path: Path
+    revised: str | None          # text to write, or None to leave the file alone
+    note: str                    # the summary line, once it has happened
+    dry_note: str                # the same line, before it has
+
+
+def _plan_index_section(registry: Path, name: str) -> _IndexSectionPlan:
+    """Seed one bare heading for `name`, or say why the index is left alone.
+
+    An unmigrated or unreadable index is not an error here: the symlinks are
+    what register a project, so `add` reports the skip and still succeeds.
+    """
+    index = manager.PROJECTS_INDEX_NAME
+    path = registry / index
+    try:
+        path, text = manager.require_registry_index(registry)
+        revised = manager.add_project_section(text, name)
+    except (manager.RegistryIndexError, ValueError, OSError) as exc:
+        return _IndexSectionPlan(path, None, f"({index} untouched: {exc})", "")
+    if revised is None:
+        return _IndexSectionPlan(path, None, f"({index} already names '{name}')", "")
+    return _IndexSectionPlan(
+        path,
+        revised,
+        f"{index}: added section '* {name}'",
+        f"{index}: would add section '* {name}'",
+    )
+
+
 def cmd_add(args: argparse.Namespace) -> int:
     """Register one project. With no path, register the project you are in."""
     registry, registry_display = manager.resolve_registry(args.registry)
@@ -2175,17 +2268,32 @@ def cmd_add(args: argparse.Namespace) -> int:
     project_link = subdir / project_dir.name
     org_link = (subdir / org_file.name) if org_file is not None else None
 
+    index_plan = _plan_index_section(registry, name)
+
     if args.dry_run:
         print(f"[dry-run] would create {subdir}/")
         print(f"[dry-run]   {project_dir.name} -> {project_dir}")
         if org_link is not None:
             print(f"[dry-run]   {org_file.name} -> {org_file}")
+        print(f"[dry-run]   {index_plan.dry_note or index_plan.note}")
         return 0
 
     subdir.mkdir(parents=True, exist_ok=True)
     _replace_symlink(project_link, project_dir)
     if org_link is not None:
         _replace_symlink(org_link, org_file)
+
+    # The links are the registration; the index heading is a convenience on
+    # top of them, so a failure here is a warning rather than a failed add.
+    index_note = index_plan.note
+    index_seeded = index_plan.revised is not None
+    if index_seeded:
+        try:
+            core.atomic_write(index_plan.path, index_plan.revised)
+        except OSError as exc:
+            print(f"warning: cannot write {index_plan.path}: {exc}", file=sys.stderr)
+            index_note = f"({manager.PROJECTS_INDEX_NAME} untouched: write failed)"
+            index_seeded = False
 
     eventlog.record(
         eventlog.make_event(
@@ -2195,6 +2303,7 @@ def cmd_add(args: argparse.Namespace) -> int:
             detail={
                 "path": manager.friendly_path(project_dir),
                 "task_file": manager.friendly_path(org_file) if org_file else None,
+                "index_section": index_seeded,
             },
         ),
         registry=registry,
@@ -2207,6 +2316,7 @@ def cmd_add(args: argparse.Namespace) -> int:
         print(f"  {org_file.name} -> {org_file}")
     else:
         print("  (no task-file link — none discovered)")
+    print(f"  {index_note}")
     return 0
 
 
@@ -3055,6 +3165,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="show what would be written and removed")
 
     p_list = sub.add_parser("list", help="list projects and top-level tasks")
+    p_list.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="list each project's top-level tasks, not just a summary line",
+    )
     p_list.add_argument(
         "--all",
         action="store_true",

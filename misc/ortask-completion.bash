@@ -159,7 +159,7 @@ _projmgr_complete()
     local info_opts="--name --path --file --format --registry --help"
     local repair_opts="--registry --dry-run --force --help"
     local init_opts="--registry --force --dry-run --help"
-    local list_opts="--all --format --help"
+    local list_opts="--verbose --all --format --help"
     local log_opts="--since --until --project --limit --day-start --format --registry --help"
     local migrate_opts="--registry --dry-run --help"
     local cdproj_opts="--out --registry --help"
