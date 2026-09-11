@@ -106,9 +106,15 @@ shape, sort semantics, safety rules, and delivery order.
 
 ## `add`
 
+**Status: implemented, apart from the index section in step 7 — specified here
+under `t0050`, not yet built.**
+
 `projmgr.py add` registers exactly one project by creating a registry
-subdirectory of symlinks. It never edits Org content. `docs/projects.md` is the
-model.
+subdirectory of symlinks, and gives that project a section in the registry
+index. It never edits Org task content, which belongs to `ortask.py`;
+`projects.org` is project-manager configuration, and the only section `add`
+touches is the one named after the project it is registering.
+`docs/projects.md` is the model.
 
 ```sh
 projmgr.py add                                   # the project you are in
@@ -133,11 +139,31 @@ Behavior:
    directory basename.
 5. Create a project symlink named after the real project directory.
 6. If a task file was found, create a task-file symlink named after that file.
+7. Seed the project's index section: when `<registry>/projects.org` exists and
+   holds no section for `name`, append one `* NAME` heading to it. The write is
+   atomic and adds nothing else to the file.
 
 An existing `<registry>/<name>/` is an error unless `--force` is given. `--force`
 repoints the known symlinks but leaves unrelated contents alone. Registration
 never fails for want of a task file: the project symlink alone is what makes a
 registry entry a project. It also never guesses among ambiguous Org files.
+
+The seeded heading carries nothing else — in particular, no `** Directories`
+child. A section that exists with no entries still counts as defining the
+private stack, and the private list wins outright over the project's own
+`* Directories` section, so seeding an empty one would cut a newly registered
+project's `cdproj` stack down to its root and demote whatever its task file
+already listed. A bare heading leaves directory resolution exactly as it was
+before registration, which is the intent: `add` records that a project exists,
+it does not decide that project's directory stack.
+
+A section that already exists is left as it stands — priority cookie,
+description, and recorded directories included — so `--force` repoints symlinks
+without disturbing settings. A registry with no index at all is not an error:
+the symlinks are still written, the index step is skipped, and `add` reports
+that it was, which keeps `add` usable before `pmgr migrate` as
+`docs/projects.md` requires. `--dry-run` reports the heading it would add
+alongside the links.
 
 ## `cdproj`
 
@@ -640,7 +666,8 @@ friction is answered by `add` instead.
 `list`, `log`, `info`, and `repair --dry-run` are read-only. `repair` without
 `--dry-run` may write, but only after confirming each fix, and it refuses to run
 unattended without `--force`. `add` creates directories and symlinks only inside
-the registry; `rm` removes only a registry entry, and only its symlinks unless
+the registry, and appends at most one heading to its index; `rm` removes only a
+registry entry, and only its symlinks unless
 `--force` is given. `init` writes only `ortask.ini`. `migrate` atomically writes
 `projects.org` before removing validated legacy files. `set-dirs` edits only one
 bounded section in that index. `cdproj` writes the file named by `--out`, and can

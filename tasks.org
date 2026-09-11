@@ -766,4 +766,9 @@ projects that have something to record. If the current behavior
 stands, say so where someone would look for it: the =add= spec in
 =docs/projmgr.md= and the index model in =docs/projects.md= should
 agree either way.
-*** TODO [#A] t0050.1 modify docs/projmgr.md to allow for editing projects.org
+*** DONE [#A] t0050.1 modify docs/projmgr.md to allow for editing projects.org
+The =add= spec now seeds one =* NAME= heading in =<registry>/projects.org=,
+marked as specified but not yet built. The heading is deliberately bare: an
+empty =** Directories= child counts as defining the private stack, which wins
+outright over the project's own =* Directories= section, so seeding one would
+cut a newly registered project's =cdproj= stack down to its root.
