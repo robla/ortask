@@ -821,25 +821,29 @@ decline are byte-preserving, cancellation prevents later actions, each accepted
 action is independently atomic, =--force= is the sole prompt bypass, and a
 newly added repair kind cannot execute without supplying prompt and suggestion
 metadata. Coordinate the no-TTY cases with =t0043=.
-** TODO [#A] t0053 Confirm before "pmgr add" registers anything
+** DONE [#A] t0053 Confirm before "pmgr add" registers anything
 =pmgr add= creates a registry entry, two symlinks, and an index section before
 showing the user any of it, and undoing that costs =pmgr rm= plus a hand edit
 of =projects.org=. Show what the command is about to do and ask first. robla
 registered a stray =tag1= project this way: =household= had no =.git= yet, so
 the implicit root walk fell through to =$PWD= and took its basename.
-*** TODO [#A] t0053.1 Show the plan and ask before writing
+*** DONE [#A] t0053.1 Show the plan and ask before writing
 Print what =--dry-run= prints, then ask =Register this project? [y]es, [N]o=,
 defaulting to No. One description should feed both the preview and the write,
 so what is shown and what happens cannot drift apart.
-*** TODO [#A] t0053.2 Say how the project root was chosen
+*** DONE [#A] t0053.2 Say how the project root was chosen
 =manager.project_root_for= returns =$PWD= when nothing at or above it holds a
 VCS directory or a task file, and =add= prints its =using project root= line
 only when the root differs from =$PWD= — so the fallback, the case most likely
 to be wrong, is the silent one. Name the reason the directory was chosen before
 asking.
-*** TODO [#B] t0053.3 Decide the non-interactive contract
+*** DONE [#B] t0053.3 Decide the non-interactive contract
 Add a flag that answers the prompt for scripts; =--force= already means
 "repoint an existing entry" and should not be overloaded. Decide what a run
 with no TTY and no such flag does: refuse the way =pmgr repair= does, or
 register as it does today. Refusing is the consistent answer but changes what
 any existing script relying on =add= sees.
+
+Resolved: =-y=/=--yes= answers the prompt, and a run with no terminal and no
+=--yes= refuses with exit 1. Nothing in =misc/= invokes =add=, so no shipped
+script depended on the old behavior.

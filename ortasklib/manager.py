@@ -647,7 +647,36 @@ def apply_registry_migration(plan: RegistryMigrationPlan) -> None:
             ) from exc
 
 
-def project_root_for(start: Path) -> Path:
+@dataclass(frozen=True)
+class ProjectRootChoice:
+    """Which directory the implicit walk picked, and what made it the answer.
+
+    ``reason`` is ``"vcs"``, ``"task-file"``, or ``"fallback"``. The fallback
+    is the one worth saying out loud: nothing above the starting directory
+    looked like a project at all, so the walk settled for where it began.
+    """
+
+    path: Path
+    reason: str
+
+    @property
+    def found_a_root(self) -> bool:
+        return self.reason != "fallback"
+
+    def describe(self) -> str:
+        """One line explaining the choice, for a caller about to act on it."""
+        where = friendly_path(self.path)
+        if self.reason == "vcs":
+            return f"{where} holds a version-control directory"
+        if self.reason == "task-file":
+            return f"{where} holds a task file"
+        return (
+            f"nothing at or above {where} holds a version-control directory "
+            "or a task file, so this is the directory you are standing in"
+        )
+
+
+def resolve_project_root(start: Path) -> ProjectRootChoice:
     """Walk upward from ``start`` for the directory that looks like a project root.
 
     The nearest ancestor holding a task file or a VCS directory wins, so
@@ -659,16 +688,21 @@ def project_root_for(start: Path) -> Path:
     home = Path.home().resolve()
     for directory in [start, *start.parents]:
         if any((directory / name).exists() for name in VCS_DIR_NAMES):
-            return directory
+            return ProjectRootChoice(directory, "vcs")
         try:
             if core.preferred_task_file_in(directory) is not None:
-                return directory
+                return ProjectRootChoice(directory, "task-file")
         except core.OrgFileDiscoveryError:
             # Ambiguity here only means "not obviously a root"; keep walking.
             pass
         if directory == home:
             break
-    return start
+    return ProjectRootChoice(start, "fallback")
+
+
+def project_root_for(start: Path) -> Path:
+    """The project root alone, for callers with no use for how it was chosen."""
+    return resolve_project_root(start).path
 
 
 # ---------------------------------------------------------------------------

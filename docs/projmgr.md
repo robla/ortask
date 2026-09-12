@@ -108,7 +108,7 @@ shape, sort semantics, safety rules, and delivery order.
 
 ## `add`
 
-**Status: implemented (`t0050`, `t0051`).**
+**Status: implemented (`t0050`, `t0051`, `t0053`).**
 
 `projmgr.py add` registers exactly one project: a registry subdirectory of
 symlinks, and a section in the registry index for the project to keep its
@@ -118,6 +118,7 @@ the section named after the project being registered. Org task content is
 
 ```sh
 projmgr.py add                                   # the project you are in
+projmgr.py add --yes                             # -y; register without asking
 projmgr.py add ~/tmpsorta/electorama-weekly --name elweek
 projmgr.py --registry ~/tmpsorta/proj2026 add ~/src/ortask
 projmgr.py add ~/src/ortask --file todo.org
@@ -128,9 +129,9 @@ Behavior:
 
 1. Resolve the registry (`--registry` > `[projects] registry` > `~/Projects`).
 2. Resolve the project directory. With no argument, walk upward from the current
-   directory for the nearest ancestor holding a task file or a VCS directory, and
-   print the choice — so running it from `~/src/ortask/docs` registers
-   `~/src/ortask`. An explicit path is taken literally and walks nothing.
+   directory for the nearest ancestor holding a task file or a VCS directory —
+   so running it from `~/src/ortask/docs` registers `~/src/ortask`. An explicit
+   path is taken literally and walks nothing.
 3. Resolve the task file from `--file` or by the shared local task-file
    discovery convention in `docs/format.md`. A missing or ambiguous task file
    does not block registration; ambiguity produces a warning and `--file` can
@@ -139,7 +140,8 @@ Behavior:
    directory basename.
 5. Create a project symlink named after the real project directory.
 6. If a task file was found, create a task-file symlink named after that file.
-7. Write the project's index section, when `<registry>/projects.org` exists
+7. Show the whole plan and ask, unless `--yes` was given.
+8. Write the project's index section, when `<registry>/projects.org` exists
    and holds no section for `name`: a `* NAME` heading, a `:PROPERTIES:` drawer
    carrying an empty `DESCRIPTION` and a `TASK_FILE` mirror of the task file
    just linked, and a `** Directories` stack. The write is atomic and appends
@@ -149,6 +151,33 @@ An existing `<registry>/<name>/` is an error unless `--force` is given. `--force
 repoints the known symlinks but leaves unrelated contents alone. Registration
 never fails for want of a task file: the project symlink alone is what makes a
 registry entry a project. It also never guesses among ambiguous Org files.
+
+### Asking first
+
+`add` creates a registry entry, two symlinks, and an index section. Undoing that
+costs a `pmgr rm` and a hand edit of `projects.org`, so the command shows the
+whole plan and asks `register this project? [y]es, [N]o`, defaulting to No.
+Declining writes nothing and exits 1.
+
+The confirmation, `--dry-run`, and the summary printed after a successful
+register all render one description of the plan, so what you are asked about is
+what happens.
+
+**`-y`, `--yes`** answers the question in advance, for scripts and for anyone
+who does not want to be asked. With no terminal to ask at and no `--yes`, `add`
+refuses and exits 1 rather than registering unattended — the same shape as
+`repair`'s rule, and for the same reason.
+
+The plan names the directory being registered **and why that directory**: it
+holds a version-control directory, it holds a task file, or nothing at or above
+it holds either and `add` settled for where you are standing. That last case is
+the one that misfires — a project whose `git init` has not been run yet leaves
+its parent looking like nothing in particular, and the subdirectory you happen
+to be in gets registered under its own basename. It used to be the silent case,
+because the line `add` printed about its choice only appeared when the root
+differed from `$PWD`.
+
+### What it writes
 
 The section looks like this, and is ordinary Org that a person is expected to
 edit:
@@ -180,7 +209,7 @@ without disturbing settings. A registry with no index at all is not an error:
 the symlinks are still written, the index step is skipped, and `add` reports
 that it was, which keeps `add` usable before `pmgr migrate` as
 `docs/projects.md` requires. `--dry-run` reports the section it would add
-alongside the links. `pmgr repair` writes the same section for projects
+alongside the links, and never prompts. `pmgr repair` writes the same section for projects
 registered before `add` did.
 
 ## `cdproj`

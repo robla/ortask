@@ -1801,8 +1801,10 @@ def test_cli_init_only_replaces_empty_dedicated_files(tmp_path: Path) -> None:
 
 
 def _add_args(path: Path | None, **kw) -> argparse.Namespace:
+    # yes=True by default: most tests are about what registering does, not
+    # about the confirmation, which has its own tests.
     base = dict(path=None if path is None else str(path), name=None, file=None,
-                registry=None, force=False, dry_run=False)
+                registry=None, force=False, yes=True, dry_run=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -2088,6 +2090,132 @@ def test_projadd_creates_symlink_subdir(tmp_path: Path, monkeypatch, capsys) -> 
     assert projmgr.cmd_add(_add_args(project, force=True)) == 0
 
 
+def test_resolve_project_root_says_what_made_a_directory_the_root(
+    tmp_path: Path
+) -> None:
+    # The fallback is the answer worth explaining: nothing qualified at all.
+    vcs = tmp_path / "src" / "repo"
+    (vcs / ".git").mkdir(parents=True)
+    (vcs / "docs").mkdir()
+    tasked = tmp_path / "src" / "tasked"
+    write(tasked / "tasks.org", "* Tasks\n** TODO t0001 W\n")
+    loose = tmp_path / "loose"
+    loose.mkdir()
+
+    assert manager.resolve_project_root(vcs / "docs") == manager.ProjectRootChoice(
+        vcs.resolve(), "vcs"
+    )
+    assert manager.resolve_project_root(tasked).reason == "task-file"
+
+    fallback = manager.resolve_project_root(loose)
+    assert fallback == manager.ProjectRootChoice(loose.resolve(), "fallback")
+    assert fallback.found_a_root is False
+    assert "the directory you are standing in" in fallback.describe()
+
+
+def test_add_asks_before_registering_anything(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Declining must leave the registry exactly as it was.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+    registry.mkdir()
+    index = registry / manager.PROJECTS_INDEX_NAME
+    index.write_text(manager.PROJECTS_INDEX_HEADER, encoding="utf-8")
+    project = tmp_path / "src" / "demo"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+
+    asked: list[str] = []
+    monkeypatch.setattr(
+        projmgr.menu, "prompt_text", lambda label: asked.append(label) or "n"
+    )
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+
+    assert projmgr.cmd_add(_add_args(project, yes=False)) == 1
+    out = capsys.readouterr().out
+
+    assert asked == ["register this project? [y]es, [N]o"]
+    assert "nothing registered" in out
+    assert not (registry / "demo").exists()
+    assert index.read_text(encoding="utf-8") == manager.PROJECTS_INDEX_HEADER
+
+
+def test_add_asks_about_exactly_what_it_would_do(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # The confirmation, --dry-run, and the closing summary render one plan.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+    registry.mkdir()
+    (registry / manager.PROJECTS_INDEX_NAME).write_text(
+        manager.PROJECTS_INDEX_HEADER, encoding="utf-8"
+    )
+    project = tmp_path / "src" / "demo"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+
+    assert projmgr.cmd_add(_add_args(project, yes=False, dry_run=True)) == 0
+    previewed = [
+        line[len("[dry-run] "):]
+        for line in capsys.readouterr().out.splitlines()
+    ]
+    assert previewed[0].startswith("entry ")
+    assert any("projects.org: would add section '* demo'" in l for l in previewed)
+
+    monkeypatch.setattr(projmgr.menu, "prompt_text", lambda _label: "y")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    assert projmgr.cmd_add(_add_args(project, yes=False)) == 0
+
+    out = capsys.readouterr().out.splitlines()
+    added = next(i for i, line in enumerate(out) if line.startswith("added project"))
+    asked_about = [line[2:] for line in out[:added]][1:]   # after the "Register" header
+    reported = out[added + 1:]
+
+    # Asked about exactly the dry run, and reported the same minus the entry line.
+    assert asked_about == previewed
+    assert reported == [
+        line.replace("would add", "added") for line in previewed[1:]
+    ]
+    assert (registry / "demo" / "demo").is_symlink()
+
+
+def test_add_names_a_project_root_it_only_fell_back_to(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # The tag1 case: no VCS directory or task file anywhere above, so add took
+    # the directory it was standing in and used to say nothing about it.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+    stray = tmp_path / "household" / "tag1"
+    stray.mkdir(parents=True)
+    monkeypatch.chdir(stray)
+
+    assert projmgr.cmd_add(_add_args(None, dry_run=True)) == 0
+    out = capsys.readouterr().out
+
+    assert "project root: nothing at or above" in out
+    assert "the directory you are standing in" in out
+
+
+def test_add_refuses_to_register_unattended_without_yes(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # No terminal to ask at, and no standing answer: register nothing.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
+    project = tmp_path / "src" / "demo"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+
+    assert projmgr.cmd_add(_add_args(project, yes=False)) == 1
+    assert "use --yes or --dry-run" in capsys.readouterr().err
+    assert not (registry / "demo").exists()
+
+
 def test_projadd_links_project_only_when_no_task_file(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -2360,7 +2488,7 @@ def test_projmgr_add_walks_up_to_the_project_root(
 
     assert projmgr.cmd_add(_add_args(None)) == 0
     out = capsys.readouterr().out
-    assert "using project root" in out
+    assert "project root: " in out and "holds a task file" in out
     assert (registry / "walker" / "walker").resolve() == project.resolve()
 
     # An explicit path is taken literally: no walking, so the subdirectory wins.

@@ -2212,16 +2212,41 @@ def _plan_index_section(
     )
 
 
+def _add_plan_lines(
+    subdir: Path,
+    project_dir: Path,
+    org_file: Path | None,
+    index_note: str,
+    root_choice: manager.ProjectRootChoice | None,
+) -> list[str]:
+    """Everything `add` is about to do, in one description.
+
+    The confirmation, `--dry-run`, and the closing summary all render this, so
+    what a person is asked about is what the command performs.
+    """
+    lines = [f"entry {subdir}/", f"  {project_dir.name} -> {project_dir}"]
+    if org_file is not None:
+        lines.append(f"  {org_file.name} -> {org_file}")
+    else:
+        lines.append("  (no task-file link — none discovered)")
+    lines.append(f"  {index_note}")
+    if root_choice is not None:
+        # Only the implicit form has a choice to explain, and the fallback is
+        # the half that used to pass in silence.
+        lines.append(f"  project root: {root_choice.describe()}")
+    return lines
+
+
 def cmd_add(args: argparse.Namespace) -> int:
     """Register one project. With no path, register the project you are in."""
     registry, registry_display = manager.resolve_registry(args.registry)
 
+    root_choice: manager.ProjectRootChoice | None = None
     if args.path is None:
         # Implicit: find the project root, so running this from a subdirectory
         # registers the project rather than the subdirectory.
-        project_dir = manager.project_root_for(Path.cwd())
-        if project_dir != Path.cwd().resolve():
-            print(f"using project root {manager.friendly_path(project_dir)}")
+        root_choice = manager.resolve_project_root(Path.cwd())
+        project_dir = root_choice.path
     else:
         # Explicit: take the path literally and walk nothing.
         project_dir = Path(args.path).expanduser().resolve()
@@ -2279,14 +2304,37 @@ def cmd_add(args: argparse.Namespace) -> int:
     org_link = (subdir / org_file.name) if org_file is not None else None
 
     index_plan = _plan_index_section(registry, name, project_dir, org_file)
+    plan = _add_plan_lines(
+        subdir,
+        project_dir,
+        org_file,
+        index_plan.dry_note or index_plan.note,
+        root_choice,
+    )
 
     if args.dry_run:
-        print(f"[dry-run] would create {subdir}/")
-        print(f"[dry-run]   {project_dir.name} -> {project_dir}")
-        if org_link is not None:
-            print(f"[dry-run]   {org_file.name} -> {org_file}")
-        print(f"[dry-run]   {index_plan.dry_note or index_plan.note}")
+        for line in plan:
+            print(f"[dry-run] {line}")
         return 0
+
+    if not args.yes:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            print(
+                "add: registering needs confirmation; use --yes or --dry-run",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"Register '{name}' under {registry_display}:")
+        for line in plan:
+            print(f"  {line}")
+        try:
+            answer = menu.prompt_text("register this project? [y]es, [N]o").lower()
+        except menu.ContextCancelled:
+            print("add: cancelled")
+            return 1
+        if answer not in {"y", "yes"}:
+            print("add: nothing registered")
+            return 1
 
     subdir.mkdir(parents=True, exist_ok=True)
     _replace_symlink(project_link, project_dir)
@@ -2321,12 +2369,12 @@ def cmd_add(args: argparse.Namespace) -> int:
     )
 
     print(f"added project '{name}' under {registry_display}")
-    print(f"  {project_dir.name} -> {project_dir}")
-    if org_link is not None:
-        print(f"  {org_file.name} -> {org_file}")
-    else:
-        print("  (no task-file link — none discovered)")
-    print(f"  {index_note}")
+    # The same description, now reporting what happened: the index note is the
+    # only line that can differ, and only when the write it promised failed.
+    for line in _add_plan_lines(
+        subdir, project_dir, org_file, index_note, root_choice
+    )[1:]:
+        print(line)
     return 0
 
 
@@ -3243,6 +3291,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="registry directory to add into")
     p_add.add_argument("--force", action="store_true",
                        help="repoint links in an existing project subdirectory")
+    p_add.add_argument("-y", "--yes", action="store_true",
+                       help="register without asking; needed when there is no terminal")
     p_add.add_argument("--dry-run", action="store_true",
                        help="show what would be created without changing anything")
 

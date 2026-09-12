@@ -294,6 +294,7 @@ def test_project_write_and_switch_commands_emit_expected_events(
         file=None,
         registry=str(registry),
         force=False,
+        yes=True,
         dry_run=False,
     )
     assert projmgr.cmd_add(add_args) == 0

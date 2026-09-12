@@ -154,7 +154,7 @@ _projmgr_complete()
     # projadd remains a deprecated alias.
     local subcommands="add cdproj help info init list log migrate projadd repair rm set-dirs"
     local global_opts="-i --interactive --registry --todo-only --help"
-    local add_opts="--name --file --registry --force --dry-run --help"
+    local add_opts="--name --file --registry --force --yes --dry-run --help"
     local info_opts="--name --path --file --format --registry --help"
     local repair_opts="--registry --dry-run --force --help"
     local init_opts="--registry --force --dry-run --help"
