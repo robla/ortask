@@ -477,10 +477,10 @@ contract.
 
 ## `repair`
 
-**Status: implemented (`t0032`).** `doctor` is preserved as a deprecated alias
-for `repair --dry-run`. One fix is implemented — writing an index section for a
-registered project that has none (`t0051.2`) — and further fixes are added as
-safe repairs are developed.
+**Status: partially implemented (`t0032`, `t0051.2`).** `doctor` is preserved as
+a deprecated alias for `repair --dry-run`. Writing a missing project-index
+section is the first automated fix. Actionable recommendations and precise
+non-TTY handling are tracked by `t0043` and `t0052`.
 
 `projmgr.py repair` diagnoses the registry — broken symlinks, task-file
 discoverability, index consistency — and repairs what it safely can, asking
@@ -502,14 +502,38 @@ projmgr.py --registry ~/tmpsorta/proj2026 repair
   IDs, a missing or malformed registry index, or a registered project the index
   has no section for.
 
-Notes alone never affect the exit status.
+Notes alone never affect the exit status. Every problem must be followed by a
+concrete suggestion. The suggestion may describe an automated repair that this
+invocation can offer, name another command such as `pmgr migrate`, or identify
+a specific path and manual action. Reporting a problem without a useful next
+step is a command defect, not an acceptable fallback.
+
+### Recommendations and repair plans
+
+Diagnosis must produce a complete in-memory repair plan before any mutation.
+Each finding records its problem text, recommended next step, and optional
+automated action. Rendering and execution consume that same plan, so the
+command cannot promise one change and perform another.
+
+For example, a missing `projects.org` section should say that `pmgr repair`
+can add the section and show its proposed directories. An unmigrated registry
+should recommend `pmgr migrate`. A broken link or ambiguous task file that has
+no automated repair should still recommend a concrete command or filesystem
+change; it must not imply that `--force` can solve it.
+
+`--dry-run` prints the same findings, suggestions, and proposed automated
+actions as the bare command, but never prompts or writes. After an interactive
+decline or a failed repair, the unresolved finding and its recommendation must
+remain visible in the final output.
 
 ### Asking first
 
 A verb named `repair` should repair — it just must not do it behind your back.
-So the bare form reports everything, then prompts before each fix it is prepared
-to make, and applies only what was confirmed. This mirrors the subtraction
-prompt `set-dirs` already shows.
+The bare form therefore reports the plan, then prompts immediately before each
+automated action, defaulting to No, and applies only actions individually
+confirmed. Finding a problem is never itself permission to write. Canceling
+stops the remaining plan without undoing already confirmed, atomic repairs.
+This mirrors the subtraction prompt `set-dirs` already shows.
 
 **`--force`** skips the prompts and applies every available fix. `--force` is
 the suite's existing word for "skip the safety" (`add --force` repoints links in
@@ -535,13 +559,13 @@ refuses and exits 1 rather than hanging on a prompt nobody can answer or
 silently deciding to write. A non-interactive caller must then say which it
 wants: `--dry-run` or `--force`.
 
-The refusal is conditional on there being something to confirm, and that
-condition is the whole point of it. A run with no applicable fix has nothing to
-prompt about, so it reports and exits on the normal rule — never 1. Today no
-automated fix exists in either tool, so `repair` should never refuse; when the
-first one lands, the refusal starts applying to exactly the runs that could use
-it. Reporting is not an interactive act, and a command that only reports must
-stay usable from a script.
+The refusal is conditional on there being an automated action to confirm, and
+that condition is the whole point of it. A run whose problems have only manual
+recommendations has nothing to prompt about, so it reports and exits on the
+normal rule — never 1. Today `pmgr repair` can add missing index sections; other
+findings are diagnostic only. Reporting is not an interactive act, and a
+command that only reports must stay usable from a script. Correcting the
+current blanket non-TTY guard is tracked by `t0043`.
 
 For the same reason `--force` says so when it had nothing to apply, rather than
 exiting silently on a non-zero code.
@@ -732,4 +756,3 @@ project's section in an already-migrated index when asked to edit it; it never
 writes Org task content. `docs/projects.md` states the general rule these
 follow: the registry, `ortask.ini`, and files named by an explicit `--out` are
 the only things the project layer writes.
-

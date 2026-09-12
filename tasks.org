@@ -643,22 +643,17 @@ in a second set of parentheses. A dangling entry renders as
 Only the numbered fallback is affected; the highlight-bar rows call the two
 halves separately. Decide which half owns the warning — the location reads
 better — and have the other yield when =project.warning= is set.
-** TODO [#A] t0043 repair refuses to run when it has nothing to fix
-=t0032.3= built the confirmation path, but the refusal is unconditional: with
-problems present and no TTY, both tools print "interactive confirmation requires
-a TTY; use --dry-run or --force" and exit 1 (=ortask.py:463=,
-=projmgr.py:2437=), even though no automated fix exists in either tool yet. So
-=ort repair= in a script or CI is now a hard error where it previously reported
-and exited 0, and the guard fires on the one kind of run it was never meant to
-cover — reporting is not an interactive act. Gate it on there being an
-applicable fix; with the fix registry empty, that means never. Two consequences
-worth fixing in the same pass: exit 1 currently means both "could not read the
-subject" and "would not act without asking", which a caller cannot tell apart
-(see the exit table in =docs/projmgr.md=); and =repair --force= exits 2 in
-silence having applied nothing, where it should say there was nothing to apply.
-The spec was ambiguous here and has been corrected — see "Asking first" in
-=docs/projmgr.md=. Keep the =t0032.3= non-TTY tests, and add one asserting a
-non-interactive report still succeeds.
+** TODO [#A] t0043 Require a TTY only when repair has an applicable fix
+=t0032.3= keyed the no-TTY refusal to the presence of any problem rather than an
+automated action. =pmgr repair= can now add missing index sections, but its
+other findings remain diagnostic; =ort repair= still has no automated fix. A
+broken-link-only registry or an Org problem in CI should therefore report a
+recommendation and exit 2, not refuse with exit 1. Gate the refusal on the
+in-memory repair plan introduced by =t0052=: no TTY plus a pending automated
+action requires =--dry-run= or =--force=, while findings with manual next steps
+need neither. Make =--force= say when no action was available instead of
+silently implying a repair. Preserve the =t0032.3= safety tests and add
+non-interactive cases for fixable and manual-only findings in both tools.
 ** TODO [#B] t0044 pmgr info states unknowns as facts, and its JSON contradicts its text
 Two ways the same slip shows up. A bare =except Exception: pass= around
 =manager.directory_candidates= (=projmgr.py:1922=) turns an unreadable index
@@ -792,3 +787,29 @@ without re-registering each one.
 describe the index as something pmgr maintains, not something it edges around.
 Keep the facts that actually govern behavior — the index wins over a project's
 own list — and drop the defensive framing.
+** TODO [#A] t0052 Make every pmgr repair problem actionable
+Every =problem:= in =pmgr repair= output must have a concrete =suggestion:=,
+whether pmgr can perform the repair or the user must act elsewhere. Diagnosis
+must finish before mutation, and the bare command must ask immediately before
+each automated action. =--dry-run= shows the same plan without prompting or
+writing; only explicit =--force= bypasses confirmation. See the =repair=
+contract in =docs/projmgr.md=.
+*** TODO [#A] t0052.1 Represent findings and repair actions together
+Replace free-form problem strings with a small manager-layer finding model that
+carries the message, recommendation, stable kind, and optional repair-action
+data. Keep execution callbacks and terminal prompting in =projmgr.py=. Build
+one complete ordered plan so reporting, prompting, and post-repair diagnosis do
+not rediscover different sets of problems.
+*** TODO [#A] t0052.2 Print a recommendation for every problem
+Render one =suggestion:= directly after each =problem:= in normal and
+=--dry-run= output. Suggestions must name an offered repair, a concrete command,
+or a path-specific manual next step; "cannot repair" alone is insufficient.
+After decline, cancellation, failure, or =--force= with no applicable action,
+leave the unresolved recommendation visible and summarize what remains.
+*** TODO [#A] t0052.3 Execute only displayed and authorized repair actions
+Drive mutation from the plan: show each proposed change, default its prompt to
+No, and write only after an affirmative answer. Prove that =--dry-run= and
+decline are byte-preserving, cancellation prevents later actions, each accepted
+action is independently atomic, =--force= is the sole prompt bypass, and a
+newly added repair kind cannot execute without supplying prompt and suggestion
+metadata. Coordinate the no-TTY cases with =t0043=.

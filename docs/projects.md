@@ -148,8 +148,9 @@ migration marker; private-stack consumers never combine or fall back between
 the two layouts. They report `run pmgr migrate` when the index is absent, and
 treat an old private file beside it as incomplete cleanup.
 Commands unrelated to private directory settings, including `list`, `add`,
-`rm`, and `init`, remain usable before migration. `pmgr repair` is the
-read-only diagnostic for either state.
+`rm`, and `init`, remain usable before migration. `pmgr repair` remains
+available to diagnose either state; any automated action follows its documented
+prompting rules.
 
 Tools must never require the registry to be a git repository, and must never
 run git themselves. One real registry is a git repository with its own README
@@ -185,8 +186,11 @@ regular file in the entry needs `--force`, and a real subdirectory is refused
 outright. Deleting the entry directory by hand is equally valid.
 
 `pmgr repair` reports what is broken, ambiguous, unreadable, or duplicated, and
-notes which subdirectories it ignored as non-projects. It changes nothing in
-`--dry-run` and exits 2 when it finds a problem.
+notes which subdirectories it ignored as non-projects. Every problem should
+carry a concrete recommended next step. The bare command asks before each
+available automated repair, while `--dry-run` changes nothing and exits 2 when
+it finds a problem. See the repair plan and prompting contract in
+`docs/projmgr.md`.
 
 ## Safety
 
