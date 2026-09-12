@@ -1628,6 +1628,32 @@ def plan_project_index_merge(
     )
 
 
+def missing_index_sections(
+    registry: Path, projects: list[Project]
+) -> list[Project]:
+    """Registered projects the index has no section for, in listing order.
+
+    Empty when the index is absent or unreadable, which are migration problems
+    reported on their own terms. A project whose symlink is broken is left out:
+    its stack cannot be resolved, and the broken link is the thing to fix.
+    """
+    index_path = registry / PROJECTS_INDEX_NAME
+    if not _path_exists(index_path):
+        return []
+    try:
+        text = index_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return []
+    indexed = {
+        name.casefold() for name, _ in _index_project_headings(text) if name
+    }
+    return [
+        project
+        for project in projects
+        if not project.warning and project.name.casefold() not in indexed
+    ]
+
+
 def registry_index_problems(registry: Path, projects: list[Project]) -> list[str]:
     """Diagnose migration and index structure without changing either layout."""
     problems: list[str] = []
@@ -1692,6 +1718,9 @@ def registry_index_problems(registry: Path, projects: list[Project]) -> list[str
             document.directories(name)
         except (orglib.OrgStructureError, ValueError) as exc:
             problems.append(f"{index_path}: {exc}")
+
+    for project in missing_index_sections(registry, projects):
+        problems.append(f"{index_path}: no section for {project.name!r}")
 
     return problems
 
@@ -1768,15 +1797,53 @@ def registry_directories_section(
     )
 
 
-def add_project_section(text: str, project: str) -> str | None:
-    """Return the index with a bare heading for ``project``, or None if named.
+def initial_directory_stack(root: Path, org_file: Path | None) -> list[Path]:
+    """Where a newly indexed project's directory stack should start.
 
-    The heading is written alone, with no ``Directories`` child. A section that
-    exists with no entries still counts as defining the private stack, and the
-    private list wins outright over the project's own ``* Directories``
-    section, so seeding one would replace a stack the project already had. See
-    the ``add`` spec in ``docs/projmgr.md``.
+    Its own ``* Directories`` section when the task file has one, so writing
+    the index does not change the stack ``cdproj`` already produces; the
+    project root alone otherwise.
     """
+    entries: list[str] = []
+    if org_file is not None:
+        try:
+            entries = core.parse_directories(org_file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError):
+            entries = []
+    resolved = unique_resolved_directories(entries, root) if entries else []
+    return resolved or [root.resolve()]
+
+
+def project_section_text(
+    project: str,
+    directories: list[Path] | tuple[Path, ...],
+    *,
+    task_file: Path | None = None,
+    eol: str = "\n",
+) -> str:
+    """Render one project's index section: heading, properties, directories.
+
+    ``DESCRIPTION`` is written empty, as the slot a person fills in.
+    ``TASK_FILE`` mirrors the file the registry entry links, and is left out
+    when there is none to name; ``docs/config.md`` keeps it non-normative, so
+    nothing resolves a task file through it.
+    """
+    lines = [f"* {project}", ":PROPERTIES:", ":DESCRIPTION:"]
+    if task_file is not None:
+        lines.append(f":TASK_FILE: {friendly_path(task_file)}")
+    lines.append(":END:")
+    heading = eol.join(lines) + eol
+    return heading + registry_directories_section(tuple(directories), eol=eol)
+
+
+def add_project_section(
+    text: str,
+    project: str,
+    directories: list[Path] | tuple[Path, ...],
+    *,
+    task_file: Path | None = None,
+) -> str | None:
+    """Return the index with a section for ``project``, or None if it has one."""
     malformed_line = _malformed_priority_heading_line(text, project)
     if malformed_line is not None:
         raise ValueError(
@@ -1790,9 +1857,13 @@ def add_project_section(text: str, project: str) -> str | None:
     prefix = text
     if prefix and not prefix.endswith(("\n", "\r")):
         prefix += eol
-    revised = prefix + f"* {project}{eol}"
+    revised = prefix + project_section_text(
+        project, directories, task_file=task_file, eol=eol
+    )
 
-    if orglib.parse(revised).directories(project).project_span is None:
+    check = orglib.parse(revised).directories(project)
+    expected = tuple(format_directory_path(path) for path in directories)
+    if check.section is None or check.section.entries != expected:
         raise RegistryIndexError(
             f"cannot create a safe index section for {project!r}"
         )

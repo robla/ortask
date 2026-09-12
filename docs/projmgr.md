@@ -106,14 +106,13 @@ shape, sort semantics, safety rules, and delivery order.
 
 ## `add`
 
-**Status: implemented (`t0050`).**
+**Status: implemented (`t0050`, `t0051`).**
 
-`projmgr.py add` registers exactly one project by creating a registry
-subdirectory of symlinks, and gives that project a section in the registry
-index. It never edits Org task content, which belongs to `ortask.py`;
-`projects.org` is project-manager configuration, and the only section `add`
-touches is the one named after the project it is registering.
-`docs/projects.md` is the model.
+`projmgr.py add` registers exactly one project: a registry subdirectory of
+symlinks, and a section in the registry index for the project to keep its
+settings in. `projects.org` is pmgr's own file and `add` maintains it, writing
+the section named after the project being registered. Org task content is
+`ortask.py`'s, and `add` does not touch it. `docs/projects.md` is the model.
 
 ```sh
 projmgr.py add                                   # the project you are in
@@ -138,31 +137,49 @@ Behavior:
    directory basename.
 5. Create a project symlink named after the real project directory.
 6. If a task file was found, create a task-file symlink named after that file.
-7. Seed the project's index section: when `<registry>/projects.org` exists and
-   holds no section for `name`, append one `* NAME` heading to it. The write is
-   atomic and adds nothing else to the file.
+7. Write the project's index section, when `<registry>/projects.org` exists
+   and holds no section for `name`: a `* NAME` heading, a `:PROPERTIES:` drawer
+   carrying an empty `DESCRIPTION` and a `TASK_FILE` mirror of the task file
+   just linked, and a `** Directories` stack. The write is atomic and appends
+   only that section.
 
 An existing `<registry>/<name>/` is an error unless `--force` is given. `--force`
 repoints the known symlinks but leaves unrelated contents alone. Registration
 never fails for want of a task file: the project symlink alone is what makes a
 registry entry a project. It also never guesses among ambiguous Org files.
 
-The seeded heading carries nothing else — in particular, no `** Directories`
-child. A section that exists with no entries still counts as defining the
-private stack, and the private list wins outright over the project's own
-`* Directories` section, so seeding an empty one would cut a newly registered
-project's `cdproj` stack down to its root and demote whatever its task file
-already listed. A bare heading leaves directory resolution exactly as it was
-before registration, which is the intent: `add` records that a project exists,
-it does not decide that project's directory stack.
+The section looks like this, and is ordinary Org that a person is expected to
+edit:
+
+```org
+* inedit
+:PROPERTIES:
+:DESCRIPTION:
+:TASK_FILE: ~/src/inedit/tasks.org
+:END:
+** Directories
+   - ~/src/inedit
+```
+
+`Directories` starts as the project's effective stack: the entries from its own
+`* Directories` section when the task file has one, resolved and written as `~`
+list items, and the project root alone otherwise. The index wins outright over
+a project's own list, so starting from anything narrower would shrink the stack
+`cdproj` was already producing. Writing the section moves where the stack is
+kept, not what it is — and from then on the index is the copy that counts, so
+later edits to the project's own `* Directories` no longer take effect.
+`DESCRIPTION` is written empty as the slot a person fills in; `TASK_FILE` is
+left out when the project has no task file, and stays the non-normative mirror
+`docs/config.md` describes.
 
 A section that already exists is left as it stands — priority cookie,
 description, and recorded directories included — so `--force` repoints symlinks
 without disturbing settings. A registry with no index at all is not an error:
 the symlinks are still written, the index step is skipped, and `add` reports
 that it was, which keeps `add` usable before `pmgr migrate` as
-`docs/projects.md` requires. `--dry-run` reports the heading it would add
-alongside the links.
+`docs/projects.md` requires. `--dry-run` reports the section it would add
+alongside the links. `pmgr repair` writes the same section for projects
+registered before `add` did.
 
 ## `cdproj`
 
@@ -461,8 +478,9 @@ contract.
 ## `repair`
 
 **Status: implemented (`t0032`).** `doctor` is preserved as a deprecated alias
-for `repair --dry-run`. Automated fixes for specific registry problems will be
-added as safe repairs are developed.
+for `repair --dry-run`. One fix is implemented — writing an index section for a
+registered project that has none (`t0051.2`) — and further fixes are added as
+safe repairs are developed.
 
 `projmgr.py repair` diagnoses the registry — broken symlinks, task-file
 discoverability, index consistency — and repairs what it safely can, asking
@@ -481,7 +499,8 @@ projmgr.py --registry ~/tmpsorta/proj2026 repair
   subdirectory that is not a project entry and is therefore ignored.
 - A **problem** is something to fix: a broken or ambiguous project link, an
   unreadable task file, a file with no parseable task headings, duplicate task
-  IDs, or a missing or malformed registry index.
+  IDs, a missing or malformed registry index, or a registered project the index
+  has no section for.
 
 Notes alone never affect the exit status.
 
@@ -500,6 +519,16 @@ word rather than inventing `--fix`.
 **`--dry-run`** reports and stops. It never prompts and never writes, which is
 what makes it safe in a script and the right target for the deprecated `doctor`
 alias.
+
+### Writing a missing index section
+
+A project registered before `add` wrote index sections has none, and `repair`
+offers it the same section `add` would have written, `Directories` included. It
+prints the project and the directories the section would start with, then asks;
+the paths are shown before the question so the answer is an informed one. This
+is how a registry filled in before `t0051` catches up without re-registering
+every project. `repair` re-diagnoses after its fixes, so it exits 0 when the
+ones it applied were all that was wrong.
 
 **When it has a fix to offer and cannot ask** — no TTY, no `--force` — `repair`
 refuses and exits 1 rather than hanging on a prompt nobody can answer or
@@ -691,16 +720,16 @@ friction is answered by `add` instead.
 ## Safety
 
 `list`, `log`, `info`, and `repair --dry-run` are read-only. `repair` without
-`--dry-run` may write, but only after confirming each fix, and it refuses to run
-unattended without `--force`. `add` creates directories and symlinks only inside
-the registry, and appends at most one heading to its index; `rm` removes only a
-registry entry, and only its symlinks unless
-`--force` is given. `init` writes only `ortask.ini`. `migrate` atomically writes
-`projects.org` before removing validated legacy files. `set-dirs` edits only one
-bounded section in that index. `cdproj` writes the file named by `--out`, and can
-open or initialize a project's section in an already-migrated index when asked to
-edit it; it never writes Org task content.
-`docs/projects.md` states the general rule these follow: the registry,
-`ortask.ini`, and files named by an explicit `--out` are the only things the
-project layer writes.
+`--dry-run` may write, but only after confirming each fix, and it refuses to
+run unattended without `--force`. `add` creates directories and symlinks inside
+the registry and writes its project's index section; `repair` writes that
+section for a project registered before `add` did. `rm` removes only a registry
+entry, and only its symlinks unless `--force` is given. `init` writes only
+`ortask.ini`. `migrate` atomically writes `projects.org` before removing
+validated legacy files. `set-dirs` edits only one bounded section in that
+index. `cdproj` writes the file named by `--out`, and can open or initialize a
+project's section in an already-migrated index when asked to edit it; it never
+writes Org task content. `docs/projects.md` states the general rule these
+follow: the registry, `ortask.ini`, and files named by an explicit `--out` are
+the only things the project layer writes.
 

@@ -2179,8 +2179,13 @@ class _IndexSectionPlan:
     dry_note: str                # the same line, before it has
 
 
-def _plan_index_section(registry: Path, name: str) -> _IndexSectionPlan:
-    """Seed one bare heading for `name`, or say why the index is left alone.
+def _plan_index_section(
+    registry: Path,
+    name: str,
+    project_dir: Path,
+    org_file: Path | None,
+) -> _IndexSectionPlan:
+    """Write `name` a section to work from, or say why the index is left alone.
 
     An unmigrated or unreadable index is not an error here: the symlinks are
     what register a project, so `add` reports the skip and still succeeds.
@@ -2189,7 +2194,12 @@ def _plan_index_section(registry: Path, name: str) -> _IndexSectionPlan:
     path = registry / index
     try:
         path, text = manager.require_registry_index(registry)
-        revised = manager.add_project_section(text, name)
+        revised = manager.add_project_section(
+            text,
+            name,
+            manager.initial_directory_stack(project_dir, org_file),
+            task_file=org_file,
+        )
     except (manager.RegistryIndexError, ValueError, OSError) as exc:
         return _IndexSectionPlan(path, None, f"({index} untouched: {exc})", "")
     if revised is None:
@@ -2268,7 +2278,7 @@ def cmd_add(args: argparse.Namespace) -> int:
     project_link = subdir / project_dir.name
     org_link = (subdir / org_file.name) if org_file is not None else None
 
-    index_plan = _plan_index_section(registry, name)
+    index_plan = _plan_index_section(registry, name, project_dir, org_file)
 
     if args.dry_run:
         print(f"[dry-run] would create {subdir}/")
@@ -2604,13 +2614,64 @@ def cmd_set_dirs(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_repair(args: argparse.Namespace) -> int:
-    """Diagnose registry problems and repair what is safe (asking first)."""
-    registry, registry_display = manager.resolve_registry(getattr(args, "registry", None))
-    if not registry.is_dir():
-        print(f"project directory not found: {registry}", file=sys.stderr)
-        return 1
+def _repair_missing_sections(
+    registry: Path, projects: list[manager.Project], *, force: bool
+) -> int:
+    """Give each registered project without an index section one to work from.
 
+    Asked per project rather than in bulk: the directories a section starts
+    with are a judgement about that project, and they are printed before the
+    question so the answer is an informed one.
+    """
+    written = 0
+    for project in manager.missing_index_sections(registry, projects):
+        root = manager.real_project_path(project)
+        org_file = manager.canonical_org_file(project)
+        stack = manager.initial_directory_stack(root, org_file)
+        listing = ", ".join(manager.format_directory_path(path) for path in stack)
+        print(f"  {project.name}: no section in {manager.PROJECTS_INDEX_NAME}")
+        print(f"    directories: {listing}")
+        if not force:
+            try:
+                answer = menu.prompt_text(
+                    f"add section '* {project.name}'? [y]es, [N]o"
+                ).lower()
+            except menu.ContextCancelled:
+                print("    cancelled")
+                break
+            if answer not in {"y", "yes"}:
+                print("    skipped")
+                continue
+        try:
+            index_path, index_text = manager.require_registry_index(registry)
+            revised = manager.add_project_section(
+                index_text, project.name, stack, task_file=org_file
+            )
+            if revised is None:
+                continue
+            core.atomic_write(index_path, revised)
+        except (manager.RegistryIndexError, ValueError, OSError) as exc:
+            print(f"    cannot add: {exc}", file=sys.stderr)
+            continue
+        written += 1
+        print(f"    added '* {project.name}'")
+        eventlog.record(
+            eventlog.make_event(
+                "pmgr",
+                "repair",
+                project=project.name,
+                detail={"index_section": True},
+            ),
+            registry=registry,
+            source_file=org_file,
+        )
+    return written
+
+
+def _diagnose_registry(
+    registry: Path,
+) -> tuple[list[str], list[str], list[manager.Project]]:
+    """Everything `repair` has to say about a registry, and its projects."""
     problems: list[str] = []
     notes: list[str] = []
     projects = manager.discover_projects(registry)
@@ -2642,6 +2703,17 @@ def cmd_repair(args: argparse.Namespace) -> int:
                 )
 
     problems.extend(manager.registry_index_problems(registry, projects))
+    return problems, notes, projects
+
+
+def cmd_repair(args: argparse.Namespace) -> int:
+    """Diagnose registry problems and repair what is safe (asking first)."""
+    registry, registry_display = manager.resolve_registry(getattr(args, "registry", None))
+    if not registry.is_dir():
+        print(f"project directory not found: {registry}", file=sys.stderr)
+        return 1
+
+    problems, notes, projects = _diagnose_registry(registry)
 
     print(f"Registry: {registry_display}")
     for note in notes:
@@ -2664,7 +2736,12 @@ def cmd_repair(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # Currently no auto-fixes exist in the registry layer; problems remain outstanding.
+    if _repair_missing_sections(registry, projects, force=force):
+        remaining, _, _ = _diagnose_registry(registry)
+        if not remaining:
+            print("  all problems fixed")
+            return 0
+        print(f"  {len(remaining)} problem(s) remain")
     return 2
 
 

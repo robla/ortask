@@ -193,8 +193,9 @@ notes which subdirectories it ignored as non-projects. It changes nothing in
 - The registry is the only thing project-level tools write, apart from
   `ortask.ini` and files named by an explicit `--out`.
 - Org task content belongs to `ortask.py`. Project-level tools read it; they do
-  not edit it. `projects.org` is project-manager configuration, not a task file;
-  `migrate`, `add`, and `set-dirs` may edit only their documented regions
-  there.
+  not edit it. `projects.org` is a different thing — project-manager
+  configuration, not a task file — and the project-level tools maintain it:
+  `migrate`, `add`, `repair`, `set-dirs`, and the `ptui`/`cdproj` editors each
+  write the regions their specs describe.
 - Symlink targets are never modified. Links are created, repointed, or removed,
   and only inside the registry.

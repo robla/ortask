@@ -2221,19 +2221,36 @@ def test_manager_broken_and_ambiguous_entries_stay_visible(tmp_path: Path) -> No
     assert by_name["twins"].link is None
 
 
-def test_add_project_section_appends_only_a_bare_heading() -> None:
-    # The pure text step: one heading, and nothing when the name is already there.
+def test_add_project_section_writes_a_section_worth_having() -> None:
+    # The pure text step: a section someone can edit, not a lone heading.
     index = "#+TITLE: Projects\n\n* [#C] other\n** Directories\n   - ~/elsewhere\n"
 
-    assert manager.add_project_section(index, "demo") == index + "* demo\n"
-    assert manager.add_project_section(index, "other") is None  # cookie and all
-    assert manager.add_project_section("* a", "b") == "* a\n* b\n"  # no final EOL
+    assert manager.add_project_section(
+        index, "demo", [Path.home() / "src" / "demo"],
+        task_file=Path.home() / "src" / "demo" / "tasks.org",
+    ) == index + (
+        "* demo\n"
+        ":PROPERTIES:\n"
+        ":DESCRIPTION:\n"
+        ":TASK_FILE: ~/src/demo/tasks.org\n"
+        ":END:\n"
+        "** Directories\n"
+        "   - ~/src/demo\n"
+    )
+
+    # No task file to mirror, so no TASK_FILE line; and no final EOL to lose.
+    assert manager.add_project_section("* a", "b", [Path("/srv/b")]) == (
+        "* a\n* b\n:PROPERTIES:\n:DESCRIPTION:\n:END:\n"
+        "** Directories\n   - /srv/b\n"
+    )
+
+    assert manager.add_project_section(index, "other", [Path("/srv/x")]) is None
 
 
-def test_add_seeds_a_bare_index_section(
+def test_add_seeds_an_index_section(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    # Registering a project should give it a heading someone can go and edit.
+    # Registering a project should give it a section someone can go and edit.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     registry = tmp_path / "projects"
     manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
@@ -2248,8 +2265,15 @@ def test_add_seeds_a_bare_index_section(
     assert projmgr.cmd_add(_add_args(project)) == 0
     assert "projects.org: added section '* demo'" in capsys.readouterr().out
 
-    # The heading is bare: an empty Directories child would claim a stack.
-    assert index.read_text(encoding="utf-8") == original + "* demo\n"
+    assert index.read_text(encoding="utf-8") == original + (
+        "* demo\n"
+        ":PROPERTIES:\n"
+        ":DESCRIPTION:\n"
+        f":TASK_FILE: {(project / 'tasks.org').resolve()}\n"
+        ":END:\n"
+        "** Directories\n"
+        f"   - {project.resolve()}\n"
+    )
 
     # Registering again leaves the section, and anything added to it, alone.
     index.write_text(original + "* [#A] demo\n** Directories\n   - ~/src/demo\n",
@@ -2279,11 +2303,12 @@ def test_add_leaves_the_index_alone_when_the_registry_is_unmigrated(
     assert (registry / "demo" / "demo").is_symlink()      # still registered
 
 
-def test_add_does_not_claim_a_projects_directory_stack(
+def test_add_seeds_the_stack_the_project_already_had(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    # The seeded heading must not become the private stack: the private list
-    # wins outright, so an empty section would demote the project's own list.
+    # The index wins outright over a project's own * Directories, so the
+    # section starts as a copy of it: registering changes where the stack is
+    # kept, never what it is.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     registry = tmp_path / "projects"
     manager.write_ortask_registry(manager.ortask_config_path(), str(registry))
@@ -2297,13 +2322,17 @@ def test_add_does_not_claim_a_projects_directory_stack(
         project / "tasks.org",
         "* Directories\n** file:.\n** file:./docs\n* Tasks\n** TODO t0001 Work\n",
     )
+    (project / "docs").mkdir()
 
     assert projmgr.cmd_add(_add_args(project)) == 0
     capsys.readouterr()
 
     registered = manager.discover_projects(registry)[0]
-    assert [source.label for source in manager.directory_sources(registered)] == [
-        "project"
+    sources = manager.directory_sources(registered)
+    assert [source.label for source in sources] == ["private", "project"]
+    assert sources[0].entries == [
+        str(project.resolve()),
+        str((project / "docs").resolve()),
     ]
 
 
@@ -4321,8 +4350,11 @@ def test_projmgr_doctor_reports_problems_and_exits_two(
     healthy = tmp_path / "src" / "healthy"
     write(healthy / "tasks.org", "* Tasks\n** TODO t0001 Fine\n")
     register(registry, "healthy", healthy)
-    (registry / manager.PROJECTS_INDEX_NAME).write_text(
-        manager.PROJECTS_INDEX_HEADER, encoding="utf-8"
+    # A healthy registry names every project it registers.
+    _write_private_index(
+        registry,
+        f"   - {healthy.resolve()}\n",
+        project="healthy",
     )
 
     args = argparse.Namespace(registry=None, dry_run=True, force=False)
@@ -4387,6 +4419,81 @@ def test_projmgr_repair_reports_registry_index_states(
     legacy.write_text("* Directories\n", encoding="utf-8")
     assert projmgr.cmd_repair(args) == 2
     assert "registry migration incomplete" in capsys.readouterr().out
+
+
+def _registry_missing_a_section(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    """One registered project whose index has no section for it."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry = tmp_path / "projects"
+    project = tmp_path / "src" / "legacy"
+    write(project / "tasks.org", "* Tasks\n** TODO t0001 Work\n")
+    register(registry, "legacy", project)
+    (registry / manager.PROJECTS_INDEX_NAME).write_text(
+        manager.PROJECTS_INDEX_HEADER, encoding="utf-8"
+    )
+    return registry, project
+
+
+def test_repair_reports_a_project_the_index_does_not_name(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Entries registered before add seeded sections are the reason for the fix.
+    registry, _ = _registry_missing_a_section(tmp_path, monkeypatch)
+
+    assert projmgr.cmd_repair(
+        argparse.Namespace(registry=str(registry), dry_run=True, force=False)
+    ) == 2
+    assert "no section for 'legacy'" in capsys.readouterr().out
+
+
+def test_repair_seeds_a_missing_index_section(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # --force answers the question, and the registry comes out clean.
+    registry, project = _registry_missing_a_section(tmp_path, monkeypatch)
+
+    assert projmgr.cmd_repair(
+        argparse.Namespace(registry=str(registry), dry_run=False, force=True)
+    ) == 0
+    out = capsys.readouterr().out
+    assert "added '* legacy'" in out
+    assert "all problems fixed" in out
+
+    index = (registry / manager.PROJECTS_INDEX_NAME).read_text(encoding="utf-8")
+    assert index == manager.PROJECTS_INDEX_HEADER + (
+        "* legacy\n"
+        ":PROPERTIES:\n"
+        ":DESCRIPTION:\n"
+        f":TASK_FILE: {(project / 'tasks.org').resolve()}\n"
+        ":END:\n"
+        "** Directories\n"
+        f"   - {project.resolve()}\n"
+    )
+
+
+def test_repair_asks_before_writing_a_section(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Declining leaves the index exactly as it was, and the problem outstanding.
+    registry, _ = _registry_missing_a_section(tmp_path, monkeypatch)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = index.read_text(encoding="utf-8")
+    asked: list[str] = []
+
+    def decline(label: str) -> str:
+        asked.append(label)
+        return "n"
+
+    monkeypatch.setattr(projmgr.menu, "prompt_text", decline)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+
+    assert projmgr.cmd_repair(
+        argparse.Namespace(registry=str(registry), dry_run=False, force=False)
+    ) == 2
+    assert asked == ["add section '* legacy'? [y]es, [N]o"]
+    assert "skipped" in capsys.readouterr().out
+    assert index.read_text(encoding="utf-8") == original
 
 
 def _cdproj_registry(tmp_path: Path, monkeypatch, capsys, org_text: str) -> tuple:
@@ -9490,9 +9597,10 @@ def test_repair_exit_code_matrix_and_safety(
     assert ortask.cmd_repair(argparse.Namespace(file=broken_org, dry_run=False, force=True)) == 2
 
     # 3. Clean projmgr registry
-    registry, _ = _cdproj_registry(
+    registry, clean_project = _cdproj_registry(
         tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
     )
+    _write_private_index(registry, f"   - {clean_project.resolve()}\n")
     reg_str = str(registry)
     assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=False, force=False)) == 0
     assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=True, force=False)) == 0

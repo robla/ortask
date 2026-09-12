@@ -772,3 +772,23 @@ marked as specified but not yet built. The heading is deliberately bare: an
 empty =** Directories= child counts as defining the private stack, which wins
 outright over the project's own =* Directories= section, so seeding one would
 cut a newly registered project's =cdproj= stack down to its root.
+** DONE [#A] t0051 Seed a useful project section, and stop hedging about the index
+=pmgr add= writes a bare =* NAME= heading, and the =add= spec spends a
+paragraph justifying how little it writes — caution that reads as a warning to
+keep away from =projects.org=. The index is pmgr's own file: write each project
+a section worth having, properties and directory stack included, and say so
+plainly. The shape and the reasoning belong in =docs/projmgr.md=.
+*** DONE [#A] t0051.1 Seed the skeleton from pmgr add
+Replace the bare heading with the full section, including an empty
+=:DESCRIPTION:= and a =:TASK_FILE:= mirror of the task file =add= just linked.
+Omit =TASK_FILE= when there is no task file to name.
+*** DONE [#A] t0051.2 Backfill missing sections from pmgr repair
+A registered project with no index section becomes a repair problem, fixed the
+way repair fixes anything else: reported by =--dry-run=, confirmed before it
+writes. This is what gives the thirteen already-registered projects sections
+without re-registering each one.
+*** DONE [#B] t0051.3 Rewrite the index prose in the specs
+=docs/projmgr.md=, =docs/projects.md=, and the =manager= docstrings should
+describe the index as something pmgr maintains, not something it edges around.
+Keep the facts that actually govern behavior — the index wins over a project's
+own list — and drop the defensive framing.
