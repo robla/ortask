@@ -170,7 +170,7 @@ no mutation, whole-file validation before writing, preservation of accepted
 content, successful cleanup, interrupted cleanup, and conflict refusal.
 *** DONE t0026.3 Cut private-stack consumers over to projects.org
 Read private stacks only from =projects.org=. Make =cdproj= reject missing or
-incomplete migration, and make =doctor= diagnose index problems. Keep =list=,
+incomplete migration, and make =repair= diagnose index problems. Keep =list=,
 =add=, =rm=, and =init= available before migration. Only =migrate= may read
 legacy private files.
 ** TODO t0027 Make orglib independently testable and consumable
@@ -232,9 +232,8 @@ findings are logged, and settles what =repair= promises before =t0004= and
 
 Decisions, so nobody has to re-litigate them:
 
-- Unify on =repair= in both tools. =doctor= survives as a deprecated alias for
-  =repair --dry-run= — the read-only form, because =doctor= never wrote
-  anything and the alias must not become a way to reach a command that does.
+- Unify on =repair= in both tools. The former =doctor= alias is now obsolete;
+  =repair --dry-run= is the explicit read-only form.
 - A verb named =repair= should repair, but never behind your back: the bare form
   reports, then asks before each fix. =--force= skips the asking. Not =--fix=:
   =--force= is already this suite's word for "skip the safety" in =add= and
@@ -242,7 +241,7 @@ Decisions, so nobody has to re-litigate them:
   on a prompt or silently decide to write.
 - One exit rule for both tools: 0 clean, 2 when problems remain once the command
   finishes, 1 when the subject cannot be read. Today =ort repair= exits 0 with
-  problems outstanding while =ort repair --dry-run= and =pmgr doctor= exit 2 —
+  problems outstanding while =ort repair --dry-run= and =pmgr repair= exit 2 —
   the same condition reported two ways.
 - Add =info= to both tools, read-only, reporting what is *true*; anything that is
   *wrong* belongs in =repair=, so a script can rely on =info= having no opinion.
@@ -265,6 +264,8 @@ Register it alphabetically, between =migrate= and =rm=. Update the ~12
 the next reader implements the old name: =docs/config.md= (4), =docs/logging.md=
 (4), =docs/roadmap.md= (3), =docs/projects.md= (2), =docs/llm-assessments.md=
 (2), =docs/architecture.md=, =docs/ecosystem.md=, =CLAUDE.md=, =GEMINI.md=.
+The compatibility alias introduced by this step was removed by =t0052.1.1=;
+=pmgr doctor= is now an argparse error.
 *** DONE t0032.2 Unify the repair exit-code rule across both tools
 0 clean, 2 problems remain, 1 unreadable subject — in =ort repair=,
 =ort repair --dry-run=, and =pmgr repair=. Fix =ortask.py:342-348=, where the
@@ -326,7 +327,7 @@ sharing one =session= per invocation. Not from =ortasklib/tasks.py=: those
 helpers take text and return lines, and a buffered TUI edit that is discarded
 must not have logged. Tests: one event per verb carrying the documented fields,
 =archive= of three tasks emitting three events under one =session=,
-=list=/=show=/=doctor=/=repair= emitting nothing, and a discarded TUI edit
+=list=/=show=/=repair= diagnostics emitting nothing, and a discarded TUI edit
 emitting nothing.
 *** DONE t0033.3 Log cdproj as a deliberate project switch
 =pmgr cdproj= records the switch and the resolved stack; opening =ptui= and
@@ -348,13 +349,13 @@ the extension contract; no =zim= format belongs here. Tests: each =WHEN= form,
 the day boundary with and without =--day-start=, scoping for both tools,
 passthrough fidelity, and a range spanning two monthly files.
 *** DONE t0033.5 Reserve log/ in the registry and document the configuration
-=pmgr doctor= reports any unrecognized registry subdirectory as a note (=docs:
+=pmgr repair= reports any unrecognized registry subdirectory as a note (=docs:
 not a project entry, ignored=); teach it that =log/= is expected and say
 nothing. Add =log/= to the reserved names in =docs/config.md= beside
 =projects.org=, record the =[log]= section there as the deliberate exception to
 the one-machine-global-setting rule, and add =ORTASK_LOG= and =ORTASK_LOG_DIR=
 to the environment table. Mention the =log/= gitignore choice for a registry
-under version control. Tests: =doctor= stays silent about =log/= and still
+under version control. Tests: =repair= stays silent about =log/= and still
 reports other stray directories.
 ** TODO t0034 Prototype the zim journal extension
 =ortask-zim=, a pull extension per =docs/extensions.md=: read =ort log --format
@@ -800,6 +801,13 @@ carries the message, recommendation, stable kind, and optional repair-action
 data. Keep execution callbacks and terminal prompting in =projmgr.py=. Build
 one complete ordered plan so reporting, prompting, and post-repair diagnosis do
 not rediscover different sets of problems.
+**** DONE [#A] t0052.1.1 Establish structured findings and remove doctor
+Add manager-layer =RepairFinding= and =RepairAction= values, make every current
+registry diagnosis carry a stable kind and concrete recommendation, and render
+the recommendation below its problem. Remove the obsolete =doctor= parser,
+dispatch, completion, and current documentation; =repair --dry-run= is the
+read-only spelling. The missing-section executor still discovers its work
+separately, so =t0052.1= remains open until findings form one execution plan.
 *** TODO [#A] t0052.2 Print a recommendation for every problem
 Render one =suggestion:= directly after each =problem:= in normal and
 =--dry-run= output. Suggestions must name an offered repair, a concrete command,

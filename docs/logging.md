@@ -369,14 +369,13 @@ is.
 
 ## Open questions
 
-- Should `repair` and `doctor` findings be logged? Both are read-only reports
-  today, so by the rule above neither writes an event. But "the registry was
-  broken on Tuesday" is worth being able to look up. This is entangled with a
-  naming question that deserves settling first: `ort repair` and `pmgr doctor`
-  are the same kind of command — check a thing, report what is wrong — on two
-  different subjects, with two unrelated names, and `repair` does not currently
-  repair anything. Whether both verbs should exist, and what they should be
-  called, is its own task.
+- Should unresolved `repair` findings be logged? Diagnosis remains read-only
+  and emits no event, while each accepted automated repair logs the change it
+  writes. But "the registry was broken on Tuesday" may still be worth looking
+  up. `doctor` is obsolete; `ort repair` and `pmgr repair` now share the same
+  name and exit-status contract, so the remaining question is whether a report
+  alone is an event worth retaining. Decide that on audit value and log noise,
+  not command naming; accepted automated repairs already log their writes.
 - How much of a multi-task command belongs in one event? One event per task
   with a shared `session` is specified above, which makes `ort archive` of
   twenty tasks twenty lines. A journal summarizes them back into one bullet

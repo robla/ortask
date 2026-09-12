@@ -116,9 +116,10 @@ modules never call `sys.exit()` or parse CLI arguments.
   uses the shared atomic writers for replacements; `init` creates a missing
   path exclusively so it cannot overwrite a concurrent file.
 - `projmgr.py` — project-layer commands (`add`, `cdproj`, `info`, `init`,
-  `list`, `log`, `migrate`, `repair`, `rm`, `set-dirs`) plus `-i`; `doctor` and `projadd`
-  are deprecated aliases. `cmd_list` calls `manager.summarize_projects()` and formats the
-  records. It owns the project list itself: `_project_rows`,
+  `list`, `log`, `migrate`, `repair`, `rm`, `set-dirs`) plus `-i`; `projadd`
+  is a deprecated alias and `doctor` is obsolete. `cmd_list` calls
+  `manager.summarize_projects()` and formats the records. It owns the project
+  list itself: `_project_rows`,
   `_project_location`, `_anchor_index`, and `_project_view` are shared by the
   navigator (`_ProjectBrowser`), `cdproj` (`_CdprojSession`), and both numbered
   fallbacks, so only what `Enter` does differs between them.

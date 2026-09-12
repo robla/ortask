@@ -81,6 +81,28 @@ class RegistryIndexError(Exception):
 
 
 @dataclass(frozen=True)
+class RepairAction:
+    """One manager-described repair that the CLI may offer to execute."""
+
+    kind: str
+    project: str | None = None
+
+
+@dataclass(frozen=True)
+class RepairFinding:
+    """One registry problem and the concrete next step shown to the user."""
+
+    kind: str
+    message: str
+    suggestion: str
+    action: RepairAction | None = None
+
+    def __post_init__(self) -> None:
+        if not self.kind or not self.message or not self.suggestion:
+            raise ValueError("repair findings require kind, message, and suggestion")
+
+
+@dataclass(frozen=True)
 class LegacyDirectoryFile:
     """One validated legacy file and its deterministic index representation."""
 
@@ -1654,29 +1676,57 @@ def missing_index_sections(
     ]
 
 
-def registry_index_problems(registry: Path, projects: list[Project]) -> list[str]:
-    """Diagnose migration and index structure without changing either layout."""
-    problems: list[str] = []
+def registry_index_problems(
+    registry: Path,
+    projects: list[Project],
+) -> list[RepairFinding]:
+    """Diagnose index structure and recommend a next step for every problem."""
+    findings: list[RepairFinding] = []
     index_path = registry / PROJECTS_INDEX_NAME
     try:
         leftovers = legacy_private_files(registry)
     except RegistryIndexError as exc:
-        return list(exc.messages)
+        return [
+            RepairFinding(
+                "registry-index",
+                message,
+                f"inspect {friendly_path(registry)} and correct the registry "
+                "layout, then rerun pmgr repair",
+            )
+            for message in exc.messages
+        ]
 
     if not _path_exists(index_path):
-        problems.append("registry not migrated; run pmgr migrate")
-        return problems
+        findings.append(
+            RepairFinding(
+                "registry-unmigrated",
+                "registry not migrated; run pmgr migrate",
+                "run pmgr migrate for this registry",
+            )
+        )
+        return findings
     if leftovers:
         names = ", ".join(friendly_path(path) for path in leftovers)
-        problems.append(
-            f"registry migration incomplete ({names}); run pmgr migrate"
+        findings.append(
+            RepairFinding(
+                "registry-migration-incomplete",
+                f"registry migration incomplete ({names}); run pmgr migrate",
+                "run pmgr migrate again to validate and finish cleanup",
+            )
         )
 
     try:
         text = index_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
-        problems.append(f"cannot read {index_path}: {exc}")
-        return problems
+        findings.append(
+            RepairFinding(
+                "registry-index-unreadable",
+                f"cannot read {index_path}: {exc}",
+                f"restore a readable Org file at {friendly_path(index_path)}, "
+                "then rerun pmgr repair",
+            )
+        )
+        return findings
 
     headings = _index_project_headings(text)
     registered: dict[str, list[str]] = {}
@@ -1684,19 +1734,34 @@ def registry_index_problems(registry: Path, projects: list[Project]) -> list[str
         registered.setdefault(project.name.casefold(), []).append(project.name)
     for values in registered.values():
         if len(values) > 1:
-            problems.append(
-                "registry project names collide case-insensitively: "
-                + ", ".join(values)
+            findings.append(
+                RepairFinding(
+                    "registry-name-collision",
+                    "registry project names collide case-insensitively: "
+                    + ", ".join(values),
+                    "rename the colliding registry entries so their names differ "
+                    "without regard to case",
+                )
             )
         if values[0].casefold() in _RESERVED_INDEX_HEADINGS:
-            problems.append(
-                f"{index_path}: project name {values[0]!r} is reserved by the index"
+            findings.append(
+                RepairFinding(
+                    "reserved-project-name",
+                    f"{index_path}: project name {values[0]!r} is reserved by the index",
+                    f"rename project {values[0]!r} in the registry and projects.org",
+                )
             )
 
     indexed: dict[str, list[tuple[str, int]]] = {}
     for name, line_num in headings:
         if not name:
-            problems.append(f"{index_path}: empty top-level heading at line {line_num}")
+            findings.append(
+                RepairFinding(
+                    "empty-index-heading",
+                    f"{index_path}: empty top-level heading at line {line_num}",
+                    f"name or remove the top-level heading at line {line_num}",
+                )
+            )
             continue
         indexed.setdefault(name.casefold(), []).append((name, line_num))
 
@@ -1706,23 +1771,48 @@ def registry_index_problems(registry: Path, projects: list[Project]) -> list[str
             continue
         if len(occurrences) > 1:
             lines = ", ".join(str(line) for _, line in occurrences)
-            problems.append(
-                f"{index_path}: duplicate project heading "
-                f"for {occurrences[0][0]!r} at lines {lines}"
+            findings.append(
+                RepairFinding(
+                    "duplicate-index-heading",
+                    f"{index_path}: duplicate project heading "
+                    f"for {occurrences[0][0]!r} at lines {lines}",
+                    f"merge or remove the duplicate sections at lines {lines}",
+                )
             )
             continue
         name = occurrences[0][0]
         if folded not in registered:
-            problems.append(f"{index_path}: stale project section {name!r}")
+            findings.append(
+                RepairFinding(
+                    "stale-index-section",
+                    f"{index_path}: stale project section {name!r}",
+                    f"remove section {name!r} or restore its registry entry",
+                )
+            )
         try:
             document.directories(name)
         except (orglib.OrgStructureError, ValueError) as exc:
-            problems.append(f"{index_path}: {exc}")
+            findings.append(
+                RepairFinding(
+                    "invalid-directories-section",
+                    f"{index_path}: {exc}",
+                    f"edit {friendly_path(index_path)} so project {name!r} has "
+                    "at most one direct Directories section",
+                )
+            )
 
     for project in missing_index_sections(registry, projects):
-        problems.append(f"{index_path}: no section for {project.name!r}")
+        findings.append(
+            RepairFinding(
+                "missing-index-section",
+                f"{index_path}: no section for {project.name!r}",
+                f"allow pmgr repair to add section '* {project.name}', or add "
+                "that section manually",
+                action=RepairAction("add-project-section", project.name),
+            )
+        )
 
-    return problems
+    return findings
 
 
 def unique_resolved_directories(entries: list[str], root: Path) -> list[Path]:

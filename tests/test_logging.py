@@ -427,7 +427,7 @@ def test_ort_log_all_needs_no_local_task_file(tmp_path: Path) -> None:
     assert result.stderr == ""
 
 
-def test_doctor_ignores_reserved_log_directory_and_readers_emit_nothing(
+def test_repair_ignores_reserved_log_directory_and_readers_emit_nothing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Reserved derived storage is not a stray project and read-only verbs do not log.

@@ -2668,17 +2668,53 @@ def _repair_missing_sections(
     return written
 
 
+def _project_warning_finding(
+    registry: Path,
+    record: dict,
+) -> manager.RepairFinding:
+    """Turn one project summary warning into an actionable repair finding."""
+    project = str(record["project"])
+    warning = str(record["warning"])
+    org_file = record.get("file")
+    if warning.startswith("duplicate task IDs") and org_file:
+        kind = "duplicate-task-ids"
+        suggestion = (
+            f"edit {org_file} so every task ID is unique, then rerun pmgr repair"
+        )
+    elif warning == "no parseable tasks found" and org_file:
+        kind = "no-parseable-tasks"
+        suggestion = (
+            f"add a parseable Org task heading to {org_file}, then rerun "
+            "pmgr repair"
+        )
+    elif warning.startswith("Could not read file") and org_file:
+        kind = "task-file-unreadable"
+        suggestion = f"make {org_file} readable, then rerun pmgr repair"
+    else:
+        kind = "invalid-project-entry"
+        entry = manager.friendly_path(registry / project)
+        suggestion = (
+            f"correct the project and task-file links under {entry}, then rerun "
+            "pmgr repair"
+        )
+    return manager.RepairFinding(
+        kind,
+        f"{project}: {warning}",
+        suggestion,
+    )
+
+
 def _diagnose_registry(
     registry: Path,
-) -> tuple[list[str], list[str], list[manager.Project]]:
+) -> tuple[list[manager.RepairFinding], list[str], list[manager.Project]]:
     """Everything `repair` has to say about a registry, and its projects."""
-    problems: list[str] = []
+    findings: list[manager.RepairFinding] = []
     notes: list[str] = []
     projects = manager.discover_projects(registry)
 
     for record in manager.summarize_projects(registry, include_all=True):
         if "warning" in record:
-            problems.append(f"{record['project']}: {record['warning']}")
+            findings.append(_project_warning_finding(registry, record))
         elif record["file"] is None:
             notes.append(f"{record['project']}: no task file")
 
@@ -2697,13 +2733,18 @@ def _diagnose_registry(
         # as "no task file" when the truth is that its link is stale.
         for link in sorted(child.iterdir(), key=lambda p: p.name.lower()):
             if link.is_symlink() and not link.exists():
-                problems.append(
-                    f"{child.name}: dangling link {link.name} -> "
-                    f"{os.readlink(link)}"
+                findings.append(
+                    manager.RepairFinding(
+                        "dangling-registry-link",
+                        f"{child.name}: dangling link {link.name} -> "
+                        f"{os.readlink(link)}",
+                        f"remove or repoint {manager.friendly_path(link)}, then "
+                        "rerun pmgr repair",
+                    )
                 )
 
-    problems.extend(manager.registry_index_problems(registry, projects))
-    return problems, notes, projects
+    findings.extend(manager.registry_index_problems(registry, projects))
+    return findings, notes, projects
 
 
 def cmd_repair(args: argparse.Namespace) -> int:
@@ -2713,14 +2754,15 @@ def cmd_repair(args: argparse.Namespace) -> int:
         print(f"project directory not found: {registry}", file=sys.stderr)
         return 1
 
-    problems, notes, projects = _diagnose_registry(registry)
+    findings, notes, projects = _diagnose_registry(registry)
 
     print(f"Registry: {registry_display}")
     for note in notes:
         print(f"  note: {note}")
-    for problem in problems:
-        print(f"  problem: {problem}")
-    if not problems:
+    for finding in findings:
+        print(f"  problem: {finding.message}")
+        print(f"    suggestion: {finding.suggestion}")
+    if not findings:
         print("  no problems found")
         return 0
 
@@ -3177,14 +3219,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="optional project name to resolve immediately without TUI",
     )
 
-    p_doctor = sub.add_parser(
-        "doctor",
-        help="deprecated alias for repair --dry-run",
-    )
-    p_doctor.add_argument("--registry", default=argparse.SUPPRESS,
-                          help="registry directory to check")
-    p_doctor.set_defaults(dry_run=True, force=False)
-
     sub.add_parser("help", help="show this help message")
 
     p_info = sub.add_parser(
@@ -3365,7 +3399,6 @@ def main() -> int:
     dispatch = {
         "add": cmd_add,
         "cdproj": cmd_cdproj,
-        "doctor": cmd_repair,       # deprecated alias
         "info": cmd_info,
         "init": cmd_init,
         "list": cmd_list,

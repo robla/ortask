@@ -151,11 +151,10 @@ _projmgr_complete()
         cword=$COMP_CWORD
     fi
 
-    # projadd and doctor remain deprecated aliases.
-    local subcommands="add cdproj doctor help info init list log migrate projadd repair rm set-dirs"
+    # projadd remains a deprecated alias.
+    local subcommands="add cdproj help info init list log migrate projadd repair rm set-dirs"
     local global_opts="-i --interactive --registry --todo-only --help"
     local add_opts="--name --file --registry --force --dry-run --help"
-    local doctor_opts="--registry --help"
     local info_opts="--name --path --file --format --registry --help"
     local repair_opts="--registry --dry-run --force --help"
     local init_opts="--registry --force --dry-run --help"
@@ -227,9 +226,6 @@ _projmgr_complete()
                 ;;
             cdproj)
                 COMPREPLY=( $(compgen -W "$cdproj_opts" -- "$cur") )
-                ;;
-            doctor)
-                COMPREPLY=( $(compgen -W "$doctor_opts" -- "$cur") )
                 ;;
             info)
                 COMPREPLY=( $(compgen -W "$info_opts" -- "$cur") )

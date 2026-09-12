@@ -1349,7 +1349,6 @@ def test_cli_subcommands_are_registered_alphabetically() -> None:
         "pmgr": [
             "add",
             "cdproj",
-            "doctor",
             "help",
             "info",
             "init",
@@ -1376,6 +1375,17 @@ def test_cli_subcommands_are_registered_alphabetically() -> None:
         registered = list(subparsers.choices)
         assert registered == expected[command]
         assert registered == sorted(registered)
+
+
+def test_projmgr_doctor_subcommand_is_obsolete(capsys) -> None:
+    # The removed alias must fail visibly instead of silently becoming dry-run.
+    with pytest.raises(SystemExit) as exc_info:
+        projmgr.build_parser().parse_args(["doctor"])
+
+    assert exc_info.value.code == 2
+    error = capsys.readouterr().err
+    assert "invalid choice: 'doctor'" in error
+    assert "repair" in error
 
 
 def test_projmgr_interactive_uses_registry_project_menu(
@@ -1625,7 +1635,6 @@ def test_bash_completion_lists_subcommands_alphabetically() -> None:
             [
                 "add",
                 "cdproj",
-                "doctor",
                 "help",
                 "info",
                 "init",
@@ -1786,7 +1795,7 @@ def test_cli_init_only_replaces_empty_dedicated_files(tmp_path: Path) -> None:
     assert not generic.exists()
 
 
-# --- projmgr registry model: the project marker, init, add, rm, doctor -------
+# --- projmgr registry model: project marker, init, add, rm, and repair -------
 # These isolate config by pointing XDG_CONFIG_HOME at a temp directory, so they
 # never read or write (or delete) the real ~/.config/ortask.
 
@@ -4340,7 +4349,7 @@ def test_projmgr_rm_removes_only_the_registry_entry(
     assert project.is_dir()
 
 
-def test_projmgr_doctor_reports_problems_and_exits_two(
+def test_projmgr_repair_reports_problems_and_exits_two(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -4368,6 +4377,8 @@ def test_projmgr_doctor_reports_problems_and_exits_two(
     assert projmgr.cmd_repair(args) == 2
     out = capsys.readouterr().out
     assert "problem: gone: broken project link" in out
+    assert "suggestion:" in out
+    assert "links under" in out
     assert "note: docs: not a project entry, ignored" in out
 
     # A stale task-file link would otherwise read as "no task file".
@@ -4377,6 +4388,8 @@ def test_projmgr_doctor_reports_problems_and_exits_two(
     assert projmgr.cmd_repair(args) == 2
     out = capsys.readouterr().out
     assert "problem: healthy: dangling link tasks.org -> " in out
+    assert "suggestion:" in out
+    assert "remove or repoint" in out
 
 
 def test_projmgr_repair_reports_registry_index_states(
@@ -4391,7 +4404,9 @@ def test_projmgr_repair_reports_registry_index_states(
 
     index.unlink()
     assert projmgr.cmd_repair(args) == 2
-    assert "problem: registry not migrated; run pmgr migrate" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "problem: registry not migrated; run pmgr migrate" in out
+    assert "suggestion: run pmgr migrate for this registry" in out
 
     index.write_text(
         manager.PROJECTS_INDEX_HEADER
@@ -4440,10 +4455,21 @@ def test_repair_reports_a_project_the_index_does_not_name(
     # Entries registered before add seeded sections are the reason for the fix.
     registry, _ = _registry_missing_a_section(tmp_path, monkeypatch)
 
+    findings, _, projects = projmgr._diagnose_registry(registry)
+    assert projects[0].name == "legacy"
+    missing = next(
+        finding
+        for finding in findings
+        if finding.kind == "missing-index-section"
+    )
+    assert missing.action == manager.RepairAction("add-project-section", "legacy")
+
     assert projmgr.cmd_repair(
         argparse.Namespace(registry=str(registry), dry_run=True, force=False)
     ) == 2
-    assert "no section for 'legacy'" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "no section for 'legacy'" in out
+    assert "suggestion: allow pmgr repair to add section '* legacy'" in out
 
 
 def test_repair_seeds_a_missing_index_section(
@@ -4688,10 +4714,10 @@ def test_migrate_leaves_a_cookied_index_untouched(
     assert index.read_text(encoding="utf-8") == original
 
 
-def test_doctor_accepts_a_cookied_project_section(
+def test_repair_accepts_a_cookied_project_section(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    # doctor normalizes headings its own way; it must use orglib's rule, or a
+    # Repair normalizes headings its own way; it must use orglib's rule, or a
     # priority cookie reads as part of the name and the section looks stale.
     registry, _ = _cdproj_registry(
         tmp_path, monkeypatch, capsys, "* Tasks\n** TODO t0001 task\n"
@@ -4755,7 +4781,7 @@ def test_read_project_metadata_joins_the_index_onto_registered_projects(
 def test_read_project_metadata_tolerates_a_registry_with_no_index(
     tmp_path: Path,
 ) -> None:
-    # An unmigrated registry is doctor's business, not a reason to refuse rows.
+    # An unmigrated registry is repair's business, not a reason to refuse rows.
     registry = tmp_path / "registry"
     project = tmp_path / "solo"
     write(project / "todo.org", "* Tasks\n** TODO t0001 task\n")
@@ -9605,22 +9631,11 @@ def test_repair_exit_code_matrix_and_safety(
     assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=False, force=False)) == 0
     assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=True, force=False)) == 0
     assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=False, force=True)) == 0
-    # doctor alias sets dry_run=True by default
-    parser = projmgr.build_parser()
-    doc_args = parser.parse_args(["--registry", reg_str, "doctor"])
-    assert doc_args.dry_run is True
-    assert projmgr.cmd_repair(doc_args) == 0
-
     # 4. Registry with problems
     (registry / "dangling").mkdir()
     (registry / "dangling" / "dangling").symlink_to(tmp_path / "src" / "nonexistent")
     # Dry-run reports and exits 2
     assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=True, force=False)) == 2
-    # doctor alias reports and exits 2 without TTY refusal
-    doc_broken_args = parser.parse_args(["--registry", reg_str, "doctor"])
-    assert projmgr.cmd_repair(doc_broken_args) == 2
-    capsys.readouterr()
-
     # Bare form without TTY and without --force refuses with exit 1
     assert projmgr.cmd_repair(argparse.Namespace(registry=reg_str, dry_run=False, force=False)) == 1
     assert "interactive confirmation requires a TTY" in capsys.readouterr().err

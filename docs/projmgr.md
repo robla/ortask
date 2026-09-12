@@ -12,6 +12,8 @@ form, `projmgr.py -i`. `pmgr` with no subcommand shows help, as `ort` does.
 This command was named `orgmgr.py` (`orgm`) until 2026-08-19. `projadd`
 survives as a deprecated alias for `add`. `migrate` converts legacy private
 directory files into the registry index; it no longer dispatches to `init`.
+The former `doctor` alias is obsolete and is not accepted; use `repair
+--dry-run` for read-only diagnosis.
 
 Current verb set: `add`, `cdproj`, `info`, `init`, `list`, `log`, `migrate`,
 `repair`, `rm`, `set-dirs`.
@@ -477,10 +479,10 @@ contract.
 
 ## `repair`
 
-**Status: partially implemented (`t0032`, `t0051.2`).** `doctor` is preserved as
-a deprecated alias for `repair --dry-run`. Writing a missing project-index
-section is the first automated fix. Actionable recommendations and precise
-non-TTY handling are tracked by `t0043` and `t0052`.
+**Status: partially implemented (`t0032`, `t0051.2`, `t0052.1.1`).** Writing a
+missing project-index section is the first automated fix. Structured findings
+now give every reported problem a recommendation. A unified action plan and
+precise non-TTY handling remain tracked by `t0043` and `t0052`.
 
 `projmgr.py repair` diagnoses the registry — broken symlinks, task-file
 discoverability, index consistency — and repairs what it safely can, asking
@@ -540,9 +542,8 @@ the suite's existing word for "skip the safety" (`add --force` repoints links in
 an existing entry; `rm --force` removes a whole entry), so `repair` uses the same
 word rather than inventing `--fix`.
 
-**`--dry-run`** reports and stops. It never prompts and never writes, which is
-what makes it safe in a script and the right target for the deprecated `doctor`
-alias.
+**`--dry-run`** reports and stops. It never prompts and never writes, which
+makes it the safe scripting interface for diagnosis.
 
 ### Writing a missing index section
 
@@ -727,12 +728,12 @@ Completion runs `projmgr.py` (or `$ORTASK_PROJMGR`, the same variable
 missing registry or an unreadable one yields no completions rather than an error
 in the middle of the prompt.
 
-## Deprecated aliases
+## Compatibility aliases
 
 - `projadd` still dispatches to `add`; new documentation should use `add`.
-- `doctor` is a deprecated alias for `repair --dry-run`. It is the read-only
-  form on purpose: `doctor` never wrote anything, so the alias must not
-  become a way to reach a command that does.
+
+`doctor` is obsolete rather than deprecated: it is no longer parsed or
+completed. Use `repair --dry-run` for its former read-only behavior.
 
 ## Not planned
 

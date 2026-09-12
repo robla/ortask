@@ -723,7 +723,8 @@ All six steps are complete (`t0019.1`–`t0019.6`):
    builder.
 6. Renamed `migrate` to `init`; added `rm` and `repair`. `migrate` and `projadd`
    initially remained as deprecated aliases. `t0026.2` reclaimed `migrate` for
-   the registry-index conversion, so only `projadd` and `doctor` remain aliases.
+   the registry-index conversion; `doctor` was later made obsolete, leaving
+   only `projadd` as an alias.
 
 ### Still open
 
