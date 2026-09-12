@@ -479,10 +479,11 @@ contract.
 
 ## `repair`
 
-**Status: partially implemented (`t0032`, `t0051.2`, `t0052.1.1`).** Writing a
+**Status: partially implemented (`t0032`, `t0051.2`, `t0052.1`).** Writing a
 missing project-index section is the first automated fix. Structured findings
-now give every reported problem a recommendation. A unified action plan and
-precise non-TTY handling remain tracked by `t0043` and `t0052`.
+give every reported problem a recommendation, and one plan now feeds both the
+report and the execution. Prompt and force details remain tracked by `t0052.2`
+and `t0052.3`, and precise non-TTY handling by `t0043`.
 
 `projmgr.py repair` diagnoses the registry — broken symlinks, task-file
 discoverability, index consistency — and repairs what it safely can, asking
@@ -517,6 +518,14 @@ Each finding records its problem text, recommended next step, and optional
 automated action. Rendering and execution consume that same plan, so the
 command cannot promise one change and perform another.
 
+An action carries the change, not just its name: a one-line summary and the
+paths it would write. Execution applies those values rather than working out
+afresh what needs doing, which is what makes "only what was displayed" a
+property of the code rather than a convention two functions happen to share.
+An action whose kind has no executor is reported and never run, so describing a
+new repair in the manager layer cannot start writing until the command layer
+supplies the code to perform it.
+
 For example, a missing `projects.org` section should say that `pmgr repair`
 can add the section and show its proposed directories. An unmigrated registry
 should recommend `pmgr migrate`. A broken link or ambiguous task file that has
@@ -548,12 +557,13 @@ makes it the safe scripting interface for diagnosis.
 ### Writing a missing index section
 
 A project registered before `add` wrote index sections has none, and `repair`
-offers it the same section `add` would have written, `Directories` included. It
-prints the project and the directories the section would start with, then asks;
-the paths are shown before the question so the answer is an informed one. This
-is how a registry filled in before `t0051` catches up without re-registering
-every project. `repair` re-diagnoses after its fixes, so it exits 0 when the
-ones it applied were all that was wrong.
+offers it the same section `add` would have written, `Directories` included.
+The directories the section would start with are listed with the finding, so
+the answer to the prompt can be an informed one. This is how a registry filled
+in before `t0051` catches up without re-registering every project. `repair`
+re-diagnoses after its fixes rather than deducing what is left — a repair can
+reveal or resolve more than the action that ran — so it exits 0 when the ones
+it applied were all that was wrong, and otherwise reprints what remains.
 
 **When it has a fix to offer and cannot ask** — no TTY, no `--force` — `repair`
 refuses and exits 1 rather than hanging on a prompt nobody can answer or

@@ -795,7 +795,7 @@ must finish before mutation, and the bare command must ask immediately before
 each automated action. =--dry-run= shows the same plan without prompting or
 writing; only explicit =--force= bypasses confirmation. See the =repair=
 contract in =docs/projmgr.md=.
-*** TODO [#A] t0052.1 Represent findings and repair actions together
+*** DONE [#A] t0052.1 Represent findings and repair actions together
 Replace free-form problem strings with a small manager-layer finding model that
 carries the message, recommendation, stable kind, and optional repair-action
 data. Keep execution callbacks and terminal prompting in =projmgr.py=. Build

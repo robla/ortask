@@ -2614,58 +2614,93 @@ def cmd_set_dirs(args: argparse.Namespace) -> int:
     return 0
 
 
-def _repair_missing_sections(
-    registry: Path, projects: list[manager.Project], *, force: bool
-) -> int:
-    """Give each registered project without an index section one to work from.
+def _add_project_section_action(
+    registry: Path, action: manager.RepairAction
+) -> bool:
+    """Write the section this action already described, and say it happened."""
+    assert action.project is not None
+    try:
+        index_path, index_text = manager.require_registry_index(registry)
+        revised = manager.add_project_section(
+            index_text,
+            action.project,
+            list(action.paths),
+            task_file=action.task_file,
+        )
+        if revised is None:
+            return False
+        core.atomic_write(index_path, revised)
+    except (manager.RegistryIndexError, ValueError, OSError) as exc:
+        print(f"  cannot add: {exc}", file=sys.stderr)
+        return False
+    print(f"  added '* {action.project}'")
+    eventlog.record(
+        eventlog.make_event(
+            "pmgr",
+            "repair",
+            project=action.project,
+            detail={"index_section": True},
+        ),
+        registry=registry,
+        source_file=action.task_file,
+    )
+    return True
 
-    Asked per project rather than in bulk: the directories a section starts
-    with are a judgement about that project, and they are printed before the
-    question so the answer is an informed one.
+
+#: Every executable repair kind, and the function that performs it. A finding
+#: whose action names a kind absent from here is reported and never executed,
+#: so adding an action to the manager layer cannot start writing on its own.
+_REPAIR_EXECUTORS = {
+    "add-project-section": _add_project_section_action,
+}
+
+
+def _render_action(action: manager.RepairAction) -> None:
+    """Show the change before it is offered, so an answer can be informed."""
+    print(f"    proposed: {action.summary}")
+    for path in action.paths:
+        print(f"      - {manager.format_directory_path(path)}")
+
+
+def _apply_repair_plan(
+    registry: Path, findings: list[manager.RepairFinding], *, force: bool
+) -> tuple[int, int]:
+    """Offer each planned action in turn; return (applied, left unresolved).
+
+    Driven entirely by the findings already reported: nothing is rediscovered
+    here, so the command cannot apply a change it did not show. Declining or
+    cancelling leaves the finding unresolved rather than retrying it.
     """
-    written = 0
-    for project in manager.missing_index_sections(registry, projects):
-        root = manager.real_project_path(project)
-        org_file = manager.canonical_org_file(project)
-        stack = manager.initial_directory_stack(root, org_file)
-        listing = ", ".join(manager.format_directory_path(path) for path in stack)
-        print(f"  {project.name}: no section in {manager.PROJECTS_INDEX_NAME}")
-        print(f"    directories: {listing}")
+    applied = 0
+    unresolved = 0
+    cancelled = False
+    for finding in findings:
+        action = finding.action
+        if action is None or action.kind not in _REPAIR_EXECUTORS:
+            unresolved += 1
+            continue
+        if cancelled:
+            unresolved += 1
+            continue
+        # The plan was printed in full above; the prompt names the change, so
+        # repeating it here would only make the report harder to read.
         if not force:
             try:
-                answer = menu.prompt_text(
-                    f"add section '* {project.name}'? [y]es, [N]o"
-                ).lower()
+                answer = menu.prompt_text(f"{action.summary}? [y]es, [N]o").lower()
             except menu.ContextCancelled:
-                print("    cancelled")
-                break
+                print("  cancelled")
+                cancelled = True
+                unresolved += 1
+                continue
             if answer not in {"y", "yes"}:
-                print("    skipped")
+                print(f"  skipped: {action.summary}")
+                unresolved += 1
                 continue
-        try:
-            index_path, index_text = manager.require_registry_index(registry)
-            revised = manager.add_project_section(
-                index_text, project.name, stack, task_file=org_file
-            )
-            if revised is None:
-                continue
-            core.atomic_write(index_path, revised)
-        except (manager.RegistryIndexError, ValueError, OSError) as exc:
-            print(f"    cannot add: {exc}", file=sys.stderr)
-            continue
-        written += 1
-        print(f"    added '* {project.name}'")
-        eventlog.record(
-            eventlog.make_event(
-                "pmgr",
-                "repair",
-                project=project.name,
-                detail={"index_section": True},
-            ),
-            registry=registry,
-            source_file=org_file,
-        )
-    return written
+        if _REPAIR_EXECUTORS[action.kind](registry, action):
+            applied += 1
+        else:
+            unresolved += 1
+    return applied, unresolved
 
 
 def _project_warning_finding(
@@ -2743,7 +2778,7 @@ def _diagnose_registry(
                     )
                 )
 
-    findings.extend(manager.registry_index_problems(registry, projects))
+    findings.extend(manager.registry_index_findings(registry, projects))
     return findings, notes, projects
 
 
@@ -2762,6 +2797,8 @@ def cmd_repair(args: argparse.Namespace) -> int:
     for finding in findings:
         print(f"  problem: {finding.message}")
         print(f"    suggestion: {finding.suggestion}")
+        if finding.action is not None:
+            _render_action(finding.action)
     if not findings:
         print("  no problems found")
         return 0
@@ -2778,12 +2815,21 @@ def cmd_repair(args: argparse.Namespace) -> int:
         )
         return 1
 
-    if _repair_missing_sections(registry, projects, force=force):
-        remaining, _, _ = _diagnose_registry(registry)
-        if not remaining:
-            print("  all problems fixed")
-            return 0
-        print(f"  {len(remaining)} problem(s) remain")
+    applied, _ = _apply_repair_plan(registry, findings, force=force)
+    if not applied:
+        print("  nothing applied; every problem above still stands")
+        return 2
+
+    # Re-diagnosed rather than deduced: a repair can reveal or resolve more
+    # than the action that was run, and what remains is what a rerun would see.
+    remaining, _, _ = _diagnose_registry(registry)
+    if not remaining:
+        print("  all problems fixed")
+        return 0
+    print(f"  {len(remaining)} problem(s) remain:")
+    for finding in remaining:
+        print(f"    problem: {finding.message}")
+        print(f"      suggestion: {finding.suggestion}")
     return 2
 
 

@@ -4453,7 +4453,7 @@ def test_repair_reports_a_project_the_index_does_not_name(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     # Entries registered before add seeded sections are the reason for the fix.
-    registry, _ = _registry_missing_a_section(tmp_path, monkeypatch)
+    registry, project = _registry_missing_a_section(tmp_path, monkeypatch)
 
     findings, _, projects = projmgr._diagnose_registry(registry)
     assert projects[0].name == "legacy"
@@ -4462,7 +4462,13 @@ def test_repair_reports_a_project_the_index_does_not_name(
         for finding in findings
         if finding.kind == "missing-index-section"
     )
-    assert missing.action == manager.RepairAction("add-project-section", "legacy")
+    # The action carries the change itself, so what is shown is what is run.
+    assert missing.action is not None
+    assert missing.action.kind == "add-project-section"
+    assert missing.action.project == "legacy"
+    assert missing.action.summary == "add section '* legacy'"
+    assert missing.action.paths == (project.resolve(),)
+    assert missing.action.task_file == (project / "tasks.org").resolve()
 
     assert projmgr.cmd_repair(
         argparse.Namespace(registry=str(registry), dry_run=True, force=False)
@@ -4470,6 +4476,67 @@ def test_repair_reports_a_project_the_index_does_not_name(
     out = capsys.readouterr().out
     assert "no section for 'legacy'" in out
     assert "suggestion: allow pmgr repair to add section '* legacy'" in out
+
+
+def test_repair_runs_only_the_change_it_showed(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # What --dry-run lists as proposed is what --force writes, to the path.
+    registry, project = _registry_missing_a_section(tmp_path, monkeypatch)
+    (project / "docs").mkdir()
+    (project / "tasks.org").write_text(
+        "* Directories\n** file:.\n** file:./docs\n* Tasks\n** TODO t0001 W\n",
+        encoding="utf-8",
+    )
+
+    assert projmgr.cmd_repair(
+        argparse.Namespace(registry=str(registry), dry_run=True, force=False)
+    ) == 2
+    proposed = [
+        line.strip()[2:]
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("      - ")
+    ]
+    assert proposed == [str(project.resolve()), str((project / "docs").resolve())]
+
+    assert projmgr.cmd_repair(
+        argparse.Namespace(registry=str(registry), dry_run=False, force=True)
+    ) == 0
+    capsys.readouterr()
+    written = manager.directory_sources(manager.discover_projects(registry)[0])[0]
+    assert written.label == "private"
+    assert written.entries == proposed
+
+
+def test_repair_will_not_execute_an_action_kind_it_has_no_executor_for(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # Adding an action in the manager layer must not start writing on its own:
+    # a kind absent from the executor table is reported and left alone.
+    registry, _ = _registry_missing_a_section(tmp_path, monkeypatch)
+    index = registry / manager.PROJECTS_INDEX_NAME
+    original = index.read_text(encoding="utf-8")
+
+    invented = manager.RepairFinding(
+        "invented-problem",
+        "something is wrong",
+        "do something about it",
+        action=manager.RepairAction("not-wired-up", "legacy", summary="invent"),
+    )
+    monkeypatch.setattr(
+        projmgr, "_diagnose_registry", lambda _registry: ([invented], [], [])
+    )
+    monkeypatch.setattr(
+        projmgr.menu,
+        "prompt_text",
+        lambda label: pytest.fail(f"prompted for an unrunnable action: {label}"),
+    )
+
+    assert projmgr.cmd_repair(
+        argparse.Namespace(registry=str(registry), dry_run=False, force=True)
+    ) == 2
+    assert "nothing applied" in capsys.readouterr().out
+    assert index.read_text(encoding="utf-8") == original
 
 
 def test_repair_seeds_a_missing_index_section(
@@ -4518,7 +4585,9 @@ def test_repair_asks_before_writing_a_section(
         argparse.Namespace(registry=str(registry), dry_run=False, force=False)
     ) == 2
     assert asked == ["add section '* legacy'? [y]es, [N]o"]
-    assert "skipped" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "skipped: add section '* legacy'" in out
+    assert "nothing applied; every problem above still stands" in out
     assert index.read_text(encoding="utf-8") == original
 
 

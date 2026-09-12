@@ -82,10 +82,20 @@ class RegistryIndexError(Exception):
 
 @dataclass(frozen=True)
 class RepairAction:
-    """One manager-described repair that the CLI may offer to execute."""
+    """One manager-described repair that the CLI may offer to execute.
+
+    The action carries the change itself, not just its name: ``summary`` says
+    what would happen in one line and ``paths`` lists what it would write, so
+    the plan can be shown and then applied from the same values. An executor
+    that re-derives its work instead can promise one change and perform
+    another, which the ``repair`` contract in ``docs/projmgr.md`` forbids.
+    """
 
     kind: str
     project: str | None = None
+    summary: str = ""
+    paths: tuple[Path, ...] = ()
+    task_file: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -1299,7 +1309,7 @@ def read_project_metadata(
     project alone, leaving the rest of the list intact.
 
     Index sections matching no registry entry are ignored here; reporting them
-    is ``registry_index_problems``.
+    is ``registry_index_findings``.
     """
     metadata = {project.name: ProjectMetadata() for project in projects}
     index_path = registry / PROJECTS_INDEX_NAME
@@ -1676,7 +1686,7 @@ def missing_index_sections(
     ]
 
 
-def registry_index_problems(
+def registry_index_findings(
     registry: Path,
     projects: list[Project],
 ) -> list[RepairFinding]:
@@ -1802,13 +1812,21 @@ def registry_index_problems(
             )
 
     for project in missing_index_sections(registry, projects):
+        org_file = canonical_org_file(project)
+        stack = initial_directory_stack(real_project_path(project), org_file)
         findings.append(
             RepairFinding(
                 "missing-index-section",
                 f"{index_path}: no section for {project.name!r}",
                 f"allow pmgr repair to add section '* {project.name}', or add "
                 "that section manually",
-                action=RepairAction("add-project-section", project.name),
+                action=RepairAction(
+                    "add-project-section",
+                    project.name,
+                    summary=f"add section '* {project.name}'",
+                    paths=tuple(stack),
+                    task_file=org_file,
+                ),
             )
         )
 
