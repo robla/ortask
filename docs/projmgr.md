@@ -29,7 +29,7 @@ records only what `projmgr.py` needs in order to find it.
 
 ```ini
 [projects]
-registry = ~/tmpsorta/proj2026
+registry = ~/Projects
 ```
 
 Config location honors `$XDG_CONFIG_HOME`:
@@ -46,13 +46,13 @@ read them.
 Example registry layout:
 
 ```text
-~/tmpsorta/proj2026/
-  elweek/
-    elweek           -> /home/robla/tmpsorta/electorama-weekly
-    TODO-ElWeek.org  -> /home/robla/tmpsorta/electorama-weekly/TODO-ElWeek.org
-  ortask/
-    ortask           -> /home/robla/src/ortask
-    todo.org         -> /home/robla/src/ortask/todo.org
+~/Projects/
+  atlas/
+    atlas      -> /home/alex/src/atlas
+    tasks.org  -> /home/alex/src/atlas/tasks.org
+  newsletter/
+    newsletter          -> /home/alex/work/newsletter
+    newsletter.task.org -> /home/alex/work/newsletter/newsletter.task.org
 ```
 
 The registry is inspectable with ordinary shell tools. `projmgr.py` is a
@@ -67,7 +67,7 @@ registry. It uses the same registry resolution as `list`: `--registry`, then
 
 ```sh
 projmgr.py -i
-projmgr.py --registry ~/tmpsorta/proj2026 -i
+projmgr.py --registry ~/Projects -i
 pmgr -i
 ```
 
@@ -119,10 +119,10 @@ the section named after the project being registered. Org task content is
 ```sh
 projmgr.py add                                   # the project you are in
 projmgr.py add --yes                             # -y; register without asking
-projmgr.py add ~/tmpsorta/electorama-weekly --name elweek
-projmgr.py --registry ~/tmpsorta/proj2026 add ~/src/ortask
-projmgr.py add ~/src/ortask --file todo.org
-projmgr.py add ~/src/ortask --dry-run
+projmgr.py add ~/work/newsletter --name newsletter
+projmgr.py --registry ~/Projects add ~/src/atlas
+projmgr.py add ~/src/atlas --file tasks.org
+projmgr.py add ~/src/atlas --dry-run
 ```
 
 Behavior:
@@ -130,7 +130,7 @@ Behavior:
 1. Resolve the registry (`--registry` > `[projects] registry` > `~/Projects`).
 2. Resolve the project directory. With no argument, walk upward from the current
    directory for the nearest ancestor holding a task file or a VCS directory —
-   so running it from `~/src/ortask/docs` registers `~/src/ortask`. An explicit
+   so running it from `~/src/atlas/docs` registers `~/src/atlas`. An explicit
    path is taken literally and walks nothing.
 3. Resolve the task file from `--file` or by the shared local task-file
    discovery convention in `docs/format.md`. A missing or ambiguous task file
@@ -183,13 +183,13 @@ The section looks like this, and is ordinary Org that a person is expected to
 edit:
 
 ```org
-* inedit
+* atlas
 :PROPERTIES:
 :DESCRIPTION:
-:TASK_FILE: ~/src/inedit/tasks.org
+:TASK_FILE: ~/src/atlas/tasks.org
 :END:
 ** Directories
-   - ~/src/inedit
+   - ~/src/atlas
 ```
 
 `Directories` starts as the project's effective stack: the entries from its own
@@ -220,7 +220,7 @@ See `docs/cdproj.md` for the whole design.
 
 ```sh
 projmgr.py cdproj --out FILE [PROJECT]
-projmgr.py --registry ~/tmpsorta/proj2026 cdproj --out FILE [PROJECT]
+projmgr.py --registry ~/Projects cdproj --out FILE [PROJECT]
 ```
 
 Options:
@@ -263,8 +263,8 @@ what the registry knows about one project — and changes nothing.
 
 ```sh
 projmgr.py info                       # infer the project from $PWD
-projmgr.py info ortask                # by registered project name
-projmgr.py info ~/src/elusync         # by project directory path
+projmgr.py info atlas                 # by registered project name
+projmgr.py info ~/src/atlas           # by project directory path
 projmgr.py info --name                # print only the project name
 projmgr.py info --path                # print only the project directory
 projmgr.py info --file                # print only the task file path
@@ -353,7 +353,7 @@ rely on `info` never having an opinion.
 else.
 
 ```sh
-projmgr.py init --registry ~/tmpsorta/proj2026
+projmgr.py init --registry ~/Projects
 projmgr.py init --dry-run
 ```
 
@@ -387,7 +387,7 @@ projmgr.py help                    # show help
 projmgr.py -i                      # open the interactive project browser
 projmgr.py list
 projmgr.py list --verbose                  # -v; the top-level tasks as well
-projmgr.py --registry ~/tmpsorta/proj2026 list
+projmgr.py --registry ~/Projects list
 projmgr.py list --all
 projmgr.py list --format json
 projmgr.py list --format names
@@ -421,21 +421,21 @@ same place on either surface.
 Example plain output:
 
 ```text
-Registry: ~/tmpsorta/proj2026
+Registry: ~/Projects
 
-elweek          1 open          ~/tmpsorta/electorama-weekly/castabout.task.org
-ortask          26 open         ~/src/ortask/todo.org
-roblaconf       (no task file)  ~/confsrc/roblaconf
+atlas           3 open          ~/src/atlas/tasks.org
+newsletter      1 open          ~/work/newsletter/newsletter.task.org
+dotfiles        (no task file)  ~/src/dotfiles
 ```
 
 Example `--verbose` output:
 
 ```text
-Registry: ~/tmpsorta/proj2026
+Registry: ~/Projects
 
-ortask  ~/src/ortask/todo.org
-  [TODO] t0001 Remove AI slop from docs/taskwarrior.md
-  [TODO] t0002 create .org file if none exist in directory when using 'ort add'
+atlas  ~/src/atlas/tasks.org
+  [TODO] t0001 Draft release notes
+  [TODO] t0002 Verify upgrade instructions
 ```
 
 Discovery rules:
@@ -467,7 +467,7 @@ uses events as project or task state.
 
 ```sh
 projmgr.py log --since today
-projmgr.py log --project elweek --limit 20
+projmgr.py log --project newsletter --limit 20
 projmgr.py --registry ~/Projects log --format json
 ```
 
@@ -522,7 +522,7 @@ first.
 projmgr.py repair                              # report, then ask before each fix
 projmgr.py repair --force                      # repair without asking
 projmgr.py repair --dry-run                    # report only; never asks, never writes
-projmgr.py --registry ~/tmpsorta/proj2026 repair
+projmgr.py --registry ~/Projects repair
 ```
 
 ### What it reports
@@ -647,9 +647,9 @@ before migration and exits 2 rather than refusing to run.
 directory and its Org file are never touched.
 
 ```sh
-projmgr.py rm elweek
-projmgr.py rm elweek --dry-run
-projmgr.py rm elweek --force
+projmgr.py rm newsletter
+projmgr.py rm newsletter --dry-run
+projmgr.py rm newsletter --force
 ```
 
 Everything a registry entry normally holds is a symlink, so removing it destroys
@@ -671,8 +671,8 @@ into the project's private list — the other direction from `cdproj`, which
 reads one.
 
 ```sh
-projmgr.py set-dirs --project ortask ~/src/ortask ~/src/ortask/docs
-projmgr.py set-dirs ~/src/ortask ~/src/ortask/docs  # infer current project
+projmgr.py set-dirs --project atlas ~/src/atlas ~/src/atlas/docs
+projmgr.py set-dirs ~/src/atlas ~/src/atlas/docs  # infer current project
 dirs -l -p | projmgr.py set-dirs --stdin --missing remove
 ```
 
@@ -705,19 +705,19 @@ something different in its third column:
 | Row detail     | priority, open-task count, description | effective directory count and project location |
 
 ```text
-Project navigator                                  Registry: ~/tmpsorta/proj2026
-~/src/elusync  ·  todo.org
+Project navigator                                  Registry: ~/Projects
+~/src/atlas  ·  tasks.org
 
-▶  1  PROJ    [A] elusync       3 open  Data synchronization tools
-   2  PROJ    [ ] elweek        1 open  Weekly Electorama production
+▶  1  PROJ    [A] atlas         3 open  Release automation
+   2  PROJ    [ ] newsletter    1 open  Weekly publication
 ```
 
 ```text
-Change directory                                   Registry: ~/tmpsorta/proj2026
-~/src/elusync  ·  todo.org
+Change directory                                   Registry: ~/Projects
+~/src/atlas  ·  tasks.org
 
-▶  1  CD      elusync        3 dir*  ~/src/elusync
-   2  CD      elweek         4 dir   ~/tmpsorta/electorama-weekly
+▶  1  CD      atlas          3 dir*  ~/src/atlas
+   2  CD      newsletter     2 dir   ~/work/newsletter
 
 * = custom · ↑↓/jk · ↵ select · e edit · Esc/q cancel
 ```
@@ -745,7 +745,7 @@ puts the location back in its rows, with the count in parentheses:
 
 ```text
 ┃ # ┃ Project     ┃ Location                               ┃
-│ 1 │ elusync     │ ~/src/elusync  (3 open)                │
+│ 1 │ atlas       │ ~/src/atlas  (3 open)                  │
 ```
 
 ## Shell completion

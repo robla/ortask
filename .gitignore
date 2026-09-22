@@ -1,12 +1,8 @@
-.codex
-__pycache__
-*.zw
-cruft
-foo
-tui2026
-proj2026
-config-ortask
-castabout
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
 # Emacs-style auto-save / lock files (projtui buffers, e.g. #todo.org#)
 # (the leading '#' in the glob must be escaped or git treats it as a comment)
 \#*\#

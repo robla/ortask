@@ -141,7 +141,7 @@ like a project root?"
 - `misc/` — shell integration: the `cdproj` function, completion, aliases
 - `tests/test_ortask_suite.py` — pytest suite; doubles as the refactor gate
 - `README.org` — project docs (no longer the default task data file)
-- `todo.org` — the actual task data file for this repo
+- `tasks.org` — the actual task data file for this repo
 - `docs/` — specs and design notes (see below); `docs/ortask.md` is the source
   of truth for planned `ortask.py` behavior
 - `AGENTS.md`, `GEMINI.md` — sibling agent-instruction files; keep CLAUDE.md
@@ -222,7 +222,7 @@ the same shape: fixture Org documents, and for `taskui`/`projmgr.py`, workflow
 logic separated from terminal I/O so read paths can be asserted never to write
 to disk.
 
-**Data safety:** never run a mutating command against `todo.org` or the
+**Data safety:** never run a mutating command against `tasks.org` or the
 configured registry just to see whether an implementation works. Use temporary
 fixtures, `--help`, `--dry-run`, or the test suite. Ask before running
 `ortask.py add`/`archive`/`done`/`repair` or `projmgr.py add`/`migrate`/`rm`/

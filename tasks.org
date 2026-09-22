@@ -846,28 +846,46 @@ any existing script relying on =add= sees.
 Resolved: =-y=/=--yes= answers the prompt, and a run with no terminal and no
 =--yes= refuses with exit 1. Nothing in =misc/= invokes =add=, so no shipped
 script depended on the old behavior.
-** TODO [#A] t0054 Prepare the repository for public release
+** DONE [#A] t0054 Prepare the repository for public release
 Making the repository public publishes all of its history, not just the tree.
 An audit found no secrets, no large files, and one author identity throughout,
 and the MIT license is in place (=t0024=). What remains is what a first visitor
 would trip over, plus example output drawn from the author's own machine.
-*** TODO [#A] t0054.1 Fix what a first visitor trips over
-The README quick start uses =list --state todo=, a flag that does not exist
-(=--todo=), and its requirements omit =prompt_toolkit= and Rich. A link in
+*** DONE [#A] t0054.1 Fix what a first visitor trips over
+The README quick start calls default =list= "all tasks", uses =list --state
+todo= even though the real spellings are =--todo=/=--all=, and says bare
+=repair= fixes IDs although no automated task-file fix exists. Its requirements
+omit the optional =prompt_toolkit=/Rich UI and =pytest= test dependencies, and
+it does not plainly state the source-run installation model or early project
+status. Correct the =repair= parser help at the same time. A link in
 =docs/interactive.md= points into an unpublished sibling directory. Thirteen
 tests fail without =prompt_toolkit= for want of the =skipif= guard the other
 interactive tests carry.
-*** TODO [#B] t0054.2 Stop pointing at unpublished sibling projects
+*** DONE [#B] t0054.2 Stop pointing at unpublished sibling projects
 Keep mentioning castabout and Handrail by name, but remove file pointers a
 reader cannot follow, such as =handrail-plan.md= in =docs/roadmap.md=, and say
 in =docs/ecosystem.md= that both are separate tools not yet published.
-*** TODO [#B] t0054.3 Genericize example output
+*** DONE [#B] t0054.3 Genericize example output
 Docs illustrate commands with the author's real registry: =/home/robla= and
 =~/tmpsorta= paths and personal project names. Replace them with invented
 projects. =docs/llm-log.org= and =tasks.org= are records, not examples, and
 stay as they are.
-*** TODO [#C] t0054.4 Correct stale facts and personal ignores
+*** DONE [#C] t0054.4 Correct stale facts and personal ignores
 =CLAUDE.md= and =GEMINI.md= still call =todo.org= the task file, and
 =todo.org_archive= keeps the old name. Rephrase "load-bearing" and "seam" in
-docs and comments. Move personal symlink patterns from =.gitignore= to
-=.git/info/exclude=.
+docs and comments. Keep portable generated-file ignores in =.gitignore=, and
+move machine-specific symlink patterns to =.git/info/exclude=.
+*** DONE [#A] t0054.5 Verify a self-contained public checkout
+Check every tracked relative documentation link, README command against current
+=--help=, syntax compilation, the normal test suite, and a suite run with Rich
+and =prompt_toolkit= blocked. Confirm that tracked examples outside
+=docs/llm-log.org=, =tasks.org=, and historical archive metadata contain no
+author home path or private-registry location. Packaging, hosted CI, issue
+templates, and contributor-policy files are follow-up release infrastructure,
+not prerequisites for making this source tree public.
+
+Verified 2026-09-21: documentation links, README help forms, syntax compilation,
+and both dependency configurations pass. This runner's normal suite has 343
+passes plus the two previously known failures caused by its ambient =/tmp/.git=;
+with those two environment-sensitive tests deselected, the normal run passes
+and the no-UI-dependencies run reports 259 passed and 84 skipped.

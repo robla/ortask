@@ -6,6 +6,10 @@ culture and file format, but the tools should not require Emacs. The durable
 contract is plain `.org` text with recognizable task headings, stable IDs, and
 surgical edits.
 
+Castabout is a separate tool that is not yet published. Handrail is a separate,
+unpublished set of compact-TUI UX guidelines that may become a library later.
+They are design context, not dependencies or files supplied by this repository.
+
 ## Shared Center
 
 `ortasklib` should be the common substrate:
@@ -51,7 +55,8 @@ workspace behind both `orti` and the project navigator. It was `projtui.py`, a
 2103-line script imported by both commands; the name suggested a third tool and
 the content was library code, so it moved into the package.
 
-`castabout.py` is a workflow assistant for recurring ElectoramaWeekly promotion
+`castabout.py` is an unpublished workflow assistant for recurring
+ElectoramaWeekly promotion
 chores. It reads a task file, shows a status dashboard, drafts promotional
 copy, opens posting destinations, and writes completion state back into Org.
 It currently carries bespoke Org parsing and writeback code; the ecosystem goal

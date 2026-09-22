@@ -293,9 +293,8 @@ backend-neutral SDK first and then forcing both applications through it.
 
 ### Risks Observed So Far
 
-A brief external read of `ortasklib/menu.py`, the task UI, and their git
-history against inedit's `_inedit/` split, for context ahead of any shared
-extraction:
+A brief comparison of `ortasklib/menu.py`, the task UI, and their git history
+with inedit's package split provides context ahead of any shared extraction:
 
 - **Compatibility selectors coexisted with the production stack.**
   `_run_selector`, `select_menu`, and `select_project_menu` stayed in `menu.py`
@@ -304,20 +303,20 @@ extraction:
   bounded-session work; `menu.py` lost 233 lines with it.
 - **One ortask module is doing what inedit splits three ways.** inedit
   separates presentation, application lifecycle, and terminal handling into
-  distinct modules with an enforced acyclic dependency graph
-  (`inedit/AGENTS.md`). ortask's equivalent surface — rendering, session
+  distinct modules with an enforced acyclic dependency graph. ortask's
+  equivalent surface — rendering, session
   lifecycle, dashboards, and plain-text printing — is still one `menu.py`.
   Splitting that locally (this roadmap's own Migration Stage 2/3 territory)
   seems worth doing before treating `menu.py` as a stable extraction source.
 - **Cosmetic churn has already cost real coordination overhead.** The
   highlight-bar color/continuity logic went through four consecutive commits
   by three different agents (Codex, Gemini, Gemini, Claude) on 2026-06-28
-  before it settled. A shared style-token layer, of the kind
-  `handrail-plan.md` proposes, would likely have turned that into a one-line
+  before it settled. A shared style-token layer, of the kind proposed by the
+  Handrail UX draft, would likely have turned that into a one-line
   change instead of a rewrite-review-rewrite cycle.
 - **`InlineMenuSession` is good evidence for a shared vocabulary, not proof of
   a cross-project library yet.** Its view/session shape already lines up with
-  `handrail-plan.md`'s `InlineApp`/`View`/`ViewStack`/`SelectionResult`
+  Handrail's `InlineApp`/`View`/`ViewStack`/`SelectionResult`
   sketch, and both local-task and project/task controllers now use it. Those
   are still two paths in one application, not independent consumers; shared
   extraction should continue to wait for matching evidence from another app.
@@ -421,7 +420,7 @@ Constraints that follow from existing project rules:
 - A newly created archive file should carry the source file's `#+TODO:`
   declaration, so custom terminal keywords keep parsing as states rather than
   decaying into heading text. This is a deliberate deviation from stock
-  behavior; see castabout's `docs/roadmap.md` "Archive Declaration". When the
+  behavior, shared with castabout's archive design. When the
   archive already exists, merge into its declaration rather than adding a
   second one, and keep keywords that earlier entries were archived under — an
   archive accumulates across renames, so its declaration is the union over
@@ -552,7 +551,7 @@ absorbed accidentally.
 
 `projtui.py` composes application-specific title/body `TextArea` controls and
 compact state/priority windows and action buttons inside the generic
-`menu.WorkspaceView` lifecycle seam. `InlineMenuSession` owns focus switching,
+`menu.WorkspaceView` lifecycle boundary. `InlineMenuSession` owns focus switching,
 list-region movement, button activation, Help, save dispatch, dirty
 presentation, guarded Back, and terminal lifecycle while remaining agnostic
 about task fields and mutation.
@@ -560,7 +559,7 @@ Editing stays inside the same bounded `Application`; do not start a second
 prompt_toolkit application.
 
 This is proto-Handrail work, but extracting a shared package is premature.
-Keep reusable seams clear and compare them with inedit; extract only after a
+Keep reusable boundaries clear and compare them with inedit; extract only after a
 second adopter exposes stable shared behavior or duplicated bugs.
 
 ### Implementation Order

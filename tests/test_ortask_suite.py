@@ -3439,6 +3439,9 @@ def test_project_browser_filters_and_anchors_the_selection(tmp_path: Path) -> No
     assert len(session.current_view.rows) == 3
 
 
+@pytest.mark.skipif(
+    projmgr.menu.Application is None, reason="prompt_toolkit not installed"
+)
 def test_view_options_screen_applies_live_and_leaves_save_alone(
     tmp_path: Path,
 ) -> None:
@@ -3524,6 +3527,9 @@ def test_view_options_screen_applies_live_and_leaves_save_alone(
     assert applied[-1].reverse is False
 
 
+@pytest.mark.skipif(
+    projmgr.menu.Application is None, reason="prompt_toolkit not installed"
+)
 def test_project_browser_view_screen_changes_the_list_behind_it(
     tmp_path: Path,
 ) -> None:
@@ -4446,6 +4452,9 @@ def test_projmgr_navigator_dashboard_keeps_the_location(
     assert "(1 open)" in row
 
 
+@pytest.mark.skipif(
+    projmgr.menu.Application is None, reason="prompt_toolkit not installed"
+)
 def test_menu_right_aligned_context_yields_to_the_left(tmp_path: Path) -> None:
     """The registry is the expendable half; a location must never be pushed off."""
     from prompt_toolkit.application import create_app_session
@@ -7639,6 +7648,7 @@ def test_inline_menu_session_suspends_external_command(monkeypatch) -> None:
     assert calls == ["external", "resumed"]
 
 
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_task_workspace_exposes_title_body_and_compact_metadata(tmp_path: Path) -> None:
     # The task workspace should show title and body controls on the same screen.
     org_file = write(
@@ -7706,6 +7716,7 @@ def _long_body_controller(tmp_path: Path) -> tuple:
     return controller, taskui.load_menu_items(buf)[0]
 
 
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_task_workspace_body_opens_at_its_first_line(tmp_path: Path) -> None:
     # The window follows the cursor, so a body that opens at its end hides its
     # beginning. Long bodies should show the top and truncate the tail instead.
@@ -7718,6 +7729,7 @@ def test_task_workspace_body_opens_at_its_first_line(tmp_path: Path) -> None:
     assert body_area.buffer.document.cursor_position_row == 0
 
 
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_task_workspace_save_leaves_the_body_cursor_alone(tmp_path: Path) -> None:
     # C-s clears the undo history, which must not scroll the reader away.
     controller, item = _long_body_controller(tmp_path)
@@ -7730,6 +7742,7 @@ def test_task_workspace_save_leaves_the_body_cursor_alone(tmp_path: Path) -> Non
     assert body_area.buffer.cursor_position == resting
 
 
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_task_workspace_wraps_the_body_for_display_only(tmp_path: Path) -> None:
     # A long line wraps in the control, but stays one line in the Org file:
     # only an explicit newline adds one.
@@ -7845,6 +7858,7 @@ def test_task_workspace_subtask_viewport_scrolls_to_selection(tmp_path: Path) ->
     assert 5 < viewport.vertical_scroll + taskui.WORKSPACE_SUBTASK_HEIGHT
 
 
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_task_workspace_opens_selected_subtask_workspace(tmp_path: Path) -> None:
     # Enter on the subtask region should push the selected child's workspace.
     org_file = write(
@@ -7888,6 +7902,7 @@ def test_task_workspace_opens_selected_subtask_workspace(tmp_path: Path) -> None
     assert parent_view.is_dirty() is True
 
 
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_task_workspace_button_opens_editor_at_task_line(
     tmp_path: Path,
     monkeypatch,
@@ -8640,6 +8655,7 @@ def test_task_menu_order_preserves_org_file_hierarchy(tmp_path: Path) -> None:
     assert sorted_ids == ids
 
 
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_interactive_task_tree_starts_collapsed_with_disclosure_cues(
     tmp_path: Path,
 ) -> None:
@@ -8695,6 +8711,7 @@ def test_task_tree_respects_non_task_heading_boundaries(tmp_path: Path) -> None:
     assert depths == {"t0001": 0, "t0002": 0, "t0003": 0, "t0003.1": 1}
 
 
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_interactive_task_tree_actions_preserve_hierarchy_and_selection(
     tmp_path: Path,
 ) -> None:
@@ -8906,6 +8923,7 @@ class _PushSession:
         raise AssertionError(f"unexpected notice: {message}")
 
 
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_right_opens_a_leaf_task(tmp_path: Path) -> None:
     # Right is Enter once there is no subtree left to reveal.
     org_file = write(tmp_path / "tasks.org", "* Tasks\n** TODO t0001 Leaf\n")
@@ -9252,6 +9270,7 @@ def test_interactive_ctrl_x_discards_active_workspace_draft(tmp_path: Path) -> N
     assert controller.session.final_message == "Discarded changes to tasks.org"
 
 
+@pytest.mark.skipif(menu.Application is None, reason="prompt_toolkit not installed")
 def test_task_exit_preflight_preserves_draft_on_external_change(
     tmp_path: Path,
 ) -> None:

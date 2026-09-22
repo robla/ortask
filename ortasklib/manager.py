@@ -1378,7 +1378,7 @@ def read_project_metadata(
     return project_metadata_from_text(text, projects)
 
 
-# Extraction seam (t0038.2): keyed source-region merge mechanics belong in
+# Extraction boundary (t0038.2): keyed source-region merge mechanics belong in
 # orglib after its Region contract exists. Keep this planner pure; registry
 # names, reserved sections, and allowed edits remain project-index policy.
 @dataclass(frozen=True)

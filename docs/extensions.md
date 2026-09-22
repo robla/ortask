@@ -90,12 +90,12 @@ heading per project and treats prose under it as free text. An extension may
 claim a named subsection under a project heading:
 
 ```org
-* elweek
-  Weekly Electorama show prep.
+* newsletter
+  Weekly publication work.
 ** Directories
-   - ~/tmpsorta/electorama-weekly
+   - ~/work/newsletter
 ** Zim
-   page: project-active:ElectoramaWeekly
+   page: project-active:weekly-news
 ```
 
 `** Directories` is ortask's own section; `** Zim` belongs to the zim extension,
@@ -231,10 +231,9 @@ weekly page without a date calculation.
 
 ### Mapping projects to pages
 
-The registry has `bashfuncs2023`, `elusync`, `elweek`, `jobhunt2026`, `mwsync`,
-`ortask`. The notebook has `project-active:ortask` and `project-active:mwsync`
-matching exactly, `project-active:ElectoramaWeekly` for what the registry calls
-`elweek`, and no page at all for `elusync` or `jobhunt2026`.
+Suppose the registry has `atlas`, `newsletter`, and `website`. The notebook has
+`project-active:atlas` matching exactly, `project-active:weekly-news` for what
+the registry calls `newsletter`, and no page at all for `website`.
 
 So three cases, and each needs a decided answer:
 

@@ -31,7 +31,7 @@ depend on something outside the file, and both broke the moment a shell had
 sourced one version of the function while running another version of the helper:
 
 ```text
-Warning: directory does not exist: /home/robla/src/elusync/todo.org
+Warning: directory does not exist: /home/alex/src/atlas/tasks.org
 Warning: directory does not exist: edit
 ```
 
@@ -45,16 +45,16 @@ section in the project's Org task file:
 
 ```org
 * Directories
-** file:~/src/ortask
-** file:~/src/elusync
-** file:~/tmpsorta/electorama-weekly
+** file:~/src/atlas
+** file:~/src/atlas/docs
+** file:~/work/newsletter
 ```
 
 - One directory per line, in stack order: the first entry becomes the working
   directory.
 - Entries are ordinary Org subheadings. Leading asterisks, a `file:` prefix, and
   `[[...]]` link brackets are all optional and stripped when present, so a plain
-  `~/src/ortask` line works too.
+  `~/src/atlas` line works too.
 - `#` comments and blank lines are ignored.
 - Relative paths resolve against the real project root; absolute paths are taken
   as given; `~` and `$VAR` are expanded.
@@ -84,11 +84,11 @@ entry:
 
 ```org
 # ~/Projects/projects.org
-* ortask
-  Registered while working out the electowiki export path.
+* atlas
+  Release automation and deployment notes.
 ** Directories
-   - ~/src/ortask
-   - ~/src/ortask/docs
+   - ~/src/atlas
+   - ~/src/atlas/docs
 ```
 
 Only the location changes. Every resolution rule below still applies, and the
@@ -115,7 +115,7 @@ The warning names every directory the project list has and the private list
 does not, and it names the private file it checked:
 
 ```text
-elweek: in castabout.task.org but not projects.org: ~/src/elusync
+atlas: in tasks.org but not projects.org: ~/src/atlas/docs
 ```
 
 It is a warning, not an error. The stack is still written and the exit status is
@@ -132,7 +132,7 @@ Comparison rules:
 
 - Entries are compared *after* resolution — `~`, `$VAR`, and
   relative-to-project-root expansion, then `Path.resolve()` — so `docs`,
-  `./docs`, and `~/src/ortask/docs` are one entry rather than three.
+  `./docs`, and `~/src/atlas/docs` are one entry rather than three.
 - The winning list is deduplicated, first occurrence kept.
 - An empty `Directories` section counts as a list that exists. An empty private
   section therefore wins, the stack falls back to the project root, and every
@@ -441,7 +441,7 @@ Into the project's section of `<registry>/projects.org`:
 
 - **Paths under `$HOME` are written with `~`.** `dirs -l -p` prints them
   expanded; storing them expanded would tie the index to one machine's home.
-- **Entries are written as list items** (`   - ~/src/ortask`) under a
+- **Entries are written as list items** (`   - ~/src/atlas`) under a
   `** Directories` heading. Reading still accepts subheadings, bare paths, and
   `file:` links, per `* Directories` above; writing picks one form.
 - **Order is the shell's stack order,** top entry first — the same order
@@ -459,7 +459,7 @@ Into the project's section of `<registry>/projects.org`:
 ### Additions and subtractions
 
 Comparison is by resolved path, the same rule `cdproj` uses to decide what to
-warn about, so `~/src/ortask` and `/home/robla/src/ortask` are one entry.
+warn about, so `~/src/atlas` and `/home/alex/src/atlas` are one entry.
 
 - **Additions** — directories in the live stack that the private list lacks —
   are written without asking. That is the point of the verb.

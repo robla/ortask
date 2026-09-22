@@ -2,8 +2,9 @@
 
 This document specifies interactive use of `ortask.py` and `projmgr.py`.
 The goal is a guided layer over Org task files, not a separate task database.
-It also records lessons from the sibling `castabout` project, whose inline TUI
-has a stronger workflow shape than the current project browser.
+It also records lessons from the separately developed `castabout` project,
+whose inline TUI has a stronger workflow shape than the current project
+browser. Castabout is not part of this repository.
 
 ## Goal
 
@@ -108,8 +109,8 @@ project menus therefore spend their summary line on the highlighted project's
 directory and task file, updating as the selection moves:
 
 ```text
-Project navigator                                  Registry: ~/tmpsorta/proj2026
-~/src/elusync  ·  todo.org
+Project navigator                                  Registry: ~/Projects
+~/src/atlas  ·  tasks.org
 ```
 
 Two consequences worth stating, because both are easy to get backwards:
@@ -121,7 +122,7 @@ Two consequences worth stating, because both are easy to get backwards:
 - **Right-aligned context is the expendable half.** The `title_right` field on
   menu and workspace views is dropped whole when the terminal cannot hold it
   beside the title, because truncating the left to fit context would obscure
-  exactly what must stay legible. Nothing load-bearing goes there.
+  exactly what must stay legible. No essential context goes there.
 
 Task views use the same convention. Every `orti` task menu and workspace pins
 `File: ~/path/to/tasks.org` to the right of its title, using the canonical path
@@ -211,13 +212,13 @@ For project navigation, `projmgr.py -i` looks in `~/Projects` unless
 
 ```ini
 [projects]
-registry = ~/tmpsorta/proj2026
+registry = ~/Projects
 ```
 
 On startup it prints the directory it is scanning, for example:
 
 ```text
-Finding project in ~/tmpsorta/proj2026
+Finding project in ~/Projects
 ```
 
 Keep the plain numbered mode available as a fallback even if richer TUI
@@ -285,9 +286,8 @@ interactive toolkit rather than by ad hoc terminal escape handling.
 
 ### Evaluation & Decision
 
-After evaluating the options in
-[python-tui-toolkit-options.md](../tui2026/python-tui-toolkit-options.md), the
-conclusion is that the arrow-key highlight-bar selector — the interactive
+After evaluating the available Python TUI toolkits, the conclusion is that the
+arrow-key highlight-bar selector — the interactive
 centerpiece this design is aiming at — should be built **directly on
 `prompt_toolkit`** rather than on InquirerPy or Textual.
 
@@ -579,7 +579,7 @@ choose while changing, `Enter` or `Esc` finishes, and `Esc` again returns to the
 list. Space-to-toggle was not adopted.
 
 ```text
-View options: project navigator            Registry: ~/tmpsorta/proj2026
+View options: project navigator                    Registry: ~/Projects
 Showing: open only · Modified sort (oldest first)
   Show       [open only]
   Order      ◀ Modified ▶
@@ -729,9 +729,9 @@ shape this interface:
 After project or local-file selection, display open tasks as a menu:
 
 ```text
-elweek tasks:
-  1. [TODO] tw26W26 Promote June 24 ElectoramaWeekly episode
-  2. [TODO] tw26W26.1 Prepare next episode
+newsletter tasks:
+  1. [TODO] t0001 Draft this week's issue
+  2. [TODO] t0001.1 Verify publication links
   e. open this Org file in editor
   Esc/b/q. back one level
 ```
@@ -763,18 +763,18 @@ priority, title, and the complete body are editable on one screen rather than
 menu rows or child contexts. State and priority use one compact control row:
 
 ```text
-Edit tw26W26.0.3
+Edit t0001.2
 Tags: promo · Subtasks: 2 · Line: 18
 
  State [TODO]       Priority [B]
 Title
-Post to reddit (/r/electorama)
+Publish the announcement
 Body
-https://www.reddit.com/r/electorama/submit
+https://example.com/publish
 
 Subtasks
-▶ TODO    tw26W26.0.3.1 Record the posted URL
-  DONE    tw26W26.0.3.2 Check the submission
+▶ TODO    t0001.2.1 Record the published URL
+  DONE    t0001.2.2 Check the announcement
 [ Open in external editor ]
 
 ↑↓←→ fields · Enter edit/open · Ctrl-S save · Esc back
@@ -903,8 +903,8 @@ Tests should separate workflow logic from terminal I/O:
 - prompt cancellation returns to the previous context without writing
 - proposed writes touch only the selected heading or body insertion
 
-Manual verification can start with temporary fixture directories that mimic the
-`proj2026` symlink layout before trying real project task files.
+Manual verification can start with temporary fixture directories that mimic a
+registry symlink layout before trying real project task files.
 
 ## Castabout Convergence
 

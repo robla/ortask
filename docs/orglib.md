@@ -218,11 +218,10 @@ and the live registry.
 **Where the corpus stands.** Six distinct files are ones ortask reads or writes
 (task files plus the registry's private directory files). Two round-trip through
 orgmunge byte-identically — both `directories-private.org` — three are
-normalized, and one could not be read at all because `elweek/TODO-ElWeek.org` is
-still a dangling link, which is a pre-existing registry problem rather than a
-library one. Of the normalized three, `todo.org` differs by a single blank line,
-`jobhunt2026/todo.org` by three hunks, and `mwsync/tasks.org` by 77. Nothing
-under `docs/` round-trips unchanged, and both copies of `llm-log.org` fail to
+normalized, and one could not be read at all because of a dangling task-file
+link, a pre-existing registry problem rather than a library one. The normalized
+files differed by one blank line, three hunks, and 77 hunks respectively.
+Nothing under `docs/` round-trips unchanged, and both copies of `llm-log.org` fail to
 parse: our log headings (`** Claude [2026-04-08 Wed 21:36]: …`) place an
 inactive timestamp where orgmunge's grammar does not expect one. That file is
 documentation ortask never edits, so it does not block anything, but it is a

@@ -29,7 +29,7 @@ This file provides guidance and repository context for Gemini when working in th
 - `orglib/`: Standalone, stdlib-only Org syntax and parsing package (`syntax.py`, `__init__.py`).
 - `ortasklib/`: Shared support package: `core.py` (discovery, IDs, atomic writes), `tasks.py` (queries, validation, surgical edits), `manager.py` (registry discovery, config, index), `menu.py` (bounded inline TUI), `viewstate.py` (stdlib-only filter/sort/direction model), `viewui.py` (the `v` view options screen), and `taskui.py` (interactive task workspace).
 - `misc/`: Shell integration (`cdproj.func.sh`, `ortask-completion.bash`, `projmgr.aliases.sh`).
-- `todo.org`: The repository's active task tracking file.
+- `tasks.org`: The repository's active task tracking file.
 - `tests/test_ortask_suite.py`: Comprehensive pytest test suite and refactor gate.
 - `docs/`: Specs, design references, and documentation (`docs/ortask.md`, `docs/projmgr.md`, `docs/projects.md`, `docs/config.md`, `docs/cdproj.md`, `docs/orglib.md`, `docs/testing.md`).
 - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`: Sibling instruction files kept aligned across agents.
@@ -108,6 +108,6 @@ Target heading format:
 ## Testing & Data Safety Rules
 
 1. **Refactor Gate:** Run `python3 -m pytest tests/` before and after changes.
-2. **Never Mutate Real Data:** Do not run mutating commands (`ortask.py add`, `done`, `archive`, `repair`, or `projmgr.py add`, `rm`, `set-dirs`, `migrate`) against `todo.org` or real user registries merely to test code. Use hermetic temporary fixtures and test suites.
+2. **Never Mutate Real Data:** Do not run mutating commands (`ortask.py add`, `done`, `archive`, `repair`, or `projmgr.py add`, `rm`, `set-dirs`, `migrate`) against `tasks.org` or real user registries merely to test code. Use hermetic temporary fixtures and test suites.
 3. **Atomic File Writes:** Mutations write to a temp file in the same directory and rename over target.
 4. **LLM Log & Assessments:** Append user-requested repository changes to `docs/llm-log.org` in the same turn. Maintain standing assessments in `docs/llm-assessments.md`.

@@ -135,8 +135,8 @@ class MenuView:
     #: source file: something the reader wants available but not in the way. It
     #: rides the title line rather than the summary line because a title is
     #: short and fixed, so it neither crowds nor flickers as a selection moves.
-    #: It is also the part dropped when the terminal is too narrow, so nothing
-    #: load-bearing belongs here.
+    #: It is also the part dropped when the terminal is too narrow, so no
+    #: essential context belongs here.
     title_right: str = ""
     preamble: str = ""
     instruction: str = ""

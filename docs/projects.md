@@ -19,27 +19,27 @@ subdirectory of it, holding symlinks to the real project directory and,
 optionally, to that project's Org task file.
 
 ```text
-~/tmpsorta/proj2026/
-  elweek/
-    electorama-weekly -> /home/robla/tmpsorta/electorama-weekly
-    TODO-ElWeek.org   -> electorama-weekly/TODO-ElWeek.org
-  ortask/
-    ortask   -> /home/robla/src/ortask
-    todo.org -> ortask/todo.org
+~/Projects/
+  atlas/
+    atlas     -> /home/alex/src/atlas
+    tasks.org -> /home/alex/src/atlas/tasks.org
+  newsletter/
+    newsletter         -> /home/alex/work/newsletter
+    newsletter.task.org -> /home/alex/work/newsletter/newsletter.task.org
 ```
 
 Its location lives in `ortask.ini`, honoring `$XDG_CONFIG_HOME`:
 
 ```ini
 [projects]
-registry = ~/tmpsorta/proj2026
+registry = ~/Projects
 ```
 
 Resolution order is `--registry`, then `[projects] registry`, then `~/Projects`.
 
-There is no index file, no database, and no cache. The directory *is* the
-record. `ls -la` shows the entire model, `ln -s` adds to it, and `rm -r` removes
-from it. The tools are a convenience layer over that, and must stay correct when
+There is no membership database or cache. Registry subdirectories and their
+outward symlinks are the authoritative project list; `projects.org` stores
+metadata but cannot add a project by itself. The tools must stay correct when
 the registry is edited by hand.
 
 ### Why symlinks, and not a scan
@@ -162,16 +162,16 @@ the suite's business.
 Registration is one command, run from inside the project:
 
 ```sh
-cd ~/src/whatever
+cd ~/src/atlas
 pmgr add
 ```
 
-That creates `<registry>/whatever/` containing a symlink to the project and, if
+That creates `<registry>/atlas/` containing a symlink to the project and, if
 a task file is discovered, a symlink to it.
 
 - With no argument, `add` walks upward for the project root — the nearest
   ancestor holding a task file or a VCS directory — so running it from
-  `~/src/ortask/docs` registers `~/src/ortask`. It prints what it chose.
+  `~/src/atlas/docs` registers `~/src/atlas`. It prints what it chose.
 - With an explicit path, `add` registers exactly that path and walks nothing.
 - `--name` overrides the entry name, `--file` names the task file instead of
   discovering one, `--force` repoints links in an existing entry, and

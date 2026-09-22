@@ -8,7 +8,7 @@ to read, with only enough convention for tools to help.
 
 Prefer a dedicated task file named `tasks.org`. `task.org` remains recognized
 for compatibility. For project-specific names, use `NAME.task.org`, such as
-`castabout.task.org` or `elweek.task.org`.
+`castabout.task.org` or `newsletter.task.org`.
 Run `ortask.py init` to create a local `tasks.org` containing only `* Tasks`, or
 use `ortask.py --file NAME.task.org init` for a project-specific filename.
 For new files, put actionable work under a top-level `* Tasks` heading:

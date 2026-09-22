@@ -7,28 +7,31 @@ The CLI toggles TODO/DONE; shared workflow tools may use terminal MOOT.
 SUPERSEDED remains a terminal compatibility alias for existing files.
 Edits touch only selected task headings or explicitly inserted tasks.
 
+This is an early-stage, source-run project. Command names and file-safety rules
+are established, but the interactive interfaces and library APIs may still
+change.
+
 Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
 
 #+begin_example
 ,* Tasks
-,** DONE t0001 Initialize LLMs in this directory
-,*** DONE t0001.1 ChatGPT/codex
-,*** DONE t0001.2 Gemini
-,*** DONE t0001.3 Claude
-,** TODO t0002 Build tool that updates this TODO list
+,** DONE t0001 Draft release notes
+,*** DONE t0001.1 Summarize user-visible changes
+,*** DONE t0001.2 Check upgrade instructions
+,** TODO t0002 Publish the release
 #+end_example
 
 * Quick start
 
 #+begin_src sh
-# list all tasks
+# list open tasks (the default)
 ./ortask.py list
 
 # create an empty task file in the current directory
 ./ortask.py init
 
-# list only open tasks
-./ortask.py list --state todo
+# include completed tasks
+./ortask.py list --all
 
 # show a single task with body and subtasks
 ./ortask.py show t0001
@@ -58,11 +61,8 @@ Tasks use standard org-mode =TODO= / =DONE= keywords with stable IDs:
 # show today's recorded activity (after opting in; see docs/logging.md)
 ./ortask.py log --all --since today
 
-# check for ID problems (dry run)
+# report ID and task-tree problems; automated fixes are not implemented yet
 ./ortask.py repair --dry-run
-
-# fix ID problems
-./ortask.py repair
 #+end_src
 
 By default, =ortask.py= walks upward from the current directory looking for
@@ -114,7 +114,19 @@ A Debian package can install the same file under
 
 * Requirements
 
-Python 3.10+ (standard library only, no dependencies).
+Python 3.10+. Clone the repository and run =ortask.py= or =projmgr.py=
+directly; there is currently no package installation step. Core CLI behavior
+uses only the standard library.
+
+The highlight-bar TUI uses =prompt_toolkit=, and Rich improves numbered
+dashboards. Without them, interactive commands retain a line-oriented fallback.
+Install the optional UI packages with:
+
+#+begin_src sh
+python3 -m pip install prompt_toolkit rich
+#+end_src
+
+Running the test suite additionally requires =pytest=.
 
 * License
 

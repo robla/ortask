@@ -181,7 +181,7 @@ Output includes:
 
 ```
 ortask.py init
-ortask.py --file bashfuncs.task.org init
+ortask.py --file example.task.org init
 ```
 
 Create an empty dedicated task file containing exactly:

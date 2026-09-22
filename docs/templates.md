@@ -2,7 +2,7 @@
 
 This document specifies the `ortask.py apply` feature for turning reusable Org
 task templates into real tasks. The motivating case is
-`~/tmpsorta/electorama-weekly/TODO-ElWeek.org`, which has active weekly work
+`~/work/electorama-weekly/TODO-ElWeek.org`, which has active weekly work
 under `* Tasks` and a reusable checklist under `* Template`.
 
 **Status:** implemented. `ortask.py apply` (default `--template weekly`) is live
@@ -21,7 +21,7 @@ preserving the plain-text links and leaving final human edits easy.
 
 ```sh
 ortask.py apply \
-  --file ~/tmpsorta/electorama-weekly/TODO-ElWeek.org \
+  --file ~/work/electorama-weekly/TODO-ElWeek.org \
   --week 2026W26 \
   --date 2026-06-25 \
   --dry-run

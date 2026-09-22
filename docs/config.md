@@ -46,10 +46,8 @@ Resolution order for the registry is `--registry` on the command line, then
 typed is stored as typed rather than expanded, so the file stays portable
 between machines and readable by a human.
 
-`~/Projects` is the intended standard location, including for this project's
-author, whose registry currently lives at `~/tmpsorta/proj2026` for historical
-reasons. Documentation should use `~/Projects` in examples so that the default
-and the convention are the same thing.
+`~/Projects` is the intended standard location. Documentation uses it in
+examples so that the default and the convention are the same thing.
 
 `projmgr.py init` writes the file (`--dry-run` to preview, `--force` to
 overwrite an existing value). Writing goes through the same atomic replace as
@@ -192,17 +190,16 @@ name. Projects with no private settings or index prose may be absent:
 ```org
 #+TITLE: Projects
 
-* elusync
-  Sync tooling for Electorama. Registered while working out the
-  electowiki export path.
+* atlas
+  Release automation and deployment notes.
 ** Directories
-   - ~/Projects/elusync
-   - ~/src/elusync
+   - ~/src/atlas
+   - ~/src/atlas/docs
 
-* ortask
+* newsletter
 ** Directories
-   - ~/src/ortask
-   - ~/src/ortask/docs
+   - ~/work/newsletter
+   - ~/work/newsletter/assets
 ```
 
 Notes on the shape:
@@ -221,21 +218,21 @@ Notes on the shape:
   resolve a task file from it. Other properties are preserved and ignored. The
   drawer must be the first thing after the heading, as Org places it; one
   further down the section is reported rather than quietly skipped. A project heading may also carry an Org
-  priority cookie, `* [#A] ortask`, which `ptui` uses for ordering.
+  priority cookie, `* [#A] atlas`, which `ptui` uses for ordering.
 - **Other prose under a project heading is free text** and is never parsed.
   That is the point of the file.
 - **The project name is the join key.** Matching should be case-insensitive, to
   agree with the case-insensitive ordering `discover_projects` already uses.
   Compare the heading text with any leading priority cookie **and** any
-  trailing `:tags:` stripped (`orglib.syntax._project_title`), so `* ortask`,
-  `* [#A] ortask`, and `* [#A] ortask :work:` all name the same project. One
+  trailing `:tags:` stripped (`orglib.syntax._project_title`), so `* atlas`,
+  `* [#A] atlas`, and `* [#A] atlas :work:` all name the same project. One
   file carrying two of those forms is ambiguous and is reported rather than
   resolved.
 - **`* Tasks` is reserved**, and so is `* Template`. They are the index's own
   task section, the thing that makes standing in the registry and running `ort`
   useful. A registry entry named `Tasks` would collide; `repair` should say so
   rather than the reader silently taking one for the other.
-- **A tool that writes the file writes list items** — `   - ~/src/ortask` — and
+- **A tool that writes the file writes list items** — `   - ~/src/atlas` — and
   writes `~` for paths under `$HOME`. Reading accepts all four entry forms;
   writing picks one. See "Saving the directory stack" in `docs/cdproj.md`.
 

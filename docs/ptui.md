@@ -100,18 +100,18 @@ Each registered project may have one top-level section in the registry's
 drawer:
 
 ```org
-* [#A] ortask
+* [#A] atlas
 :PROPERTIES:
-:DESCRIPTION: Org-backed task and project tools
-:TASK_FILE: ~/src/ortask/todo.org
+:DESCRIPTION: Release automation
+:TASK_FILE: ~/src/atlas/tasks.org
 :END:
 ** Directories
-   - ~/src/ortask
-   - ~/src/ortask/docs
+   - ~/src/atlas
+   - ~/src/atlas/docs
 ```
 
 The registry entry name remains the join key. Readers must recognize both
-`* ortask` and `* [#A] ortask`, stripping the priority cookie and trailing tags
+`* atlas` and `* [#A] atlas`, stripping the priority cookie and trailing tags
 before matching. Names are not editable in metadata mode because renaming the
 heading alone would not rename the registry entry.
 

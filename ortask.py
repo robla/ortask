@@ -667,7 +667,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_open = sub.add_parser("open", help="reopen a task (DONE -> TODO)")
     p_open.add_argument("id", metavar="ID")
 
-    p_repair = sub.add_parser("repair", help="find and fix task tree problems")
+    p_repair = sub.add_parser("repair", help="diagnose task tree problems")
     p_repair.add_argument("--dry-run", action="store_true",
                           help="report problems without modifying the file")
     p_repair.add_argument("--force", action="store_true",

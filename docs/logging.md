@@ -67,8 +67,8 @@ Read-only commands — `list`, `show`, `info`, and `repair --dry-run` — write 
 ### Navigation
 
 `cdproj` is the interesting boundary. It changes no task data, so by the rule
-above it does not belong in a log of writes. But "I switched to elweek at 09:14
-and to ortask at 11:40" is exactly what a journal wants, and no other record
+above it does not belong in a log of writes. But "I switched to newsletter at
+09:14 and to atlas at 11:40" is exactly what a journal wants, and no other record
 has it.
 
 Log it. Choosing a project and loading its directory stack is a deliberate act
@@ -89,8 +89,8 @@ wrapper, no pretty-printing, no trailing commas — appending a line must never
 require rewriting what came before.
 
 ```json
-{"schema":1,"id":"9f2c1a7b4e8d0d31","ts":"2026-08-21T14:32:07-07:00","session":"4b1e...","tool":"ort","verb":"done","project":"ortask","file":"~/src/ortask/todo.org","task":{"id":"t0011","title":"Remove obsolete one-shot interactive selector code","from":"TODO","to":"DONE"}}
-{"schema":1,"id":"a01d3c55e9b74210","ts":"2026-08-21T14:33:12-07:00","session":"7c92...","tool":"pmgr","verb":"set-dirs","project":"elweek","detail":{"directories":["~/tmpsorta/electorama-weekly","~/src/elusync"]}}
+{"schema":1,"id":"9f2c1a7b4e8d0d31","ts":"2026-08-21T14:32:07-07:00","session":"4b1e...","tool":"ort","verb":"done","project":"atlas","file":"~/src/atlas/tasks.org","task":{"id":"t0001","title":"Draft release notes","from":"TODO","to":"DONE"}}
+{"schema":1,"id":"a01d3c55e9b74210","ts":"2026-08-21T14:33:12-07:00","session":"7c92...","tool":"pmgr","verb":"set-dirs","project":"newsletter","detail":{"directories":["~/work/newsletter","~/work/newsletter/assets"]}}
 ```
 
 JSON rather than an Org or plain-text log, despite the wiki way, for one
@@ -135,8 +135,7 @@ In the registry, beside `projects.org`:
 <registry>/log/2026-08.jsonl
 ```
 
-So `~/Projects/log/2026-08.jsonl` by default, and
-`~/tmpsorta/proj2026/log/2026-08.jsonl` on the machine this was written on.
+So `~/Projects/log/2026-08.jsonl` by default.
 
 The registry is where the suite already keeps what it knows about projects
 across all of them, which is exactly the scope of the log. Three things follow
