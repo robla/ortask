@@ -134,11 +134,11 @@ The suite is licensed under the MIT License. The repository's =LICENSE= file
 names Rob Lanphier as copyright holder. Permissively licensed libraries remain
 available for optional evaluation; a GPL runtime dependency would require a
 separate distribution and compatibility decision.
-** TODO t0025 Enforce the *-private.org reservation in task-file discovery
-=docs/projects.md= says private files are never candidates for task-file
-resolution, but =manager.choose_org_file= excludes only the literal name
-=directories-private.org=. Verified 2026-08-20: a =notes-private.org= in a
-registry entry is selected as that project's task file. Match the suffix.
+** DONE t0025 Enforce the *-private.org reservation in task-file discovery
+Automatic task-file discovery now excludes every basename ending in
+=-private.org=, including compatibility and generic local fallbacks, root and
+nested project scans, and registry-entry files or links. Explicit =--file= and
+=ORTASK_FILE= selections remain valid because they do not guess.
 ** DONE t0026 Implement and migrate to the registry index file
 Replace per-entry =directories-private.org= files with one =projects.org= at
 the registry root, per =docs/config.md=. The index's existence is the migration

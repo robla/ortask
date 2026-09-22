@@ -48,6 +48,7 @@ from orglib.syntax import (  # noqa: F401 — re-exported for existing callers
 
 PRIMARY_PROBE_NAMES = ["tasks.org", "task.org"]
 COMPAT_PROBE_NAMES = ["todo.org"]
+PRIVATE_ORG_SUFFIX = "-private.org"
 
 
 class OrgFileDiscoveryError(Exception):
@@ -57,6 +58,11 @@ class OrgFileDiscoveryError(Exception):
 # ---------------------------------------------------------------------------
 # File discovery
 # ---------------------------------------------------------------------------
+
+def is_private_org_file(path: Path) -> bool:
+    """Whether a filename is reserved from automatic task-file discovery."""
+    return path.name.endswith(PRIVATE_ORG_SUFFIX)
+
 
 def _relative_to_cwd(path: Path) -> Path:
     return Path(os.path.relpath(path, Path.cwd()))
@@ -91,7 +97,11 @@ def _preferred_task_file_in(directory: Path) -> Path | None:
 
     compat_todo_files = sorted(
         p for p in directory.glob("TODO*.org")
-        if p.is_file() and p.name != "TODO.org"
+        if (
+            p.is_file()
+            and p.name != "TODO.org"
+            and not is_private_org_file(p)
+        )
     )
     if len(compat_todo_files) == 1:
         return compat_todo_files[0]
@@ -137,7 +147,10 @@ def resolve_org_file_with_provenance() -> tuple[Path | None, str | None]:
             prov = f"probed in {directory}" if directory != cwd else "probed in ."
             return _relative_to_cwd(found), prov
 
-    org_files = sorted(p for p in cwd.glob("*.org") if p.is_file())
+    org_files = sorted(
+        p for p in cwd.glob("*.org")
+        if p.is_file() and not is_private_org_file(p)
+    )
     if len(org_files) == 1:
         return Path(org_files[0].name), "generic *.org in ."
     if len(org_files) > 1:
@@ -168,7 +181,10 @@ def discover_org_file(directory: Path) -> Path | None:
     if found is not None:
         return found
 
-    org_files = sorted(p for p in directory.glob("*.org") if p.is_file())
+    org_files = sorted(
+        p for p in directory.glob("*.org")
+        if p.is_file() and not is_private_org_file(p)
+    )
     if len(org_files) == 1:
         return org_files[0]
     if len(org_files) > 1:

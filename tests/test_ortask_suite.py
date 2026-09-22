@@ -552,6 +552,17 @@ def test_discover_local_org_file_ambiguity(tmp_path: Path, monkeypatch) -> None:
         ortask.resolve_org_file()
 
 
+def test_local_discovery_ignores_private_org_files(tmp_path: Path) -> None:
+    # Automatic compatibility and generic fallback must reserve *-private.org.
+    write(tmp_path / "TODO-private.org", "* Tasks\n** TODO t0001 Private\n")
+    write(tmp_path / "notes-private.org", "* Tasks\n** TODO t0002 Private\n")
+
+    assert core.discover_org_file(tmp_path) is None
+
+    readme = write(tmp_path / "README.org", "* Tasks\n** TODO t0003 Public\n")
+    assert core.discover_org_file(tmp_path) == readme
+
+
 def test_add_top_level_and_subtask(tmp_path: Path) -> None:
     # This test protects ID allocation and insertion points for local adds.
     org_file = write(
@@ -1062,6 +1073,39 @@ def test_manager_choose_org_file_prefers_tasks_org(tmp_path: Path) -> None:
     assert manager.choose_org_file(project) == project / "castabout.task.org"
     (project / "castabout.task.org").unlink()
     assert manager.choose_org_file(project) == project / "README.org"
+
+
+def test_manager_choose_org_file_ignores_private_org_files(tmp_path: Path) -> None:
+    # Manager root and nested scans must never select a reserved private file.
+    project = tmp_path / "project"
+    write(project / "notes-private.org", "* Tasks\n** TODO t0001 Private\n")
+    write(project / "docs" / "other-private.org", "* Tasks\n** TODO t0002 Private\n")
+
+    assert manager.choose_org_file(project) is None
+
+    nested = write(project / "docs" / "README.org", "* Tasks\n** TODO t0003 Public\n")
+    assert manager.choose_org_file(project) == nested
+
+
+def test_registry_entry_private_org_file_is_not_a_task_file(tmp_path: Path) -> None:
+    # The original t0025 case must leave a registered project without a task file.
+    project = tmp_path / "project"
+    project.mkdir()
+    entry = tmp_path / "registry" / "sample"
+    entry.mkdir(parents=True)
+    (entry / project.name).symlink_to(project)
+    write(entry / "notes-private.org", "* Tasks\n** TODO t0001 Private\n")
+    private_target = write(
+        tmp_path / "secrets-private.org", "* Tasks\n** TODO t0002 Private\n"
+    )
+    (entry / private_target.name).symlink_to(private_target)
+    (entry / "missing-private.org").symlink_to(tmp_path / "missing-private.org")
+
+    discovered = manager.read_project_entry(entry)
+
+    assert discovered is not None
+    assert discovered.org_file is None
+    assert discovered.warning is None
 
 
 def test_summarize_projects_for_projmgr(tmp_path: Path, capsys) -> None:

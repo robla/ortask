@@ -90,6 +90,10 @@ The resolution order is:
 5. As a compatibility fallback, use exactly one generic `*.org` in the original
    current directory only.
 
+Automatic discovery excludes every file whose basename ends in
+`-private.org`. An explicit `--file` or `ORTASK_FILE` may still select one;
+those mechanisms express the user's choice rather than making a guess.
+
 Ambiguity should stop resolution rather than silently choosing alphabetically.
 For example, two `*.task.org` files in the same directory require `--file` or a
 rename to `tasks.org`. A named file such as `castabout.task.org` is still an

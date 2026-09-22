@@ -339,12 +339,6 @@ In short: `ortask` avoids full AST round-tripping to preserve byte-exact file fi
 
 ## Known gaps
 
-- **`*-private.org` is reserved but not enforced.** `docs/projects.md` states
-  that private files are never candidates for task-file resolution, but
-  `manager.choose_org_file` excludes only the exact name
-  `directories-private.org`. A file named `notes-private.org` in a registry
-  entry is currently selected as that project's task file. Verified 2026-08-20.
-  The registry index makes this less pressing, since per-entry files go away.
 - **`CLAUDE.md` and `GEMINI.md` describe the resolution ladder wrongly.** Both
   treat `tasks.org` as a legacy fallback tried last; it is in fact the *first*
   name probed. The ladder in this document is the verified one.

@@ -278,7 +278,7 @@ def choose_org_file(project_dir: Path) -> Path | None:
             for p in project_dir.iterdir()
             if p.is_file()
             and p.suffix == ".org"
-            and p.name != DIRECTORIES_PRIVATE_NAME
+            and not core.is_private_org_file(p)
         ),
         key=_org_sort_key,
     )
@@ -291,7 +291,14 @@ def choose_org_file(project_dir: Path) -> Path | None:
             continue
         nested.extend(
             sorted(
-                (p for p in child.iterdir() if p.is_file() and p.suffix == ".org"),
+                (
+                    p for p in child.iterdir()
+                    if (
+                        p.is_file()
+                        and p.suffix == ".org"
+                        and not core.is_private_org_file(p)
+                    )
+                ),
                 key=_org_sort_key,
             )
         )
@@ -319,20 +326,31 @@ def read_project_entry(entry: Path) -> Project | None:
 
     links = [p for p in children if p.is_symlink()]
     dir_links = [p for p in links if p.is_dir()]
-    org_links = [p for p in links if p.is_file() and p.suffix == ".org"]
+    org_links = [
+        p for p in links
+        if (
+            p.is_file()
+            and p.suffix == ".org"
+            and not core.is_private_org_file(p)
+        )
+    ]
     entry_org_files = [
         p
         for p in children
         if p.is_file()
         and p.suffix == ".org"
-        and p.name != DIRECTORIES_PRIVATE_NAME
+        and not core.is_private_org_file(p)
     ]
     # A dangling link is evidence of a broken project only if it aimed at what a
     # project link aims at. A registry's notes directory with one stale .md link
     # is not a broken project.
     broken = [
         p for p in links
-        if not p.exists() and Path(os.readlink(p)).suffix in ("", ".org")
+        if (
+            not p.exists()
+            and not core.is_private_org_file(p)
+            and Path(os.readlink(p)).suffix in ("", ".org")
+        )
     ]
 
     link: Path | None = None
