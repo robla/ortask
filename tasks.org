@@ -129,12 +129,11 @@ of the bar are terminal states, matching =orglib.TERMINAL_STATES=. Without a
 declaration, orgparse, orgmunge, and Emacs read =** MOOT t0007 x= as an ordinary
 heading whose text starts with "MOOT". Decide whether =ort= writes the line on
 new files and whether =repair= offers to add or reconcile it.
-** TODO t0024 Choose a license for the suite
-There is no =LICENSE= file, which blocks judging any dependency's license
-against ours — =orgformat= is GPL-3, while =orgparse= (BSD-2) and =orgmunge=
-(MIT) are permissive. Resolve this before publishing the suite or adding a hard
-runtime dependency; it does not block optional, test-only evaluation of
-permissively licensed libraries.
+** DONE t0024 Choose a license for the suite
+The suite is licensed under the MIT License. The repository's =LICENSE= file
+names Rob Lanphier as copyright holder. Permissively licensed libraries remain
+available for optional evaluation; a GPL runtime dependency would require a
+separate distribution and compatibility decision.
 ** TODO t0025 Enforce the *-private.org reservation in task-file discovery
 =docs/projects.md= says private files are never candidates for task-file
 resolution, but =manager.choose_org_file= excludes only the literal name

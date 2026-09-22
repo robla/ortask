@@ -43,7 +43,7 @@ The following libraries were surveyed to evaluate different parsing and serializ
 ### Technical & Environment Notes
 
 - **Python Version Compatibility:** Standard environments running Python 3.11 cannot install the latest releases of `orgformat` (`≥3.13`) or `org-parser` (`≥3.12`).
-- **Licensing Considerations:** `orgformat` is licensed under GPL-3, which requires consideration depending on project distribution plans.
+- **Licensing Considerations:** Ortask is MIT-licensed. Making GPL-3-licensed `orgformat` a distributed runtime dependency would require a separate compatibility and distribution decision.
 - **Canonical Parsing:** The reference implementation of Org-mode syntax is GNU Emacs' built-in `org-element` (accessible in batch mode via `emacs --batch`).
 
 ## Architecture & Integration Strategy

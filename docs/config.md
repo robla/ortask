@@ -348,5 +348,3 @@ In short: `ortask` avoids full AST round-tripping to preserve byte-exact file fi
 - **`CLAUDE.md` and `GEMINI.md` describe the resolution ladder wrongly.** Both
   treat `tasks.org` as a legacy fallback tried last; it is in fact the *first*
   name probed. The ladder in this document is the verified one.
-- **The project has no `LICENSE` file**, which needs settling before any
-  dependency's license can be assessed against it.

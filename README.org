@@ -116,6 +116,10 @@ A Debian package can install the same file under
 
 Python 3.10+ (standard library only, no dependencies).
 
+* License
+
+Ortask is licensed under the [[file:LICENSE][MIT License]].
+
 * Documentation
 
 - [[file:docs/ortask.md][ortask(1) man page]] — full subcommand reference
