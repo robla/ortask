@@ -1,0 +1,9 @@
+This is an example tasks.org file that is compatible with ortask.py
+(as well as GNU Emacs).  Note the "Directories" and "Tasks" sections
+below.  Those sections are the ones that ortask.py looks for.
+
+* Directories
+** file:.
+* Tasks
+** TODO t0001 Remove generic wording from copy of example-tasks.org
+This is a valid task, numbered using ortask.py's default numbering scheme.
