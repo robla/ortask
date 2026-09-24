@@ -889,3 +889,17 @@ and both dependency configurations pass. This runner's normal suite has 343
 passes plus the two previously known failures caused by its ambient =/tmp/.git=;
 with those two environment-sensitive tests deselected, the normal run passes
 and the no-UI-dependencies run reports 259 passed and 84 skipped.
+** TODO [#B] t0055 Add interactive task creation to orti
+Make it possible to add a new task directly from the =orti= task list. Prompt
+for the task title (e.g. using =menu.TextInputView=), allocate the next ID, and
+stage the addition through the active =OrgBuffer= so it participates in undo/redo
+(=C-/= / =C-r=) and save (=C-s=).
+
+Candidate keybindings to evaluate:
+- =a=: matches the CLI verb =ortask add= and standard task TUI conventions (e.g. Taskwarrior).
+- =+=: standard mnemonic for item addition with zero letter collision.
+- Emacs Org-mode equivalents: =M-RET= (=org-meta-return=) / =M-S-RET= (=org-insert-todo-heading=) to create sibling/child headings, or =c= / =C-c c= (=org-capture=). Note terminal compatibility for Alt/Meta escape sequences.
+- Other common options: =n= (new) or =i= (insert).
+
+Decide placement (appending top-level vs. inserting relative to highlight) and
+update command hints, contextual Help (=C-g=), and docs.
